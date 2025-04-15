@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>World's Best TV</title>
+    <!-- Include Tailwind CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet" />
+    <!-- Include Select2 CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="../css/styles.min.css">
+    <!-- Include JW Player -->
+    <script src="https://content.jwplatform.com/libraries/Z79JsmAO.js"></script>
+</head>
+<body class="font-sans h-full p-3 bg-gray-100" ng-app="iptvApp" ng-controller="ChannelController">
+    <div class="container mx-auto px-4 h-full flex flex-col">
+        <main class="flex flex-col flex-grow gap-2">
+            <aside class="w-full">
+                <div id="channelCards" class="space-y-6">
+                    <div ng-repeat="(groupName, groupChannels) in groupedChannels" class="group">
+                        <h2 class="text-xl font-bold text-gray-700">{{groupName}}</h2>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6">
+                            <div class="card cursor-pointer relative" ng-repeat="channel in groupChannels" ng-click="selectChannel(channel)">
+                                <img ng-src="{{channel.image}}" alt="{{channel.name}}" class="w-full rounded-t-md object-cover border rounded-lg shadow-md" style="aspect-ratio: 16/9;">
+                                <div class="font-bold">{{channel.name}}</div>
+                                <div ng-if="channel.label" class="absolute px-2 py-1 text-sm rounded shadow" ng-class="{
+                                        'top-2 left-2': channel.label.position === 'top-left',
+                                        'top-2 right-2': channel.label.position === 'top-right',
+                                        'bottom-2 left-2': channel.label.position === 'bottom-left',
+                                        'bottom-2 right-2': channel.label.position === 'bottom-right'
+                                    }" ng-style="{
+                                        'background-color': channel.label.color,
+                                        'color': channel.label.text_color
+                                    }">
+                                    {{channel.label.text}}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+            <section class="w-full flex-grow">
+                <div id="jwplayerDiv" class="h-full w-full" style="aspect-ratio: 16/9;"></div>
+            </section>
+        </main>
+        <!-- Back to Top Button -->
+        <button id="backToTop" class="fixed bottom-4 right-4 bg-blue-500 text-white p-3 rounded-full shadow hover:bg-blue-600" ng-click="scrollToTop()" ng-show="showBackToTop">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+            </svg>
+        </button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.2/angular.min.js"></script>
+    <script>
+        angular.module('iptvApp', [])
+            .controller('ChannelController', ['$scope', '$http', '$window', function ($scope, $http, $window) {
+                $scope.response = null;
+                $scope.channels = {};
+                $scope.groupedChannels = {};
+                $scope.selectedChannel = null;
+                $scope.showBackToTop = false;
+
+                $scope.initialize = function () {
+                    $http.get('https://iptv.nangcucz.link/')
+                        .then(function (response) {
+                            $scope.response = response.data;
+                            $scope.channels = $scope.mapChannels(response.data);
+                            $scope.groupedChannels = $scope.groupChannelsByGroupName($scope.channels);
+                            $scope.selectedChannel = Object.values($scope.channels)[0];
+                            $scope.initializePlayer($scope.selectedChannel);
+                        }, function (error) {
+                            console.error('Error fetching channels:', error);
+                        });
+                };
+
+                $scope.mapChannels = function (apiResponse) {
+                    const channels = (apiResponse.groups || []).flatMap(group =>
+                        (group.channels || []).map(channel => {
+                            const streams = [];
+
+                            (channel.sources || []).forEach(source => {
+                                (source.contents || []).forEach(content => {
+                                    (content.streams || []).forEach(stream => {
+                                        (stream.stream_links || []).forEach(link => {
+                                            if (link.type === 'hls') {
+                                                streams.push({
+                                                    name: link.name,
+                                                    url: link.url,
+                                                    type: link.type,
+                                                    subtitles: (link.subtitles || []).map(sub => ({
+                                                        url: sub.url,
+                                                        label: sub.label
+                                                    }))
+                                                });
+                                            }
+                                        });
+                                    });
+                                });
+                            });
+
+                            return {
+                                group: group.name,
+                                id: channel.id,
+                                name: channel.name,
+                                description: '',
+                                image: channel.image?.url || '',
+                                streams: streams,
+                                selectedStream: streams[0] || null, // Default to the first stream
+                                label: channel.label || channel.name,
+                                actors: channel.actors || [],
+                            };
+                        })
+                    );
+
+                    return channels.reduce((acc, channel) => {
+                        acc[channel.id] = channel;
+                        return acc;
+                    }, {});
+                };
+
+                $scope.groupChannelsByGroupName = function (channels) {
+                    return Object.values(channels).reduce((groups, channel) => {
+                        if (!groups[channel.group]) {
+                            groups[channel.group] = [];
+                        }
+                        groups[channel.group].push(channel);
+                        return groups;
+                    }, {});
+                };
+
+                $scope.initializePlayer = function (channel) {
+                    try {
+                        if (!channel || !channel.streams || channel.streams.length === 0) {
+                            console.warn("No streams available for the selected channel.");
+                            return;
+                        }
+
+                        const playlist = [{
+                            title: channel.name,
+                            description: channel.description || '',
+                            image: channel.image || '',
+                            sources: channel.streams.map(stream => {
+                                const subtitles = stream.subtitles || [];
+                                const tracks = subtitles.map(subtitle => ({
+                                    file: subtitle.url,
+                                    kind: "captions",
+                                    label: subtitle.label || "Subtitle",
+                                    default: subtitle.default || false
+                                }));
+
+                                return {
+                                    file: stream.url,
+                                    type: stream.type || 'hls',
+                                    label: stream.name, // nếu có nhiều quality
+                                    tracks: tracks
+                                };
+                            })
+                        }];
+
+                        // Initialize JW Player
+                        jwplayer("jwplayerDiv").setup({
+                            playlist: playlist,
+                            width: "100%",
+                            aspectratio: "16:9",
+                            controls: true,
+                            autostart: false // Automatically start playback
+                        });
+
+                    } catch (error) {
+                        console.error("Error initializing player:", error);
+                    }
+                };
+
+                $scope.selectChannel = function (channel) {
+                    if (!channel) {
+                        console.warn("Selected channel is invalid.");
+                        return;
+                    }
+                    $scope.selectedChannel = channel;
+                    $scope.initializePlayer(channel);
+
+                    // Scroll to the video player
+                    const playerElement = document.getElementById("jwplayerDiv");
+                    if (playerElement) {
+                        playerElement.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }
+                };
+
+                $scope.scrollToTop = function () {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                };
+
+                // Monitor scroll position to toggle "Back to Top" button visibility
+                angular.element($window).on('scroll', function () {
+                    $scope.$apply(function () {
+                        $scope.showBackToTop = $window.scrollY > 0;
+                    });
+                });
+
+                $scope.initialize();
+            }]);
+    </script>
+</body>
+</html>

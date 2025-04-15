@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full" ng-app="iptvApp">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" href="../images/live.png" />
+    <title>Danh sách VOD</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="../css/styles.min.css">
+</head>
+<body class="font-sans h-full bg-gray-100 flex flex-col" ng-controller="MainController">
+    <!-- Loading overlay -->
+    <div class="fixed inset-0 bg-gray-900 bg-opacity-50 z-50 flex items-center justify-center" ng-if="isLoading">
+        <div class="bg-white p-5 rounded-lg shadow-lg flex items-center">
+            <svg class="animate-spin h-8 w-8 text-blue-500 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="text-gray-700 text-lg font-semibold">Đang tải dữ liệu...</span>
+        </div>
+    </div>
+    <!-- Main Content -->
+    <main class="flex-1 container mx-auto px-4 lg:px-20 py-4">
+        <!-- Search Bar -->
+        <div class="mb-6 flex flex-row justify-between gap-4 items-center">
+            <input type="text" ng-model="searchKeyword" placeholder="Tìm kiếm phim..." class="w-full lg:w-1/2 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" ng-keyup="searchMovies($event)" />
+            <!-- Country Selector -->
+            <select id="countrySelector" class="w-full lg:w-1/4 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option></option>
+            </select>
+            <button ng-click="toggleHistory($event)" class="px-4 py-2 flex gap-2 items-center bg-blue-500 text-white rounded-md shadow hover:bg-blue-600 transition whitespace-nowrap">
+                <!-- clock-rotate-left icon by Free Icons (https://free-icons.github.io/free-icons/) -->
+                <svg xmlns="http://www.w3.org/2000/svg" height="1em" fill="currentColor" viewBox="0 0 512 512">
+                    <path d="M 75 75 L 41 41 L 75 75 L 41 41 Q 29 30 15 36 Q 1 41 0 58 L 0 168 L 0 168 Q 2 190 24 192 L 134 192 L 134 192 Q 151 191 156 177 Q 162 163 151 151 L 120 120 L 120 120 Q 174 66 256 64 Q 338 66 392 120 Q 446 174 448 256 Q 446 338 392 392 Q 338 446 256 448 Q 194 447 146 414 Q 135 406 122 408 Q 110 411 102 422 Q 94 433 96 445 Q 99 458 110 466 Q 173 511 256 512 Q 328 511 385 477 Q 443 443 477 385 Q 511 328 512 256 Q 511 184 477 127 Q 443 69 385 35 Q 328 1 256 0 Q 203 0 156 20 Q 110 40 75 75 L 75 75 Z M 256 128 Q 234 130 232 152 L 232 256 L 232 256 Q 232 266 239 273 L 311 345 L 311 345 Q 328 359 345 345 Q 359 328 345 311 L 280 246 L 280 246 L 280 152 L 280 152 Q 278 130 256 128 L 256 128 Z" />
+                </svg>
+                <div>Lịch sử</div>
+            </button>
+        </div>
+
+        <!-- History Modal -->
+        <div class="fixed inset-0 bg-gray-900 bg-opacity-50 z-50 flex items-center justify-center" ng-if="isHistoryOpen" ng-click="closeHistory()">
+            <div class="bg-white w-11/12 max-w-lg rounded-lg shadow-lg" ng-click="$event.stopPropagation()">
+                <div class="p-4 flex justify-between items-center border-b">
+                    <h2 class="text-lg font-semibold text-gray-800">
+                        Lịch sử xem
+                    </h2>
+                    <button ng-click="closeHistory()" class="text-gray-500 hover:text-gray-700">&times;</button>
+                </div>
+                <ul class="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+                    <li ng-if="history.length === 0" class="py-4 text-center text-gray-500">
+                        Oops~ Bạn chưa xem phim nào cả! 🥺
+                    </li>
+                    <li ng-repeat="item in history track by $index" class="py-2 px-4 flex items-center gap-3">
+                        <img ng-src="{{item.poster}}" alt="{{item.name}}" loading="lazy" class="w-10 h-14 object-cover rounded-md shadow-md" ng-error="this.src='https://picsum.photos/2000/3000?random=' + new Date().getTime()">
+                        <div>
+                            <a href="./play.html?slug={{item.slug}}&episode={{item.lastWatchedEpisode.key}}" class="text-blue-500 hover:underline text-sm">{{item.name}}</a>
+                            <div class="text-xs text-gray-500">
+                                {{item.timestamp | date:'short'}} - Đã xem: {{item.lastWatchedEpisode.value || 'N/A'}}
+                            </div>
+                        </div>
+                    </li>
+                </ul>
+                <div ng-if="history.length > 0" class="p-4 text-right border-t">
+                    <button ng-click="clearHistory()" class="px-4 py-2 text-white bg-red-500 hover:bg-red-600 rounded-md shadow transition">
+                        Xóa lịch sử xem
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Movie Grid -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6" ng-if="!isLoading">
+            <div ng-if="movies.length === 0" class="py-4 text-center text-gray-500 col-span-full">
+                Oops~ Không có phim nào trong danh sách của bạn! 🥺
+            </div>
+            <div class="bg-white rounded-lg shadow hover:shadow-lg cursor-pointer overflow-hidden transform transition-transform hover:scale-105 flex flex-col group" ng-repeat="movie in movies" ng-click="openMovie(movie.slug)">
+                <img ng-src="{{getMovieImage(movie.poster_url)}}" alt="{{movie.name}}" loading="lazy" class="w-full object-cover" style="aspect-ratio: 2/3;" ng-error="this.src='https://picsum.photos/2000/3000?random=' + new Date().getTime()">
+                <div class="p-3 flex flex-col flex-grow">
+                    <h3 class="text-sm font-semibold text-gray-800 line-clamp-2" title="{{movie.name}}">{{movie.name}}</h3>
+                    <p class="text-xs text-gray-500 mt-2">{{movie.episode_current || 'N/A'}}</p>
+                </div>
+            </div>
+        </div>
+        <!-- Pagination Controls -->
+        <nav ng-if="movies.length > 0" aria-label="Page navigation example" class="mt-6 flex justify-center items-center w-full" ng-if="!isLoading">
+            <ul class="flex items-center h-10 text-base">
+                <!-- First Page Button -->
+                <li ng-if="currentPage > 1">
+                    <button ng-click="goToPage(1)" class="px-3 h-8 flex items-center justify-center border text-gray-500 hover:bg-blue-600 hover:text-white">
+                        <!-- chevrons-left icon by Free Icons (https://free-icons.github.io/free-icons/) -->
+                        <svg xmlns="http://www.w3.org/2000/svg" height="1.25em" fill="currentColor" viewBox="0 0 512 512">
+                            <path
+                                d="M 10.285714285714286 229.71428571428572 Q 0 241.14285714285714 0 256 L 0 256 L 0 256 Q 0 270.85714285714283 10.285714285714286 282.2857142857143 L 229.71428571428572 501.7142857142857 L 229.71428571428572 501.7142857142857 Q 241.14285714285714 512 256 512 Q 270.85714285714283 512 282.2857142857143 501.7142857142857 Q 292.57142857142856 490.2857142857143 292.57142857142856 475.42857142857144 Q 292.57142857142856 460.57142857142856 282.2857142857143 449.14285714285717 L 88 256 L 88 256 L 282.2857142857143 62.857142857142854 L 282.2857142857143 62.857142857142854 Q 292.57142857142856 51.42857142857143 292.57142857142856 36.57142857142857 Q 292.57142857142856 21.714285714285715 282.2857142857143 10.285714285714286 Q 270.85714285714283 0 256 0 Q 241.14285714285714 0 229.71428571428572 10.285714285714286 L 10.285714285714286 229.71428571428572 L 10.285714285714286 229.71428571428572 Z M 449.14285714285717 10.285714285714286 L 229.71428571428572 229.71428571428572 L 449.14285714285717 10.285714285714286 L 229.71428571428572 229.71428571428572 Q 219.42857142857142 241.14285714285714 219.42857142857142 256 Q 219.42857142857142 270.85714285714283 229.71428571428572 282.2857142857143 L 449.14285714285717 501.7142857142857 L 449.14285714285717 501.7142857142857 Q 460.57142857142856 512 475.42857142857144 512 Q 490.2857142857143 512 501.7142857142857 501.7142857142857 Q 512 490.2857142857143 512 475.42857142857144 Q 512 460.57142857142856 501.7142857142857 449.14285714285717 L 307.42857142857144 256 L 307.42857142857144 256 L 501.7142857142857 62.857142857142854 L 501.7142857142857 62.857142857142854 Q 512 51.42857142857143 512 36.57142857142857 Q 512 21.714285714285715 501.7142857142857 10.285714285714286 Q 490.2857142857143 0 475.42857142857144 0 Q 460.57142857142856 0 449.14285714285717 10.285714285714286 L 449.14285714285717 10.285714285714286 Z" />
+                        </svg>
+                    </button>
+                </li>
+
+                <!-- Previous Button -->
+                <li ng-if="currentPage > 1">
+                    <button ng-click="prevPage()" class="px-3 h-8 flex items-center justify-center border text-gray-500 hover:bg-blue-600 hover:text-white">
+                        <!-- chevron-left icon by Free Icons (https://free-icons.github.io/free-icons/) -->
+                        <svg xmlns="http://www.w3.org/2000/svg" height="1.25em" fill="currentColor" viewBox="0 0 512 512">
+                            <path d="M 120 229.71428571428572 Q 109.71428571428571 241.14285714285714 109.71428571428571 256 L 109.71428571428571 256 L 109.71428571428571 256 Q 109.71428571428571 270.85714285714283 120 282.2857142857143 L 339.42857142857144 501.7142857142857 L 339.42857142857144 501.7142857142857 Q 350.85714285714283 512 365.7142857142857 512 Q 380.57142857142856 512 392 501.7142857142857 Q 402.2857142857143 490.2857142857143 402.2857142857143 475.42857142857144 Q 402.2857142857143 460.57142857142856 392 449.14285714285717 L 197.71428571428572 256 L 197.71428571428572 256 L 392 62.857142857142854 L 392 62.857142857142854 Q 402.2857142857143 51.42857142857143 402.2857142857143 36.57142857142857 Q 402.2857142857143 21.714285714285715 392 10.285714285714286 Q 380.57142857142856 0 365.7142857142857 0 Q 350.85714285714283 0 339.42857142857144 10.285714285714286 L 120 229.71428571428572 L 120 229.71428571428572 Z" />
+                        </svg>
+                    </button>
+                </li>
+                <li ng-if="currentPage > 1 && currentPage > 2">
+                    <button ng-disabled="true" class="px-3 h-8 flex items-center justify-center border disabled:opacity-50 disabled:cursor-not-allowed">
+                        ...
+                    </button>
+                </li>
+                <!-- Page Numbers -->
+                <li ng-repeat="page in generateVisiblePages(totalPages, currentPage)" ng-class="{'bg-blue-500 text-white': page === currentPage, 'text-gray-500': page !== currentPage}">
+                    <button ng-click="page !== currentPage && goToPage(page)" ng-disabled="page === currentPage" class="px-3 h-8 flex items-center justify-center border hover:bg-blue-600 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed">
+                        {{page}}
+                    </button>
+                </li>
+                <li ng-if="currentPage < totalPages && currentPage < totalPages - 1 ">
+                    <button ng-disabled="true" class="px-3 h-8 flex items-center justify-center border disabled:opacity-50 disabled:cursor-not-allowed">
+                        ...
+                    </button>
+                </li>
+                <!-- Next Button -->
+                <li ng-if="currentPage < totalPages">
+                    <button ng-click="nextPage()" class="px-3 h-8 flex items-center justify-center border text-gray-500 hover:bg-blue-600 hover:text-white">
+                        <!-- chevron-right icon by Free Icons (https://free-icons.github.io/free-icons/) -->
+                        <svg xmlns="http://www.w3.org/2000/svg" height="1.25em" fill="currentColor" viewBox="0 0 512 512">
+                            <path d="M 392 229.71428571428572 Q 402.2857142857143 241.14285714285714 402.2857142857143 256 L 402.2857142857143 256 L 402.2857142857143 256 Q 402.2857142857143 270.85714285714283 392 282.2857142857143 L 172.57142857142858 501.7142857142857 L 172.57142857142858 501.7142857142857 Q 161.14285714285714 512 146.28571428571428 512 Q 131.42857142857142 512 120 501.7142857142857 Q 109.71428571428571 490.2857142857143 109.71428571428571 475.42857142857144 Q 109.71428571428571 460.57142857142856 120 449.14285714285717 L 314.2857142857143 256 L 314.2857142857143 256 L 120 62.857142857142854 L 120 62.857142857142854 Q 109.71428571428571 51.42857142857143 109.71428571428571 36.57142857142857 Q 109.71428571428571 21.714285714285715 120 10.285714285714286 Q 131.42857142857142 0 146.28571428571428 0 Q 161.14285714285714 0 172.57142857142858 10.285714285714286 L 392 229.71428571428572 L 392 229.71428571428572 Z" />
+                        </svg>
+                    </button>
+                </li>
+
+                <!-- Last Page Button -->
+                <li ng-if="currentPage < totalPages">
+                    <button ng-click="goToPage(totalPages)" class="px-3 h-8 flex items-center justify-center border text-gray-500 hover:bg-blue-600 hover:text-white">
+                        <!-- chevrons-right icon by Free Icons (https://free-icons.github.io/free-icons/) -->
+                        <svg xmlns="http://www.w3.org/2000/svg" height="1.25em" fill="currentColor" viewBox="0 0 512 512">
+                            <path
+                                d="M 501.7142857142857 282.2857142857143 Q 512 270.85714285714283 512 256 L 512 256 L 512 256 Q 512 241.14285714285714 501.7142857142857 229.71428571428572 L 282.2857142857143 10.285714285714286 L 282.2857142857143 10.285714285714286 Q 270.85714285714283 0 256 0 Q 241.14285714285714 0 229.71428571428572 10.285714285714286 Q 219.42857142857142 21.714285714285715 219.42857142857142 36.57142857142857 Q 219.42857142857142 51.42857142857143 229.71428571428572 62.857142857142854 L 424 256 L 424 256 L 229.71428571428572 449.14285714285717 L 229.71428571428572 449.14285714285717 Q 219.42857142857142 460.57142857142856 219.42857142857142 475.42857142857144 Q 219.42857142857142 490.2857142857143 229.71428571428572 501.7142857142857 Q 241.14285714285714 512 256 512 Q 270.85714285714283 512 282.2857142857143 501.7142857142857 L 501.7142857142857 282.2857142857143 L 501.7142857142857 282.2857142857143 Z M 62.857142857142854 501.7142857142857 L 282.2857142857143 282.2857142857143 L 62.857142857142854 501.7142857142857 L 282.2857142857143 282.2857142857143 Q 292.57142857142856 270.85714285714283 292.57142857142856 256 Q 292.57142857142856 241.14285714285714 282.2857142857143 229.71428571428572 L 62.857142857142854 10.285714285714286 L 62.857142857142854 10.285714285714286 Q 51.42857142857143 0 36.57142857142857 0 Q 21.714285714285715 0 10.285714285714286 10.285714285714286 Q 0 21.714285714285715 0 36.57142857142857 Q 0 51.42857142857143 10.285714285714286 62.857142857142854 L 204.57142857142858 256 L 204.57142857142858 256 L 10.285714285714286 449.14285714285717 L 10.285714285714286 449.14285714285717 Q 0 460.57142857142856 0 475.42857142857144 Q 0 490.2857142857143 10.285714285714286 501.7142857142857 Q 21.714285714285715 512 36.57142857142857 512 Q 51.42857142857143 512 62.857142857142854 501.7142857142857 L 62.857142857142854 501.7142857142857 Z" />
+                        </svg>
+                    </button>
+                </li>
+            </ul>
+        </nav>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/angular.js/1.8.2/angular.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+    <script src="./js/main.js"></script>
+</body>
+</html>
