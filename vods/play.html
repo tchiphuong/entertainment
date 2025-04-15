@@ -33,10 +33,10 @@
         </nav>
 
         <div class="w-full flex flex-col lg:flex-row justify-start lg:justify-center gap-4 h-full lg:h-auto">
-            <div class="w-full lg:w-8/12 min-w-8/12 rounded-md border bg-white overflow-hidden" style="aspect-ratio: 16/9; min-width: 66.666667%;">
+            <div class="w-full rounded-md border bg-white overflow-hidden" style="aspect-ratio: 16/9;">
                 <div id="player" class="h-full"></div>
             </div>
-            <div class="w-full rounded-md border bg-white flex flex-col">
+            <div class="w-full rounded-md border bg-white flex flex-col lg:w-1/2 overflow-hidden transition-all duration-300" ng-class="{'lg:w-0 border-0': isPanelHidden, 'lg:w-1/2 border': !isPanelHidden}">
                 <!-- Episode Tabs -->
                 <div class="relative">
                     <ul class="flex px-2 py-2 gap-2 list-none bg-gray-200 rounded-t-md" role="tablist">

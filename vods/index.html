@@ -54,8 +54,23 @@
                         <img ng-src="{{item.poster}}" alt="{{item.name}}" loading="lazy" class="w-10 h-14 object-cover rounded-md shadow-md" ng-error="this.src='https://picsum.photos/2000/3000?random=' + new Date().getTime()">
                         <div>
                             <a href="./play.html?slug={{item.slug}}&episode={{item.lastWatchedEpisode.key}}" class="text-blue-500 hover:underline text-sm">{{item.name}}</a>
-                            <div class="text-xs text-gray-500">
-                                {{item.timestamp | date:'short'}} - Đã xem: {{item.lastWatchedEpisode.value || 'N/A'}}
+                            <div class="text-xs text-gray-500 flex gap-2 mt-1">
+                                <span class="flex items-center gap-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" height="1em" fill="currentColor" viewBox="0 0 512 512" class="text-gray-500">
+                                        <path d="M 160 0 Q 182 2 184 24 L 184 64 L 184 64 L 328 64 L 328 64 L 328 24 L 328 24 Q 330 2 352 0 Q 374 2 376 24 L 376 64 L 376 64 L 416 64 L 416 64 Q 443 65 461 83 Q 479 101 480 128 L 480 144 L 480 144 L 480 192 L 480 192 L 480 448 L 480 448 Q 479 475 461 493 Q 443 511 416 512 L 96 512 L 96 512 Q 69 511 51 493 Q 33 475 32 448 L 32 192 L 32 192 L 32 144 L 32 144 L 32 128 L 32 128 Q 33 101 51 83 Q 69 65 96 64 L 136 64 L 136 64 L 136 24 L 136 24 Q 138 2 160 0 L 160 0 Z M 432 192 L 80 192 L 432 192 L 80 192 L 80 448 L 80 448 Q 81 463 96 464 L 416 464 L 416 464 Q 431 463 432 448 L 432 192 L 432 192 Z M 144 256 L 240 256 L 144 256 L 240 256 Q 255 257 256 272 L 256 368 L 256 368 Q 255 383 240 384 L 144 384 L 144 384 Q 129 383 128 368 L 128 272 L 128 272 Q 129 257 144 256 L 144 256 Z"></path>
+                                    </svg>
+                                    {{item.timestamp | date:'dd/MM/yyyy'}}
+                                </span>
+                                <span>-</span>
+                                <span class="flex items-center gap-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" height="1em" fill="currentColor" viewBox="0 0 512 512" class="text-gray-500">
+                                        <path d="M 464 256 Q 464 313 436 360 L 436 360 L 436 360 Q 409 407 360 436 Q 311 464 256 464 Q 201 464 152 436 Q 103 407 76 360 Q 48 313 48 256 Q 48 199 76 152 Q 103 105 152 76 Q 201 48 256 48 Q 311 48 360 76 Q 409 105 436 152 Q 464 199 464 256 L 464 256 Z M 0 256 Q 1 326 34 384 L 34 384 L 34 384 Q 68 442 128 478 Q 189 512 256 512 Q 323 512 384 478 Q 444 442 478 384 Q 511 326 512 256 Q 511 186 478 128 Q 444 70 384 34 Q 323 0 256 0 Q 189 0 128 34 Q 68 70 34 128 Q 1 186 0 256 L 0 256 Z M 232 120 L 232 256 L 232 120 L 232 256 Q 232 269 243 276 L 339 340 L 339 340 Q 358 351 372 333 Q 383 314 365 300 L 280 243 L 280 243 L 280 120 L 280 120 Q 278 98 256 96 Q 234 98 232 120 L 232 120 Z"></path>
+                                    </svg>
+                                    {{item.timestamp | date:'HH:mm:ss'}}
+                                </span>
+                            </div>
+                            <div class="text-xs text-gray-500 flex gap-2 mt-1">
+                                Đã xem: {{item.lastWatchedEpisode.value || 'N/A'}}
                             </div>
                         </div>
                     </li>
