@@ -259,7 +259,7 @@
                 <div x-show="tab === 'highlights'" class="absolute inset-0 mt-5" x-transition:enter="transition-opacity ease-out duration-500 sm:duration-700" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition-opacity ease-out duration-500 sm:duration-700" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
                     <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         <template x-for="highlight in highlights" :key="highlight.id">
-                            <a :href="`${host}get-key.html?id=${highlight.id}`" target="_blank" class="relative group block bg-white rounded-lg shadow hover:shadow-lg transition">
+                            <a :href="`get-key.html?id=${highlight.id}`" target="_blank" class="relative group block bg-white rounded-lg shadow hover:shadow-lg transition">
                                 <img :src="highlight.feature_image" alt="" loading="lazy" class="w-full aspect-video object-cover rounded-t-lg">
                                 <div class="flex items-center gap-3 ml-3 absolute top-[0.5rem] -right-2">
                                     <span class="inline-flex items-center justify-center px-4 py-0.5 text-xs rounded-full rounded-br-none shadow-md w-max bg-gradient-to-r before:content-[''] before:absolute before:right-0 before:-bottom-2 before:w-0 before:h-0 before:border-r-8 before:border-t-8 before:border-r-transparent text-white from-blue-600 to-blue-400 before:border-t-blue-300" x-text="highlight.description.split('|')[1].replace('BLV ','')"></span>
