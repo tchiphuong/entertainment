@@ -103,7 +103,7 @@
                         </div>
                         <div class="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
                             <template x-for="match in matches" :key="match.id">
-                                <a :href="`get-key.html?id=${match.id}&title=${match.title}&isLive=1`" target="_blank" data-type="match" :data-tournament="match.tournament.id" :match="match.id" :match-live="match.isLive" x-show="selectedTournament === null || match.tournament.id === selectedTournament" class="group relative flex flex-col rounded-lg border border-gray-200 bg-white hover:scale-[102%] hover:shadow-lg overflow-hidden">
+                                <a :href="`get-key.html?id=${match.id}&title=${match.title}&isLive=1`" target="_blank" data-type="match" :data-tournament="match.tournament.id" :match="match.id" :match-live="match.isLive" x-show="selectedTournament === null || match.tournament.id === selectedTournament" class="group relative flex flex-col rounded-lg border border-gray-200 bg-white hover:scale-[102%] hover:shadow-lg">
                                     <img class="hidden" :title="match.title" :src="`https://img-90p.4shares.live/matchvb/${match.id}/pending.webp`" @error="event.target.src = 'https://vebo.thethaoiptv.com/bg-vb2.png'">
                                     <div class="flex items-center gap-3 ml-3 absolute top-2 -right-2">
                                         <span x-text="match.status.text" :class="match.status.class" class="inline-flex items-center justify-center px-4 py-0.5 text-xs rounded-full rounded-br-none shadow-md w-max bg-gradient-to-r before:content-[''] before:absolute before:right-0 before:-bottom-2 before:w-0 before:h-0 before:border-r-8 before:border-t-8 before:border-r-transparent"></span>
@@ -382,6 +382,8 @@
                         url = `https://api.vebo.xyz/api/match/fixture/${selectedDate.format("YYYYMMDD")}`
                     } else if (this.isCheckFeatured) {
                         url = `https://api.vebo.xyz/api/match/featured`;
+                        url = `https://q.thapcamn.xyz/api/match/tc/featured`;
+                        url = `https://br.vebo.xyz/api/match/vb/featured`;
                     }
 
                     // if (this.hasLoadedFixtures && this.url == url) return;
@@ -394,7 +396,7 @@
                         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                         const data = await response.json();
 
-                        this.matches = Object.values(data.data)
+                        this.matches = Object.values(data.featured)
                             .filter(match => match.sport_type)
                             .sort((a, b) => {
                                 const nameA = a.home?.name || '';
@@ -415,8 +417,8 @@
                                     return timestampA - timestampB;
                                 }
 
-                                const priorityA = a.tournament.unique_tournament.priority || 0;
-                                const priorityB = b.tournament.unique_tournament.priority || 0;
+                                const priorityA = a.tournament.priority || 0;
+                                const priorityB = b.tournament.priority || 0;
                                 return priorityB - priorityA;
                             })
                             .map(match => {
@@ -424,7 +426,7 @@
                                 return {
                                     id: match.id,
                                     title: match.name,
-                                    tournament: match?.tournament?.unique_tournament,
+                                    tournament: match?.tournament,
                                     homeLogo: match?.home?.logo || this.fallbackLogo(match?.home?.name),
                                     homeTeam: match.home?.name,
                                     homeScore: match.scores.home,
@@ -434,7 +436,7 @@
                                     dateFormatted: moment(match.date).format('dd, DD/MM/YY'),
                                     timeFormatted: startTime.format('HH:mm'),
                                     isLive: match.is_live,
-                                    commentator: match.commentators ? match.commentators.map(c => c.name) : ["N/A"],
+                                    commentator: match?.fansites.map(c => c.name) || ["N/A"],
                                     startTime: startTime.format(),
                                     homeRedCards: match.home_red_cards || 0,
                                     awayRedCards: match.away_red_cards || 0,
