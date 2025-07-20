@@ -373,6 +373,8 @@
                 replayPage: 1,
                 loadingReplays: false,
                 host: "https://tchiphuong.github.io/iptv/",
+                matchNotificationQueue: [],
+                matchNotificationInterval: null,
                 async loadFixtures(selectedLeagueId) {
                     let url = `https://live.vebo.xyz/api/match/live`;
                     if (selectedLeagueId) {
@@ -484,6 +486,8 @@
                         console.log(this.matches);
                         console.log(this.tournaments);
                         console.log(this.selectedTournament)
+                        // Cập nhật lại queue notification sau khi load xong matches
+                        this.initMatchNotificationQueue();
                     } catch (error) {
                         console.error("Error loading fixtures:", error);
                     } finally {
@@ -533,9 +537,13 @@
                     this.loadReplays();
                 },
                 async initFixtures() {
+                    // Xin quyền notification khi load trang
+                    if (window.Notification && Notification.permission !== "granted") {
+                        Notification.requestPermission();
+                    }
                     const response = await fetch('data/custom-logo.json');
                     this.leagueLogos = await response.json();
-                    this.loadFixtures();
+                    await this.loadFixtures();
                     this.updateIndicator();
                     flatpickr("#date", {
                         locale: "vn",
@@ -544,6 +552,8 @@
                     });
                     this.fetchLeagues();
                     window.addEventListener('scroll', () => this.handleScroll());
+                    // Khởi tạo queue và timer thông báo
+                    this.initMatchNotificationQueue();
                 },
                 handleScroll() {
                     this.showScrollToTop = window.scrollY > 200;
@@ -709,6 +719,63 @@
                 },
                 scrollToTop() {
                     window.scrollTo({ top: 0, behavior: 'smooth' });
+                },
+                initMatchNotificationQueue() {
+                    // Xóa queue cũ
+                    this.matchNotificationQueue = [];
+                    // Thêm các trận đấu vào queue
+                    this.matches.forEach(match => {
+                        // Chỉ thêm các trận chưa diễn ra
+                        if (moment(match.startTime).isAfter(moment())) {
+                            this.matchNotificationQueue.push({
+                                id: match.id,
+                                title: match.title,
+                                time: match.startTime
+                            });
+                        }
+                    });
+                    // Nếu đã có interval thì clear
+                    if (this.matchNotificationInterval) {
+                        clearInterval(this.matchNotificationInterval);
+                    }
+                    // Thiết lập interval kiểm tra mỗi 10s
+                    this.matchNotificationInterval = setInterval(() => {
+                        const now = moment();
+                        // Duyệt queue, nếu còn đúng 5 phút thì thông báo
+                        this.matchNotificationQueue = this.matchNotificationQueue.filter(item => {
+                            const diff = moment(item.time).diff(now, 'minutes');
+                            if (diff === 5) {
+                                this.notifyMatch(item);
+                                return false; // loại khỏi queue
+                            }
+                            return true;
+                        });
+                    }, 10000);
+                },
+                notifyMatch(match) {
+                    let iconUrl = '';
+                    // Ưu tiên logo giải đấu, nếu không có thì logo đội nhà, nếu không có thì icon mặc định
+                    if (match.tournament && match.tournament.logo) {
+                        iconUrl = match.tournament.logo;
+                    } else if (match.homeLogo) {
+                        iconUrl = match.homeLogo;
+                    } else {
+                        iconUrl = 'https://tchiphuong.github.io/iptv/images/live.png';
+                    }
+                    // Tạo url giống như thẻ a
+                    const url = `get-key.html?id=${match.id}&title=${encodeURIComponent(match.title)}&isLive=1`;
+                    if (window.Notification && Notification.permission === "granted") {
+                        const notification = new Notification("Sắp có trận đấu!", {
+                            body: `${match.title} sẽ bắt đầu lúc ${moment(match.time).format('HH:mm')}`,
+                            icon: iconUrl
+                        });
+                        notification.onclick = function (event) {
+                            event.preventDefault();
+                            window.open(url, '_blank');
+                        };
+                    } else {
+                        alert(`${match.title} sẽ bắt đầu lúc ${moment(match.time).format('HH:mm')}`);
+                    }
                 }
             };
         }
@@ -788,13 +855,11 @@
                         });
                         return map;
                     }, {});
-
                     // Thêm thuộc tính `change` vào currentRanks
                     currentRanks.forEach(rankGroup => {
                         rankGroup.team_ranks.forEach(team => {
                             const key = `${team.league_id}_${team.team_id}`;
                             const previousRank = previousRankMap[key]; // Tra cứu bằng `league_id` và `team_id`
-
                             if (previousRank === undefined) {
                                 team.change = "new"; // Đội mới
                             } else if (previousRank > team.team_rank) {
@@ -806,95 +871,8 @@
                             }
                         });
                     });
-
                     return currentRanks;
                 },
-                savePreviousDataToStorage(previousData) {
-                    localStorage.setItem('previousData', JSON.stringify(previousData));
-                },
-                getPreviousDataFromStorage() {
-                    const data = localStorage.getItem('previousData');
-                    try {
-                        return data ? JSON.parse(data) : null;
-                    } catch (e) {
-                        console.error("Error parsing data from localStorage", e);
-                        return null;
-                    }
-                },
-                fallbackLogo(name) {
-                    return `https://ui-avatars.com/api/?format=svg&rounded=true&name=${encodeURIComponent(name)}`;
-                },
-            };
-        }
-
-        function leagueSelectComponent() {
-            return {
-                selectedLeagueId: '',
-                leagues: [],
-                isLoading: true,
-                initLeague() {
-                    this.fetchLeagues();
-                },
-                fetchLeagues() {
-                    const url = 'https://soccer-api.api.vinasports.com.vn/api/v1/publish/leagues';
-                    fetch(url)
-                        .then(response => response.json())
-                        .then(data => {
-                            this.isLoading = false;
-                            if (data.success && data.data) {
-                                // Filter leagues where sport_type is 1
-                                this.leagues = data.data
-                                    .filter(league => league.sport_type === 1 && league.app_display) // Filtering logic
-                                    // Sort leagues by league_type, then by order_number
-                                    .sort((a, b) => {
-                                        return a.order_number - b.order_number;
-                                    })
-                                    .map(league => ({
-                                        id: league.league_sync_id,
-                                        name: league.name,
-                                        logo: league.logo // Assuming logo is available
-                                    }));
-
-                                // Initialize Select2 after leagues are loaded
-                                this.$nextTick(() => {
-                                    $('#cbb-standings').select2({
-                                        templateResult: (league) => this.formatState(league, this.isLoading),
-                                        templateSelection: (league) => this.formatState(league, this.isLoading),
-                                        data: this.leagues,
-                                        width: '100%',
-                                        language: 'vi',
-                                        allowClear: true, // Kích hoạt nút clear
-                                        placeholder: 'Chọn giải đấu...', // Placeholder để hiển thị khi không có lựa chọn
-                                    }).on('change', (e) => {
-                                        this.selectedLeagueId = $(e.target).val(); // Update the model
-                                        this.fetchRankingsForLeague(); // Call the method to fetch rankings
-                                    });
-                                });
-                            } else {
-                                console.error('No league data available');
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Error loading the leagues:', error);
-                        });
-                },
-                formatState(league, isLoading = false) {
-                    if (isLoading) {
-                        return $(`<div class="flex items-center gap-2">
-                                    <div class="h-6 w-6 bg-gray-300 animate-pulse rounded-full"></div>
-                                    <div class="h-4 w-24 bg-gray-300 animate-pulse rounded"></div>
-                                </div>`);
-                    }
-
-                    if (!league.id) {
-                        return league.text; // Return the default text if no ID
-                    }
-
-                    return $(`<div class="flex items-center gap-2">
-                                <img class="h-6 w-6 object-contain rounded-full" src="${league.logo}" />
-                                <span>${league.name}</span>
-                            </div>`);
-                }
             };
         }
     </script>
