@@ -20,17 +20,21 @@
         </div>
     </div>
     <!-- Main Content -->
-    <main class="flex-1 container mx-auto px-4 lg:px-20 py-4">
+    <main class="flex-1 container mx-auto px-4 lg:px-32 py-4 flex flex-col">
         <!-- Search Bar -->
-        <div class="mb-6 flex flex-row justify-between gap-4 items-center">
-            <input type="text" ng-model="searchKeyword" placeholder="Tìm kiếm phim..." class="w-full lg:w-1/2 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" ng-keyup="searchMovies($event)" />
+        <div class="mb-4 flex flex-row flex-wrap justify-between gap-4 items-center">
+            <div class="w-full lg:w-1/2 ">
+                <input type="text" ng-model="searchKeyword" placeholder="Tìm kiếm phim..." class="p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" ng-keyup="searchMovies($event)" />
+            </div>
             <!-- Country Selector -->
-            <select id="countrySelector" class="w-full lg:w-1/4 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <option></option>
-            </select>
-            <button ng-click="toggleHistory($event)" class="px-4 py-2 flex gap-2 items-center bg-blue-500 text-white rounded-md shadow hover:bg-blue-600 transition whitespace-nowrap">
+            <div class="flex-1 lg:w-1/2">
+                <select id="countrySelector" class="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <option></option>
+                </select>
+            </div>
+            <button ng-click="toggleHistory($event)" class="px-4 py-2 flex gap-2 items-center bg-blue-500 text-white rounded-md shadow hover:bg-blue-600 transition-all duration-300 ease-in-out hover:shadow-lg whitespace-nowrap transform hover:scale-105">
                 <!-- clock-rotate-left icon by Free Icons (https://free-icons.github.io/free-icons/) -->
-                <svg xmlns="http://www.w3.org/2000/svg" height="1em" fill="currentColor" viewBox="0 0 512 512">
+                <svg xmlns="http://www.w3.org/2000/svg" height="1em" fill="currentColor" viewBox="0 0 512 512" class="transform transition-transform duration-300 group-hover:rotate-[-360deg]">
                     <path d="M 75 75 L 41 41 L 75 75 L 41 41 Q 29 30 15 36 Q 1 41 0 58 L 0 168 L 0 168 Q 2 190 24 192 L 134 192 L 134 192 Q 151 191 156 177 Q 162 163 151 151 L 120 120 L 120 120 Q 174 66 256 64 Q 338 66 392 120 Q 446 174 448 256 Q 446 338 392 392 Q 338 446 256 448 Q 194 447 146 414 Q 135 406 122 408 Q 110 411 102 422 Q 94 433 96 445 Q 99 458 110 466 Q 173 511 256 512 Q 328 511 385 477 Q 443 443 477 385 Q 511 328 512 256 Q 511 184 477 127 Q 443 69 385 35 Q 328 1 256 0 Q 203 0 156 20 Q 110 40 75 75 L 75 75 Z M 256 128 Q 234 130 232 152 L 232 256 L 232 256 Q 232 266 239 273 L 311 345 L 311 345 Q 328 359 345 345 Q 359 328 345 311 L 280 246 L 280 246 L 280 152 L 280 152 Q 278 130 256 128 L 256 128 Z" />
                 </svg>
                 <div>Lịch sử</div>
@@ -50,9 +54,9 @@
                     <li ng-if="history.length === 0" class="py-4 text-center text-gray-500">
                         Oops~ Bạn chưa xem phim nào cả! 🥺
                     </li>
-                    <li ng-repeat="item in history track by $index" class="py-2 px-4 flex items-center gap-3">
+                    <li ng-repeat="item in history track by $index" class="py-2 px-4 flex items-center gap-3 hover:bg-gray-50 group">
                         <img ng-src="{{item.poster}}" alt="{{item.name}}" loading="lazy" class="w-10 h-14 object-cover rounded-md shadow-md" ng-error="this.src='https://picsum.photos/2000/3000?random=' + new Date().getTime()">
-                        <div>
+                        <div class="flex-1">
                             <a href="./play.html?slug={{item.slug}}&episode={{item.lastWatchedEpisode.key}}" class="text-blue-500 hover:underline text-sm">{{item.name}}</a>
                             <div class="text-xs text-gray-500 flex gap-2 mt-1">
                                 <span class="flex items-center gap-1">
@@ -73,6 +77,11 @@
                                 Đã xem: {{item.lastWatchedEpisode.value || 'N/A'}}
                             </div>
                         </div>
+                        <button ng-click="deleteHistoryItem(item.slug, $event)" class="invisible group-hover:visible hover:text-red-500 transition-colors p-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" height="1em" fill="currentColor" viewBox="0 0 448 512">
+                                <path d="M135.2 17.7L128 32H32C14.3 32 0 46.3 0 64S14.3 96 32 96H416c17.7 0 32-14.3 32-32s-14.3-32-32-32H320l-7.2-14.3C307.4 6.8 296.3 0 284.2 0H163.8c-12.1 0-23.2 6.8-28.6 17.7zM416 128H32L53.2 467c1.6 25.3 22.6 45 47.9 45H346.9c25.3 0 46.3-19.7 47.9-45L416 128z" />
+                            </svg>
+                        </button>
                     </li>
                 </ul>
                 <div ng-if="history.length > 0" class="p-4 text-right border-t">
@@ -84,26 +93,45 @@
         </div>
 
         <!-- Movie Grid -->
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6" ng-if="!isLoading">
-            <div ng-if="movies.length === 0" class="py-4 text-center text-gray-500 col-span-full">
-                Oops~ Không có phim nào trong danh sách của bạn! 🥺
-            </div>
-            <div class="bg-white rounded-lg shadow hover:shadow-lg cursor-pointer overflow-hidden transform transition-transform hover:scale-105 flex flex-col group" ng-repeat="movie in movies" ng-click="openMovie(movie.slug)">
-                <img ng-src="{{getMovieImage(movie.poster_url)}}" alt="{{movie.name}}" loading="lazy" class="w-full object-cover" style="aspect-ratio: 2/3;" ng-error="this.src='https://picsum.photos/2000/3000?random=' + new Date().getTime()">
-                <div class="p-3 flex flex-col flex-grow">
-                    <h3 class="text-sm font-semibold text-gray-800 line-clamp-2" title="{{movie.name}}">{{movie.name}}</h3>
-                    <p class="text-xs text-gray-500 mt-2">{{movie.episode_current || 'N/A'}}</p>
+        <div class="flex-1">
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4" ng-if="!isLoading">
+                <div ng-if="movies.length === 0" class="py-4 text-center text-gray-500 col-span-full">
+                    Oops~ Không có phim nào trong danh sách của bạn! 🥺
+                </div>
+                <div title="{{movie.name}}" class="bg-white rounded-lg shadow hover:shadow-lg cursor-pointer overflow-hidden transform transition-transform hover:scale-105 flex flex-col group relative" ng-repeat="movie in movies" ng-click="openMovie(movie.slug)">
+                    <div class="relative">
+                        <img ng-src="{{getMovieImage(movie.poster_url)}}" alt="{{movie.name}}" loading="lazy" class="w-full object-cover" style="aspect-ratio: 2/3;" ng-error="this.src='https://picsum.photos/2000/3000?random=' + new Date().getTime()">
+                        <div class="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                            <span ng-repeat="lang in movie.lang.split('+')" class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset" ng-class="{
+      'bg-green-50 text-green-700 ring-green-600/10': lang.indexOf('Vietsub') !== -1,
+      'bg-blue-50 text-blue-700 ring-blue-600/10': lang.indexOf('Thuyết Minh') !== -1,
+      'bg-yellow-50 text-yellow-700 ring-yellow-600/10': lang.indexOf('Lồng Tiếng') !== -1
+    }">
+                                {{ lang.trim()
+                                .replace('Thuyết Minh', 'TM')
+                                .replace('Lồng Tiếng', 'LT')
+                                .replace('Vietsub', 'PĐ') }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="p-3 flex flex-col flex-grow">
+                        <h3 class="text-sm font-semibold text-gray-800 line-clamp-1">{{movie.name}}</h3>
+                        <p class="text-xs text-gray-500 mt-2">{{movie.episode_current || 'N/A'}}</p>
+                    </div>
+                    <span class="absolute top-2 right-2 inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-red-600/10 ring-inset">
+                        {{movie.quality}}
+                    </span>
                 </div>
             </div>
         </div>
         <!-- Pagination Controls -->
-        <nav ng-if="movies.length > 0" aria-label="Page navigation example" class="mt-6 flex justify-center items-center w-full" ng-if="!isLoading">
+        <nav ng-if="movies.length > 0" aria-label="Page navigation example" class="mt-4 flex justify-center items-center w-full" ng-if="!isLoading">
             <ul class="flex items-center h-10 text-base">
                 <!-- First Page Button -->
                 <li ng-if="currentPage > 1">
-                    <button ng-click="goToPage(1)" class="px-3 h-8 flex items-center justify-center border text-gray-500 hover:bg-blue-600 hover:text-white">
-                        <!-- chevrons-left icon by Free Icons (https://free-icons.github.io/free-icons/) -->
-                        <svg xmlns="http://www.w3.org/2000/svg" height="1.25em" fill="currentColor" viewBox="0 0 512 512">
+                    <button ng-click="goToPage(1)" class="w-8 h-8 flex items-center justify-center rounded-full border text-gray-500 transition-all duration-300 ease-in-out hover:bg-blue-500 hover:text-white hover:scale-110 hover:shadow-md mx-1">
+                        <!-- chevrons-left icon -->
+                        <svg xmlns="http://www.w3.org/2000/svg" height="0.875em" fill="currentColor" viewBox="0 0 512 512">
                             <path
                                 d="M 10.285714285714286 229.71428571428572 Q 0 241.14285714285714 0 256 L 0 256 L 0 256 Q 0 270.85714285714283 10.285714285714286 282.2857142857143 L 229.71428571428572 501.7142857142857 L 229.71428571428572 501.7142857142857 Q 241.14285714285714 512 256 512 Q 270.85714285714283 512 282.2857142857143 501.7142857142857 Q 292.57142857142856 490.2857142857143 292.57142857142856 475.42857142857144 Q 292.57142857142856 460.57142857142856 282.2857142857143 449.14285714285717 L 88 256 L 88 256 L 282.2857142857143 62.857142857142854 L 282.2857142857143 62.857142857142854 Q 292.57142857142856 51.42857142857143 292.57142857142856 36.57142857142857 Q 292.57142857142856 21.714285714285715 282.2857142857143 10.285714285714286 Q 270.85714285714283 0 256 0 Q 241.14285714285714 0 229.71428571428572 10.285714285714286 L 10.285714285714286 229.71428571428572 L 10.285714285714286 229.71428571428572 Z M 449.14285714285717 10.285714285714286 L 229.71428571428572 229.71428571428572 L 449.14285714285717 10.285714285714286 L 229.71428571428572 229.71428571428572 Q 219.42857142857142 241.14285714285714 219.42857142857142 256 Q 219.42857142857142 270.85714285714283 229.71428571428572 282.2857142857143 L 449.14285714285717 501.7142857142857 L 449.14285714285717 501.7142857142857 Q 460.57142857142856 512 475.42857142857144 512 Q 490.2857142857143 512 501.7142857142857 501.7142857142857 Q 512 490.2857142857143 512 475.42857142857144 Q 512 460.57142857142856 501.7142857142857 449.14285714285717 L 307.42857142857144 256 L 307.42857142857144 256 L 501.7142857142857 62.857142857142854 L 501.7142857142857 62.857142857142854 Q 512 51.42857142857143 512 36.57142857142857 Q 512 21.714285714285715 501.7142857142857 10.285714285714286 Q 490.2857142857143 0 475.42857142857144 0 Q 460.57142857142856 0 449.14285714285717 10.285714285714286 L 449.14285714285717 10.285714285714286 Z" />
                         </svg>
@@ -112,34 +140,37 @@
 
                 <!-- Previous Button -->
                 <li ng-if="currentPage > 1">
-                    <button ng-click="prevPage()" class="px-3 h-8 flex items-center justify-center border text-gray-500 hover:bg-blue-600 hover:text-white">
-                        <!-- chevron-left icon by Free Icons (https://free-icons.github.io/free-icons/) -->
-                        <svg xmlns="http://www.w3.org/2000/svg" height="1.25em" fill="currentColor" viewBox="0 0 512 512">
+                    <button ng-click="prevPage()" class="w-8 h-8 flex items-center justify-center rounded-full border text-gray-500 transition-all duration-300 ease-in-out hover:bg-blue-500 hover:text-white hover:scale-110 hover:shadow-md mx-1">
+                        <!-- chevron-left icon -->
+                        <svg xmlns="http://www.w3.org/2000/svg" height="0.875em" fill="currentColor" viewBox="0 0 512 512">
                             <path d="M 120 229.71428571428572 Q 109.71428571428571 241.14285714285714 109.71428571428571 256 L 109.71428571428571 256 L 109.71428571428571 256 Q 109.71428571428571 270.85714285714283 120 282.2857142857143 L 339.42857142857144 501.7142857142857 L 339.42857142857144 501.7142857142857 Q 350.85714285714283 512 365.7142857142857 512 Q 380.57142857142856 512 392 501.7142857142857 Q 402.2857142857143 490.2857142857143 402.2857142857143 475.42857142857144 Q 402.2857142857143 460.57142857142856 392 449.14285714285717 L 197.71428571428572 256 L 197.71428571428572 256 L 392 62.857142857142854 L 392 62.857142857142854 Q 402.2857142857143 51.42857142857143 402.2857142857143 36.57142857142857 Q 402.2857142857143 21.714285714285715 392 10.285714285714286 Q 380.57142857142856 0 365.7142857142857 0 Q 350.85714285714283 0 339.42857142857144 10.285714285714286 L 120 229.71428571428572 L 120 229.71428571428572 Z" />
                         </svg>
                     </button>
                 </li>
                 <li ng-if="currentPage > 1 && currentPage > 2">
-                    <button ng-disabled="true" class="px-3 h-8 flex items-center justify-center border disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button ng-disabled="true" class="w-8 h-8 flex items-center justify-center rounded-full border disabled:opacity-50 disabled:cursor-not-allowed mx-1">
                         ...
                     </button>
                 </li>
                 <!-- Page Numbers -->
-                <li ng-repeat="page in generateVisiblePages(totalPages, currentPage)" ng-class="{'bg-blue-500 text-white': page === currentPage, 'text-gray-500': page !== currentPage}">
-                    <button ng-click="page !== currentPage && goToPage(page)" ng-disabled="page === currentPage" class="px-3 h-8 flex items-center justify-center border hover:bg-blue-600 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed">
+                <li ng-repeat="page in generateVisiblePages(totalPages, currentPage)">
+                    <button ng-click="page !== currentPage && goToPage(page)" ng-disabled="page === currentPage" class="w-8 h-8 flex items-center justify-center rounded-full border mx-1 transition-all duration-300 ease-in-out" ng-class="{
+                                'bg-blue-500 text-white border-blue-500 scale-110 shadow-md': page === currentPage,
+                                'text-gray-500 hover:bg-blue-500 hover:text-white hover:scale-110 hover:shadow-md': page !== currentPage
+                            }">
                         {{page}}
                     </button>
                 </li>
                 <li ng-if="currentPage < totalPages && currentPage < totalPages - 1 ">
-                    <button ng-disabled="true" class="px-3 h-8 flex items-center justify-center border disabled:opacity-50 disabled:cursor-not-allowed">
+                    <button ng-disabled="true" class="w-8 h-8 flex items-center justify-center rounded-full border disabled:opacity-50 disabled:cursor-not-allowed mx-1">
                         ...
                     </button>
                 </li>
                 <!-- Next Button -->
                 <li ng-if="currentPage < totalPages">
-                    <button ng-click="nextPage()" class="px-3 h-8 flex items-center justify-center border text-gray-500 hover:bg-blue-600 hover:text-white">
-                        <!-- chevron-right icon by Free Icons (https://free-icons.github.io/free-icons/) -->
-                        <svg xmlns="http://www.w3.org/2000/svg" height="1.25em" fill="currentColor" viewBox="0 0 512 512">
+                    <button ng-click="nextPage()" class="w-8 h-8 flex items-center justify-center rounded-full border text-gray-500 transition-all duration-300 ease-in-out hover:bg-blue-500 hover:text-white hover:scale-110 hover:shadow-md mx-1">
+                        <!-- chevron-right icon -->
+                        <svg xmlns="http://www.w3.org/2000/svg" height="0.875em" fill="currentColor" viewBox="0 0 512 512">
                             <path d="M 392 229.71428571428572 Q 402.2857142857143 241.14285714285714 402.2857142857143 256 L 402.2857142857143 256 L 402.2857142857143 256 Q 402.2857142857143 270.85714285714283 392 282.2857142857143 L 172.57142857142858 501.7142857142857 L 172.57142857142858 501.7142857142857 Q 161.14285714285714 512 146.28571428571428 512 Q 131.42857142857142 512 120 501.7142857142857 Q 109.71428571428571 490.2857142857143 109.71428571428571 475.42857142857144 Q 109.71428571428571 460.57142857142856 120 449.14285714285717 L 314.2857142857143 256 L 314.2857142857143 256 L 120 62.857142857142854 L 120 62.857142857142854 Q 109.71428571428571 51.42857142857143 109.71428571428571 36.57142857142857 Q 109.71428571428571 21.714285714285715 120 10.285714285714286 Q 131.42857142857142 0 146.28571428571428 0 Q 161.14285714285714 0 172.57142857142858 10.285714285714286 L 392 229.71428571428572 L 392 229.71428571428572 Z" />
                         </svg>
                     </button>
@@ -147,9 +178,9 @@
 
                 <!-- Last Page Button -->
                 <li ng-if="currentPage < totalPages">
-                    <button ng-click="goToPage(totalPages)" class="px-3 h-8 flex items-center justify-center border text-gray-500 hover:bg-blue-600 hover:text-white">
-                        <!-- chevrons-right icon by Free Icons (https://free-icons.github.io/free-icons/) -->
-                        <svg xmlns="http://www.w3.org/2000/svg" height="1.25em" fill="currentColor" viewBox="0 0 512 512">
+                    <button ng-click="goToPage(totalPages)" class="w-8 h-8 flex items-center justify-center rounded-full border text-gray-500 transition-all duration-300 ease-in-out hover:bg-blue-500 hover:text-white hover:scale-110 hover:shadow-md mx-1">
+                        <!-- chevrons-right icon -->
+                        <svg xmlns="http://www.w3.org/2000/svg" height="0.875em" fill="currentColor" viewBox="0 0 512 512">
                             <path
                                 d="M 501.7142857142857 282.2857142857143 Q 512 270.85714285714283 512 256 L 512 256 L 512 256 Q 512 241.14285714285714 501.7142857142857 229.71428571428572 L 282.2857142857143 10.285714285714286 L 282.2857142857143 10.285714285714286 Q 270.85714285714283 0 256 0 Q 241.14285714285714 0 229.71428571428572 10.285714285714286 Q 219.42857142857142 21.714285714285715 219.42857142857142 36.57142857142857 Q 219.42857142857142 51.42857142857143 229.71428571428572 62.857142857142854 L 424 256 L 424 256 L 229.71428571428572 449.14285714285717 L 229.71428571428572 449.14285714285717 Q 219.42857142857142 460.57142857142856 219.42857142857142 475.42857142857144 Q 219.42857142857142 490.2857142857143 229.71428571428572 501.7142857142857 Q 241.14285714285714 512 256 512 Q 270.85714285714283 512 282.2857142857143 501.7142857142857 L 501.7142857142857 282.2857142857143 L 501.7142857142857 282.2857142857143 Z M 62.857142857142854 501.7142857142857 L 282.2857142857143 282.2857142857143 L 62.857142857142854 501.7142857142857 L 282.2857142857143 282.2857142857143 Q 292.57142857142856 270.85714285714283 292.57142857142856 256 Q 292.57142857142856 241.14285714285714 282.2857142857143 229.71428571428572 L 62.857142857142854 10.285714285714286 L 62.857142857142854 10.285714285714286 Q 51.42857142857143 0 36.57142857142857 0 Q 21.714285714285715 0 10.285714285714286 10.285714285714286 Q 0 21.714285714285715 0 36.57142857142857 Q 0 51.42857142857143 10.285714285714286 62.857142857142854 L 204.57142857142858 256 L 204.57142857142858 256 L 10.285714285714286 449.14285714285717 L 10.285714285714286 449.14285714285717 Q 0 460.57142857142856 0 475.42857142857144 Q 0 490.2857142857143 10.285714285714286 501.7142857142857 Q 21.714285714285715 512 36.57142857142857 512 Q 51.42857142857143 512 62.857142857142854 501.7142857142857 L 62.857142857142854 501.7142857142857 Z" />
                         </svg>

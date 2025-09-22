@@ -122,6 +122,18 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
     // Initialize JW Player
     $scope.initializePlayer = function (file) {
         if (typeof jwplayer === "function") {
+            // Add custom CSS to hide default rewind/forward buttons
+            const customCSS = `
+                .jw-display-icon-rewind, 
+                .jw-display-icon-next,
+                .jw-icon-rewind { 
+                    display: none !important; 
+                }
+            `;
+            const styleSheet = document.createElement("style");
+            styleSheet.textContent = customCSS;
+            document.head.appendChild(styleSheet);
+
             const player = jwplayer("player").setup({
                 file: file,
                 image: $scope.movie.poster_url,
@@ -130,31 +142,118 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
                 aspectratio: "16:9",
                 controls: true,
                 autostart: true,
+                displaytitle: true,
+                rewind: false, // Disable default rewind
+                nextUpDisplay: false, // Disable next up display
             });
 
-            // Add a custom "Theater Mode" button with a white SVG icon
-            let isTheaterMode = false; // Track theater mode state
+            // Add tooltip utility
+            const tooltips = {
+                container: null,
+                timeout: null,
+                init() {
+                    if (!this.container) {
+                        this.container = document.createElement("div");
+                        this.container.className = "shortcut-tooltip";
+                        this.container.style.cssText = `
+                            position: absolute;
+                            top: 20px;
+                            right: 20px;
+                            background: rgba(28, 28, 28, 0.9);
+                            color: white;
+                            padding: 8px 12px;
+                            border-radius: 4px;
+                            z-index: 9999;
+                            font-size: 14px;
+                            transition: opacity 0.2s;
+                            pointer-events: none;
+                        `;
+                        player.getContainer().appendChild(this.container);
+                    }
+                },
+                show(text, duration = 700) {
+                    this.init();
+                    this.container.textContent = text;
+                    this.container.style.opacity = "1";
+
+                    clearTimeout(this.timeout);
+                    this.timeout = setTimeout(() => {
+                        this.container.style.opacity = "0";
+                    }, duration);
+                },
+            };
+
+            // Add theater mode button with updated icon
             const theaterModeIcon = `
-                <!-- rectangle-list icon by Free Icons (https://free-icons.github.io/free-icons/) -->
-                <svg xmlns="http://www.w3.org/2000/svg" height="1em" fill="white" viewBox="0 0 512 512">
-                <path
-                    d="M 56.888888888888886 99.55555555555556 Q 43.55555555555556 100.44444444444444 42.666666666666664 113.77777777777777 L 42.666666666666664 398.22222222222223 L 42.666666666666664 398.22222222222223 Q 43.55555555555556 411.55555555555554 56.888888888888886 412.44444444444446 L 455.1111111111111 412.44444444444446 L 455.1111111111111 412.44444444444446 Q 468.44444444444446 411.55555555555554 469.3333333333333 398.22222222222223 L 469.3333333333333 113.77777777777777 L 469.3333333333333 113.77777777777777 Q 468.44444444444446 100.44444444444444 455.1111111111111 99.55555555555556 L 56.888888888888886 99.55555555555556 L 56.888888888888886 99.55555555555556 Z M 0 113.77777777777777 Q 0.8888888888888888 89.77777777777777 16.88888888888889 73.77777777777777 L 16.88888888888889 73.77777777777777 L 16.88888888888889 73.77777777777777 Q 32.888888888888886 57.77777777777778 56.888888888888886 56.888888888888886 L 455.1111111111111 56.888888888888886 L 455.1111111111111 56.888888888888886 Q 479.1111111111111 57.77777777777778 495.1111111111111 73.77777777777777 Q 511.1111111111111 89.77777777777777 512 113.77777777777777 L 512 398.22222222222223 L 512 398.22222222222223 Q 511.1111111111111 422.22222222222223 495.1111111111111 438.22222222222223 Q 479.1111111111111 454.22222222222223 455.1111111111111 455.1111111111111 L 56.888888888888886 455.1111111111111 L 56.888888888888886 455.1111111111111 Q 32.888888888888886 454.22222222222223 16.88888888888889 438.22222222222223 Q 0.8888888888888888 422.22222222222223 0 398.22222222222223 L 0 113.77777777777777 L 0 113.77777777777777 Z M 85.33333333333333 170.66666666666666 Q 85.33333333333333 158.22222222222223 93.33333333333333 150.22222222222223 L 93.33333333333333 150.22222222222223 L 93.33333333333333 150.22222222222223 Q 101.33333333333333 142.22222222222223 113.77777777777777 142.22222222222223 Q 126.22222222222223 142.22222222222223 134.22222222222223 150.22222222222223 Q 142.22222222222223 158.22222222222223 142.22222222222223 170.66666666666666 Q 142.22222222222223 183.11111111111111 134.22222222222223 191.11111111111111 Q 126.22222222222223 199.11111111111111 113.77777777777777 199.11111111111111 Q 101.33333333333333 199.11111111111111 93.33333333333333 191.11111111111111 Q 85.33333333333333 183.11111111111111 85.33333333333333 170.66666666666666 L 85.33333333333333 170.66666666666666 Z M 177.77777777777777 170.66666666666666 Q 179.55555555555554 151.11111111111111 199.11111111111111 149.33333333333334 L 398.22222222222223 149.33333333333334 L 398.22222222222223 149.33333333333334 Q 417.77777777777777 151.11111111111111 419.55555555555554 170.66666666666666 Q 417.77777777777777 190.22222222222223 398.22222222222223 192 L 199.11111111111111 192 L 199.11111111111111 192 Q 179.55555555555554 190.22222222222223 177.77777777777777 170.66666666666666 L 177.77777777777777 170.66666666666666 Z M 177.77777777777777 256 Q 179.55555555555554 236.44444444444446 199.11111111111111 234.66666666666666 L 398.22222222222223 234.66666666666666 L 398.22222222222223 234.66666666666666 Q 417.77777777777777 236.44444444444446 419.55555555555554 256 Q 417.77777777777777 275.55555555555554 398.22222222222223 277.3333333333333 L 199.11111111111111 277.3333333333333 L 199.11111111111111 277.3333333333333 Q 179.55555555555554 275.55555555555554 177.77777777777777 256 L 177.77777777777777 256 Z M 177.77777777777777 341.3333333333333 Q 179.55555555555554 321.77777777777777 199.11111111111111 320 L 398.22222222222223 320 L 398.22222222222223 320 Q 417.77777777777777 321.77777777777777 419.55555555555554 341.3333333333333 Q 417.77777777777777 360.8888888888889 398.22222222222223 362.6666666666667 L 199.11111111111111 362.6666666666667 L 199.11111111111111 362.6666666666667 Q 179.55555555555554 360.8888888888889 177.77777777777777 341.3333333333333 L 177.77777777777777 341.3333333333333 Z M 113.77777777777777 284.44444444444446 Q 101.33333333333333 284.44444444444446 93.33333333333333 276.44444444444446 L 93.33333333333333 276.44444444444446 L 93.33333333333333 276.44444444444446 Q 85.33333333333333 268.44444444444446 85.33333333333333 256 Q 85.33333333333333 243.55555555555554 93.33333333333333 235.55555555555554 Q 101.33333333333333 227.55555555555554 113.77777777777777 227.55555555555554 Q 126.22222222222223 227.55555555555554 134.22222222222223 235.55555555555554 Q 142.22222222222223 243.55555555555554 142.22222222222223 256 Q 142.22222222222223 268.44444444444446 134.22222222222223 276.44444444444446 Q 126.22222222222223 284.44444444444446 113.77777777777777 284.44444444444446 L 113.77777777777777 284.44444444444446 Z M 85.33333333333333 341.3333333333333 Q 85.33333333333333 328.8888888888889 93.33333333333333 320.8888888888889 L 93.33333333333333 320.8888888888889 L 93.33333333333333 320.8888888888889 Q 101.33333333333333 312.8888888888889 113.77777777777777 312.8888888888889 Q 126.22222222222223 312.8888888888889 134.22222222222223 320.8888888888889 Q 142.22222222222223 328.8888888888889 142.22222222222223 341.3333333333333 Q 142.22222222222223 353.77777777777777 134.22222222222223 361.77777777777777 Q 126.22222222222223 369.77777777777777 113.77777777777777 369.77777777777777 Q 101.33333333333333 369.77777777777777 93.33333333333333 361.77777777777777 Q 85.33333333333333 353.77777777777777 85.33333333333333 341.3333333333333 L 85.33333333333333 341.3333333333333 Z"
-                />
+                <svg xmlns="http://www.w3.org/2000/svg" height="0.875rem" fill="rgba(255, 255, 255, 0.8)" viewBox="0 0 512 512">
+                    <path d="M64 64C28.7 64 0 92.7 0 128V384c0 35.3 28.7 64 64 64H448c35.3 0 64-28.7 64-64V128c0-35.3-28.7-64-64-64H64zm48 96H400c8.8 0 16 7.2 16 16s-7.2 16-16 16H112c-8.8 0-16-7.2-16-16s7.2-16 16-16zm0 64H400c8.8 0 16 7.2 16 16s-7.2 16-16 16H112c-8.8 0-16-7.2-16-16s7.2-16 16-16zm0 64H400c8.8 0 16 7.2 16 16s-7.2 16-16 16H112c-8.8 0-16-7.2-16-16s7.2-16 16-16z"/>
                 </svg>
             `;
 
             player.addButton(
-                "data:image/svg+xml;base64," + btoa(theaterModeIcon), // Inline SVG as Base64
+                "data:image/svg+xml;base64," + btoa(theaterModeIcon),
                 $scope.isPanelHidden
                     ? "Hiện danh sách tập"
                     : "Ẩn danh sách tập",
                 function () {
-                    // Toggle panel visibility
                     $scope.$apply(() => {
                         $scope.isPanelHidden = !$scope.isPanelHidden;
                     });
                 },
-                "togglePanel", // Unique ID for the button
+                "togglePanel",
+            );
+
+            // Add next episode button
+            const nextEpisodeIcon = `
+                <svg xmlns="http://www.w3.org/2000/svg" height="0.875rem" fill="rgba(255, 255, 255, 0.8)" viewBox="0 0 512 512">
+                    <path d="M52.5 440.6c-9.5 7.9-22.8 9.7-34.1 4.4S0 428.4 0 416V96C0 83.6 7.2 72.3 18.4 67s24.5-3.6 34.1 4.4L224 214.3V256v41.7L52.5 440.6zM256 352V256 128 96c0-12.4 7.2-23.7 18.4-29s24.5-3.6 34.1 4.4l192 160c7.3 6.1 11.5 15.1 11.5 24.6s-4.2 18.5-11.5 24.6l-192 160c-9.5 7.9-22.8 9.7-34.1 4.4S256 428.4 256 416V352z"/>
+                </svg>
+            `;
+
+            player.addButton(
+                "data:image/svg+xml;base64," + btoa(nextEpisodeIcon),
+                "Tập tiếp theo",
+                function () {
+                    $scope.$apply(() => {
+                        $scope.playNextEpisode();
+                    });
+                },
+                "nextEpisode",
+            );
+
+            // Add forward 10s button
+            const forward10Icon = `
+                <svg xmlns="http://www.w3.org/2000/svg" height="0.875rem" fill="rgba(255, 255, 255, 0.8)" viewBox="0 0 512 512">
+                    <path d="M386.4 160H336c-17.7 0-32 14.3-32 32s14.3 32 32 32h128c17.7 0 32-14.3 32-32V64c0-17.7-14.3-32-32-32s-32 14.3-32 32v51.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0s-87.5 229.3 0 316.8s229.3 87.5 316.8 0c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0c-62.5 62.5-163.8 62.5-226.3 0s-62.5-163.8 0-226.3s163.8-62.5 226.3 0L386.4 160z"/>
+                </svg>
+            `;
+
+            player.addButton(
+                "data:image/svg+xml;base64," + btoa(forward10Icon),
+                "Tua tới 10 giây",
+                function () {
+                    const currentTime = player.getPosition();
+                    player.seek(currentTime + 10);
+                },
+                "forward10s",
+            );
+
+            // Add backward 10s button
+            const backward10Icon = `
+                <svg xmlns="http://www.w3.org/2000/svg" height="0.875rem" fill="rgba(255, 255, 255, 0.8)" viewBox="0 0 512 512">
+                    <path d="M125.7 160H176c17.7 0 32 14.3 32 32s-14.3 32-32 32H48c-17.7 0-32-14.3-32-32V64c0-17.7 14.3-32 32-32s32 14.3 32 32v51.2L97.6 97.6c87.5-87.5 229.3-87.5 316.8 0s87.5 229.3 0 316.8s-229.3 87.5-316.8 0c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0c62.5 62.5 163.8 62.5 226.3 0s62.5-163.8 0-226.3s-163.8-62.5-226.3 0L125.7 160z"/>
+                </svg>
+            `;
+
+            // Add backward 10s button
+            player.addButton(
+                "data:image/svg+xml;base64," + btoa(backward10Icon),
+                "Tua lại 10 giây",
+                function () {
+                    const currentTime = player.getPosition();
+                    player.seek(Math.max(0, currentTime - 10));
+                },
+                "backward10s",
             );
 
             // Restore playback position if available
@@ -166,12 +265,135 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
                 movieData?.episodes?.[$scope.currentEpisodeId]?.position || 0;
 
             player.on("ready", function () {
+                // Define shortcuts list
+                const shortcuts = [
+                    { key: "Space/K", desc: "Phát/Dừng" },
+                    { key: "J", desc: "Lùi 10 giây" },
+                    { key: "L", desc: "Tới 10 giây" },
+                    { key: "←", desc: "Lùi 5 giây" },
+                    { key: "→", desc: "Tới 5 giây" },
+                    { key: "↑", desc: "Tăng âm lượng" },
+                    { key: "↓", desc: "Giảm âm lượng" },
+                    { key: "M", desc: "Tắt/Bật tiếng" },
+                    { key: "F", desc: "Toàn màn hình" },
+                    { key: "0-9", desc: "Nhảy tới % video" },
+                ];
+
                 if (lastPosition > 0) {
                     console.log(
                         `Resuming playback from position: ${lastPosition}`,
                     );
-                    player.seek(lastPosition); // Resume from the last saved position
+                    player.seek(lastPosition);
                 }
+
+                // Add keyboard shortcuts
+                document.addEventListener("keydown", function (e) {
+                    // Chỉ xử lý khi không nhập text
+                    if (
+                        e.target.tagName === "INPUT" ||
+                        e.target.tagName === "TEXTAREA"
+                    ) {
+                        return;
+                    }
+
+                    // Xử lý phím số 0-9
+                    const num = parseInt(e.key);
+                    if (!isNaN(num) && num >= 0 && num <= 9) {
+                        e.preventDefault();
+                        const duration = player.getDuration();
+                        const seekPosition = (duration * num * 10) / 100; // Chuyển số thành phần trăm
+                        player.seek(seekPosition);
+                        tooltips.show(`Đã nhảy tới ${num}0%`);
+                        return;
+                    }
+
+                    switch (e.key.toLowerCase()) {
+                        case " ": // Space bar
+                        case "k":
+                            e.preventDefault();
+                            if (player.getState() === "playing") {
+                                player.pause();
+                                tooltips.show("Đã dừng");
+                            } else {
+                                player.play();
+                                tooltips.show("Đang phát");
+                            }
+                            break;
+                        case "j": // Tua lùi 10s
+                            e.preventDefault();
+                            const currentTime1 = player.getPosition();
+                            player.seek(Math.max(0, currentTime1 - 10));
+                            tooltips.show("Tua lại 10s");
+                            break;
+                        case "l": // Tua tới 10s
+                            e.preventDefault();
+                            const currentTime2 = player.getPosition();
+                            player.seek(currentTime2 + 10);
+                            tooltips.show("Tua tới 10s");
+                            break;
+                        case "arrowleft": // Tua lùi 5s
+                            e.preventDefault();
+                            const currentTime3 = player.getPosition();
+                            player.seek(Math.max(0, currentTime3 - 5));
+                            tooltips.show("Tua lại 5s");
+                            break;
+                        case "arrowright": // Tua tới 5s
+                            e.preventDefault();
+                            const currentTime4 = player.getPosition();
+                            player.seek(currentTime4 + 5);
+                            tooltips.show("Tua tới 5s");
+                            break;
+                        case "f": // Fullscreen
+                            e.preventDefault();
+                            player.setFullscreen(!player.getFullscreen());
+                            tooltips.show("Chế độ toàn màn hình");
+                            break;
+                        case "arrowup": // Tăng âm lượng 10%
+                            e.preventDefault();
+                            const newVolUp = Math.min(
+                                100,
+                                player.getVolume() + 10,
+                            );
+                            player.setVolume(newVolUp);
+                            tooltips.show(`Âm lượng: ${newVolUp}%`);
+                            break;
+                        case "arrowdown": // Giảm âm lượng 10%
+                            e.preventDefault();
+                            const newVolDown = Math.max(
+                                0,
+                                player.getVolume() - 10,
+                            );
+                            player.setVolume(newVolDown);
+                            tooltips.show(`Âm lượng: ${newVolDown}%`);
+                            break;
+                        case "m": // Tắt/bật tiếng
+                            e.preventDefault();
+                            player.setMute(!player.getMute());
+                            if (player.getMute()) {
+                                tooltips.show("Đã tắt tiếng");
+                            } else {
+                                tooltips.show(
+                                    `Âm lượng: ${player.getVolume()}%`,
+                                );
+                            }
+                            break;
+                        case "n": // Next episode
+                            e.preventDefault();
+                            $scope.$apply(() => {
+                                $scope.playNextEpisode();
+                                tooltips.show("Chuyển tập tiếp theo");
+                            });
+                            break;
+                        case "?": // Hiển thị bảng phím tắt
+                            e.preventDefault();
+                            alert(
+                                shortcuts
+                                    .map((s) => `${s.key}: ${s.desc}`)
+                                    .join("\n"),
+                            );
+                            break;
+                    }
+                });
             });
 
             let lastSavedTime = 0;
@@ -347,6 +569,14 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
         if (!episodeSlug && $scope.episodes.length > 0) {
             $scope.setActiveEpisode($scope.episodes[0]);
         }
+    };
+
+    // Delete watch history item
+    $scope.deleteHistoryItem = function (slug) {
+        const history = JSON.parse(localStorage.getItem("viewHistory")) || [];
+        const newHistory = history.filter((item) => item.slug !== slug);
+        localStorage.setItem("viewHistory", JSON.stringify(newHistory));
+        $scope.history = newHistory;
     };
 
     // Initialize

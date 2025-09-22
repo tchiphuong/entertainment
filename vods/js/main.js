@@ -90,8 +90,10 @@ app.controller("MainController", function ($scope, $http, $document, CONFIG) {
 
     $scope.toggleHistory = function (event) {
         if (event) {
-            event.stopPropagation(); // Prevent the click from propagating to the document
+            event.stopPropagation();
         }
+        // Refresh history from localStorage mỗi khi mở modal
+        $scope.history = JSON.parse(localStorage.getItem("viewHistory")) || [];
         $scope.isHistoryOpen = !$scope.isHistoryOpen;
 
         // Sort history by timestamp (most recent first)
@@ -106,9 +108,18 @@ app.controller("MainController", function ($scope, $http, $document, CONFIG) {
         $scope.isHistoryOpen = false;
     };
 
+    $scope.deleteHistoryItem = function (slug, event) {
+        if (event) {
+            event.stopPropagation();
+        }
+        const newHistory = $scope.history.filter((item) => item.slug !== slug);
+        localStorage.setItem("viewHistory", JSON.stringify(newHistory));
+        $scope.history = newHistory;
+    };
+
     $scope.clearHistory = function () {
         $scope.history = [];
-        localStorage.setItem("viewHistory", JSON.stringify($scope.history));
+        localStorage.setItem("viewHistory", JSON.stringify([]));
     };
 
     $scope.openMovie = function (slug) {
@@ -225,13 +236,14 @@ app.controller("MainController", function ($scope, $http, $document, CONFIG) {
     // Fetch countries for the dropdown
     $scope.fetchCountries = function () {
         $http.get(`${CONFIG.APP_DOMAIN_FRONTEND}/quoc-gia`).then(
-            // Use CONFIG.API_ENDPOINT dynamically
             function (response) {
                 $scope.countries = response.data || [];
-                const countryOptions = $scope.countries.map((country) => ({
-                    id: country.slug,
-                    text: country.name,
-                }));
+                const countryOptions = $scope.countries
+                    .map((country) => ({
+                        id: country.slug,
+                        text: country.name,
+                    }))
+                    .sort((a, b) => a.text.localeCompare(b.text, "vi")); // Sort by name using Vietnamese locale
 
                 // Initialize select2
                 $("#countrySelector")

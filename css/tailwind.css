@@ -3,7 +3,7 @@
 @tailwind components;
 
 input:not([type="checkbox"]) {
-    @apply box-border h-10 w-full rounded-md border border-solid border-transparent bg-white px-2 shadow outline-none focus:border-blue-600 dark:border-gray-700 dark:bg-gray-700;
+    @apply box-border h-10 w-full rounded-md border border-solid border-transparent bg-white px-2 shadow outline-none focus:border-blue-500 dark:border-gray-700 dark:bg-gray-700;
 }
 
 .select2-container {
@@ -78,12 +78,12 @@ input:not([type="checkbox"]) {
 
 .select2-container--open .select2-dropdown--above {
     /* The left and right borders of the option rows */
-    @apply rounded-md border-blue-600 shadow dark:border-gray-700;
+    @apply rounded-md border-blue-500 shadow dark:border-gray-700;
 }
 
 .select2-container--open .select2-dropdown--below {
     /* The left and right borders of the option rows */
-    @apply overflow-hidden rounded-b-lg border-blue-600 shadow dark:border-gray-700;
+    @apply overflow-hidden rounded-b-lg border-blue-500 shadow dark:border-gray-700;
 }
 
 .select2-search--dropdown {
@@ -151,7 +151,7 @@ input:not([type="checkbox"]) {
     .select2-selection--single,
 .select2-container--default.select2-container--open.select2-container--below
     .select2-selection--multiple {
-    @apply border-b-0 border-blue-600;
+    @apply border-b-0 border-blue-500;
 }
 
 .select2-container--default
