@@ -12,6 +12,9 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
     $scope.errorMessage = null;
     $scope.activeTab = "dashboard"; // Default active tab
     $scope.isLoading = true; // Initialize with loading state
+    $scope.autoPlayNext =
+        localStorage.getItem("autoPlayNext") === "true" || false; // Auto-play next episode setting
+    $scope.isPanelHidden = false; // Theater mode toggle
 
     // Extract slug from URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -34,7 +37,26 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
                     console.log("Movie data:", $scope.movie);
                     $scope.episodes = data.episodes || [];
                     if ($scope.episodes.length > 0) {
-                        $scope.setActiveEpisode($scope.episodes[0]); // Default to the first episode
+                        // Check URL for server group preference
+                        const params = new URLSearchParams(
+                            window.location.search,
+                        );
+                        const serverGroup = params.get("group");
+
+                        let targetEpisode = $scope.episodes[0]; // Default to first episode
+
+                        // Find episode tab that matches server group from URL
+                        if (serverGroup) {
+                            const matchingEpisode = $scope.episodes.find(
+                                (episode) =>
+                                    episode.server_name === serverGroup,
+                            );
+                            if (matchingEpisode) {
+                                targetEpisode = matchingEpisode;
+                            }
+                        }
+
+                        $scope.setActiveEpisode(targetEpisode);
                     } else {
                         $scope.errorMessage = "No episodes available.";
                     }
@@ -59,28 +81,33 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
         if (episode.server_data.length > 0) {
             const params = new URLSearchParams(window.location.search);
             const episodeSlug = params.get("episode");
+            const serverName = params.get("server");
 
             let currentEpisode = episode.server_data[0]; // Default to the first server
 
-            // Prioritize the episode from the URL parameter
+            // If we have URL parameters, try to find matching server
             if (episodeSlug) {
-                const matchingServer = episode.server_data.find(
-                    (server) => server.slug === episodeSlug,
-                );
-                if (matchingServer) {
-                    currentEpisode = matchingServer;
-                }
-            } else {
-                // Fallback to the last watched server if available
-                const lastWatchedList = $scope.getLastWatchedList();
-                const lastWatchedData = lastWatchedList.find(
-                    (item) => item.movieSlug === slug,
-                );
+                // Try to find exact match with server name if provided
+                if (serverName) {
+                    // First try to find by episode slug (exact match)
+                    let matchingServer = episode.server_data.find(
+                        (server) => server.slug === episodeSlug,
+                    );
 
-                if (lastWatchedData?.currentEpisode) {
+                    // If not found by slug, try to find by server name (to preserve server when switching episodes)
+                    if (!matchingServer) {
+                        matchingServer = episode.server_data.find(
+                            (server) => server.name === serverName,
+                        );
+                    }
+
+                    if (matchingServer) {
+                        currentEpisode = matchingServer;
+                    }
+                } else {
+                    // Just find by episode slug in current group
                     const matchingServer = episode.server_data.find(
-                        (server) =>
-                            server.slug === lastWatchedData.currentEpisode,
+                        (server) => server.slug === episodeSlug,
                     );
                     if (matchingServer) {
                         currentEpisode = matchingServer;
@@ -119,6 +146,50 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
         }
     };
 
+    // Episode Navigation Functions
+    $scope.getCurrentEpisodeIndex = function () {
+        if (!$scope.activeEpisode || !$scope.currentEpisodeId) return -1;
+        return $scope.activeEpisode.server_data.findIndex(
+            (server) => server.slug === $scope.currentEpisodeId,
+        );
+    };
+
+    $scope.canGoToPrevious = function () {
+        return $scope.getCurrentEpisodeIndex() > 0;
+    };
+
+    $scope.canGoToNext = function () {
+        const currentIndex = $scope.getCurrentEpisodeIndex();
+        return (
+            currentIndex >= 0 &&
+            currentIndex < $scope.activeEpisode.server_data.length - 1
+        );
+    };
+
+    $scope.previousEpisode = function () {
+        if (!$scope.canGoToPrevious()) return;
+
+        const currentIndex = $scope.getCurrentEpisodeIndex();
+        const previousServer =
+            $scope.activeEpisode.server_data[currentIndex - 1];
+        $scope.openEpisode(previousServer);
+    };
+
+    $scope.nextEpisode = function () {
+        if (!$scope.canGoToNext()) return;
+
+        const currentIndex = $scope.getCurrentEpisodeIndex();
+        const nextServer = $scope.activeEpisode.server_data[currentIndex + 1];
+        $scope.openEpisode(nextServer);
+    };
+
+    // Watch autoPlayNext changes and save to localStorage
+    $scope.$watch("autoPlayNext", function (newVal, oldVal) {
+        if (newVal !== oldVal) {
+            localStorage.setItem("autoPlayNext", newVal.toString());
+        }
+    });
+
     // Initialize JW Player
     $scope.initializePlayer = function (file) {
         if (typeof jwplayer === "function") {
@@ -136,7 +207,8 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
 
             const player = jwplayer("player").setup({
                 file: file,
-                image: $scope.movie.poster_url,
+                image: $scope.movie.thumb_url,
+                stretching: "fill",
                 title: $scope.movie.name,
                 width: "100%",
                 aspectratio: "16:9",
@@ -275,8 +347,12 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
                     { key: "↑", desc: "Tăng âm lượng" },
                     { key: "↓", desc: "Giảm âm lượng" },
                     { key: "M", desc: "Tắt/Bật tiếng" },
+                    { key: "N", desc: "Tập tiếp theo" },
+                    { key: "P", desc: "Tập trước" },
+                    { key: "Shift+N", desc: "Tập trước" },
                     { key: "F", desc: "Toàn màn hình" },
                     { key: "0-9", desc: "Nhảy tới % video" },
+                    { key: "?", desc: "Hiện phím tắt" },
                 ];
 
                 if (lastPosition > 0) {
@@ -377,11 +453,37 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
                                 );
                             }
                             break;
-                        case "n": // Next episode
+                        case "n": // Next episode (Shift+N for previous)
+                            e.preventDefault();
+                            if (e.shiftKey) {
+                                $scope.$apply(() => {
+                                    if ($scope.canGoToPrevious()) {
+                                        $scope.previousEpisode();
+                                        tooltips.show("Chuyển tập trước");
+                                    } else {
+                                        tooltips.show("Đã ở tập đầu tiên");
+                                    }
+                                });
+                            } else {
+                                $scope.$apply(() => {
+                                    if ($scope.canGoToNext()) {
+                                        $scope.nextEpisode();
+                                        tooltips.show("Chuyển tập tiếp theo");
+                                    } else {
+                                        tooltips.show("Đã ở tập cuối cùng");
+                                    }
+                                });
+                            }
+                            break;
+                        case "p": // Previous episode
                             e.preventDefault();
                             $scope.$apply(() => {
-                                $scope.playNextEpisode();
-                                tooltips.show("Chuyển tập tiếp theo");
+                                if ($scope.canGoToPrevious()) {
+                                    $scope.previousEpisode();
+                                    tooltips.show("Chuyển tập trước");
+                                } else {
+                                    tooltips.show("Đã ở tập đầu tiên");
+                                }
                             });
                             break;
                         case "?": // Hiển thị bảng phím tắt
@@ -413,7 +515,11 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
             // Automatically play the next episode when the current one finishes
             player.on("complete", function () {
                 $scope.$apply(function () {
-                    $scope.playNextEpisode();
+                    if ($scope.autoPlayNext && $scope.canGoToNext()) {
+                        setTimeout(() => {
+                            $scope.nextEpisode();
+                        }, 1000); // Delay 1 second before auto-playing next episode
+                    }
                 });
             });
         } else {
@@ -422,8 +528,8 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
         }
     };
 
-    // Play the next episode
-    $scope.playNextEpisode = function () {
+    // Play the next episode (legacy function - handles cross-tab navigation)
+    $scope.playNextEpisodeAdvanced = function () {
         const currentEpisodeIndex = $scope.activeEpisode.server_data.findIndex(
             (server) => server.slug === $scope.currentEpisodeId,
         );
@@ -473,12 +579,33 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
             (item) => item.slug === slug,
         );
 
+        // Get current server info
+        const currentServer = $scope.activeEpisode.server_data.find(
+            (server) => server.slug === episodeSlug,
+        );
+
+        if (!currentServer) {
+            console.error(
+                "Cannot find current server for episode:",
+                episodeSlug,
+            );
+            return;
+        }
+
+        const serverName = currentServer.name;
+        const serverGroup = $scope.activeEpisode.server_name;
+
+        // Simple display: just show what episode and which server group
+        const episodeValue = `${serverName} (${serverGroup})`;
+
         if (existingHistoryIndex !== -1) {
             // Update the existing history entry
             history[existingHistoryIndex].timestamp = new Date();
             history[existingHistoryIndex].lastWatchedEpisode = {
                 key: episodeSlug,
-                value: `Tập ${episodeSlug.split("-").pop()}`, // Example: Extract episode number from slug
+                value: episodeValue,
+                serverName: serverName,
+                serverGroup: serverGroup,
             };
         } else if ($scope.movie) {
             // Add a new history entry
@@ -488,7 +615,9 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
                 poster: $scope.movie.poster_url,
                 lastWatchedEpisode: {
                     key: episodeSlug,
-                    value: `Tập ${episodeSlug.split("-").pop()}`,
+                    value: episodeValue,
+                    serverName: serverName,
+                    serverGroup: serverGroup,
                 },
                 timestamp: new Date(),
             });
@@ -500,73 +629,92 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
 
     // Update setWatchlist to call saveWatchHistory
     $scope.setWatchlist = function (episodeSlug, position = null) {
-        // Retrieve the last watched episodes list from localStorage
         const lastWatchedList = $scope.getLastWatchedList();
 
-        // Find or create the movie entry
+        // Get current server
+        const currentServer = $scope.activeEpisode.server_data.find(
+            (server) => server.slug === episodeSlug,
+        );
+
+        // Find or create movie entry
         let movieData = lastWatchedList.find((item) => item.movieSlug === slug);
         if (!movieData) {
             movieData = {
                 movieSlug: slug,
-                currentEpisode: episodeSlug,
+                lastWatched: {
+                    episodeSlug: episodeSlug,
+                    serverName: currentServer.name,
+                    serverGroup: $scope.activeEpisode.server_name,
+                },
                 episodes: {},
             };
             lastWatchedList.push(movieData);
+        } else {
+            movieData.lastWatched = {
+                episodeSlug: episodeSlug,
+                serverName: currentServer.name,
+                serverGroup: $scope.activeEpisode.server_name,
+            };
         }
 
-        const lastPosition =
-            movieData?.episodes?.[$scope.currentEpisodeId]?.position || 0;
-
-        // Update the current episode and its details
-        movieData.currentEpisode = episodeSlug;
+        // Save position with server info
         movieData.episodes[episodeSlug] = {
-            position: position || lastPosition, // Save position if provided
-            timestamp: new Date().toISOString(), // Optional: Add timestamp
+            position:
+                position || movieData.episodes[episodeSlug]?.position || 0,
+            timestamp: new Date().toISOString(),
+            serverName: currentServer.name,
+            serverGroup: $scope.activeEpisode.server_name,
         };
 
-        // Save the updated list back to localStorage
         localStorage.setItem(
             "lastWatchedEpisodes",
             JSON.stringify(lastWatchedList),
         );
 
-        // Update the URL with the current episode
+        // Update URL with episode and server info only
         const params = new URLSearchParams(window.location.search);
         params.set("episode", episodeSlug);
+        params.set("server", currentServer.name);
         window.history.replaceState({}, "", `?${params.toString()}`);
 
-        // Save to watch history
         $scope.saveWatchHistory(episodeSlug);
     };
 
     $scope.initializeFromUrl = function () {
         const params = new URLSearchParams(window.location.search);
         const episodeSlug = params.get("episode");
+        const serverName = params.get("server");
 
-        if (episodeSlug) {
-            // Find the episode and set it as active
-            const matchingEpisode = $scope.episodes.find((episode) =>
-                episode.server_data.some(
-                    (server) => server.slug === episodeSlug,
-                ),
-            );
+        // Find episode by slug, prefer matching server name if provided
+        if (episodeSlug && $scope.episodes.length > 0) {
+            let foundServer = null;
+            let fallbackServer = null;
 
-            if (matchingEpisode) {
-                const matchingServer = matchingEpisode.server_data.find(
-                    (server) => server.slug === episodeSlug,
-                );
-                if (matchingServer) {
-                    $scope.setActiveEpisode(matchingEpisode);
-                    $scope.openEpisode(matchingServer);
-                    return; // Play the episode from the URL
+            for (const episode of $scope.episodes) {
+                for (const server of episode.server_data) {
+                    if (server.slug === episodeSlug) {
+                        if (!fallbackServer)
+                            fallbackServer = { episode, server };
+
+                        if (serverName && server.name === serverName) {
+                            foundServer = { episode, server };
+                            break;
+                        }
+                    }
                 }
-            } else {
-                console.warn("Episode not found in the current data.");
+                if (foundServer) break;
+            }
+
+            const target = foundServer || fallbackServer;
+            if (target) {
+                $scope.setActiveEpisode(target.episode);
+                $scope.openEpisode(target.server);
+                return;
             }
         }
 
-        // Fallback to the first episode only if no `episode` parameter is present
-        if (!episodeSlug && $scope.episodes.length > 0) {
+        // Default: first episode and first server
+        if ($scope.episodes.length > 0) {
             $scope.setActiveEpisode($scope.episodes[0]);
         }
     };
