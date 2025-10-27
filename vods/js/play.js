@@ -191,7 +191,7 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
     });
 
     // Initialize JW Player
-    $scope.initializePlayer = function (file) {
+    $scope.initializePlayer = async function (masterUrl) {
         if (typeof jwplayer === "function") {
             // Add custom CSS to hide default rewind/forward buttons
             const customCSS = `
@@ -205,8 +205,56 @@ app.controller("PlayController", function ($scope, $http, CONFIG) {
             styleSheet.textContent = customCSS;
             document.head.appendChild(styleSheet);
 
+            // 1️⃣ Fetch master playlist
+            const masterResp = await fetch(masterUrl);
+            let masterText = await masterResp.text();
+
+            // 2️⃣ Lấy URL của variant playlist (dòng không có #)
+            const variantLine = masterText
+                .split("\n")
+                .find((line) => line && !line.startsWith("#"));
+            const baseMasterUrl = masterUrl.substring(
+                0,
+                masterUrl.lastIndexOf("/") + 1,
+            );
+            const variantUrl = variantLine.startsWith("http")
+                ? variantLine
+                : baseMasterUrl + variantLine;
+
+            console.log("Variant playlist:", variantUrl);
+
+            // 3️⃣ Fetch variant playlist (file con)
+            const variantResp = await fetch(variantUrl);
+            let playlist = await variantResp.text();
+
+            // 4️⃣ Xoá đoạn giữa 2 tag DISCONTINUITY
+            playlist = playlist.replace(
+                /#EXT-X-DISCONTINUITY[\s\S]*?#EXT-X-DISCONTINUITY/gm,
+                "",
+            );
+            playlist = playlist.replace(/^#EXT-X-DISCONTINUITY\s*$/gm, "");
+
+            // 5️⃣ Gắn base URL cho các file .ts
+            const baseUrl = variantUrl.substring(
+                0,
+                variantUrl.lastIndexOf("/") + 1,
+            );
+            playlist = playlist.replace(/^([^\n#][^\n]*\.ts)$/gm, (match) => {
+                if (match.startsWith("http")) return match;
+                return baseUrl + match;
+            });
+
+            // 6️⃣ Tạo blob để JW Player đọc được
+            const blob = new Blob([playlist], {
+                type: "application/vnd.apple.mpegurl",
+            });
+            const cleanedUrl = URL.createObjectURL(blob);
+
+            console.log("Cleaned playlist URL:", cleanedUrl);
+
             const player = jwplayer("player").setup({
-                file: file,
+                file: cleanedUrl,
+                type: "hls",
                 image: $scope.movie.thumb_url,
                 stretching: "fill",
                 title: $scope.movie.name,
