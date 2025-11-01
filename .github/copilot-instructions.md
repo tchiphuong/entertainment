@@ -1,0 +1,12 @@
+-   Luôn phản hồi bằng tiếng Việt.
+-   Luôn clear #EXT-X-DISCONTINUITY trong HLS playlist khi có thay đổi source video (nếu có).
+-   Luôn sử dụng Tailwind CSS để styling.
+-   Luôn sử dụng React functional components và hooks (useState, useEffect, v.v.) để quản lý state và side effects.
+-   Luôn đảm bảo code dễ đọc, có comments giải thích các phần phức tạp. comment bằng tiếng Việt.
+-   Luôn tối ưu hóa hiệu suất, tránh re-renders không cần thiết.
+-   Luôn kiểm tra lỗi và xử lý ngoại lệ một cách thích hợp.
+-   Không dùng CDN, tất cả dependencies phải được cài qua npm và import trong code.
+-   Luôn sử dụng React Router để quản lý routing trong ứng dụng.
+-   luôn tái sử dụng components khi có thể để tránh lặp code.
+-   Luôn sử dụng font "Inter" cho toàn bộ ứng dụng, import từ npm package "@fontsource/inter".
+-   Luôn đảm bảo ứng dụng responsive, hiển thị tốt trên cả desktop và mobile. Ủu tiên sử dụng Tailwind CSS utilities để đạt được điều này.
