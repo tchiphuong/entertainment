@@ -44,11 +44,23 @@ export default function Vods() {
 
     useEffect(() => {
         document.title = "VODs — Entertainment";
-        initializeFromUrl();
+        
+        // Initialize from URL first
+        const params = new URLSearchParams(window.location.search);
+        const urlPage = parseInt(params.get("page")) || 1;
+        const urlKeyword = params.get("keyword") || "";
+        const urlCountry = params.get("country") || "viet-nam";
+        
+        setCurrentPage(urlPage);
+        setSearchKeyword(urlKeyword);
+        setCountry(urlCountry);
+        
+        // Fetch countries
         if (!countriesFetchedRef.current) {
             countriesFetchedRef.current = true;
             fetchCountries();
         }
+        
         const onKey = (e) => {
             if (e.key === "ArrowRight") nextPage();
             if (e.key === "ArrowLeft") prevPage();
@@ -231,15 +243,6 @@ export default function Vods() {
         if (page >= 1 && page <= totalPages) {
             setCurrentPage(page);
         }
-    }
-
-    function initializeFromUrl() {
-        const params = new URLSearchParams(window.location.search);
-        const p = parseInt(params.get("page")) || 1;
-        setCurrentPage(p);
-        setSearchKeyword(params.get("keyword") || "");
-        setCountry(params.get("country") || "viet-nam");
-        // useEffect sẽ tự động fetch khi state thay đổi
     }
 
     async function fetchCountries() {
