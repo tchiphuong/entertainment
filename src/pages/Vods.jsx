@@ -27,12 +27,28 @@ function useLocalStorage(key, initial) {
 }
 
 export default function Vods() {
+    // Initialize state directly from URL params
+    const getInitialPage = () => {
+        const params = new URLSearchParams(window.location.search);
+        return parseInt(params.get("page")) || 1;
+    };
+
+    const getInitialKeyword = () => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get("keyword") || "";
+    };
+
+    const getInitialCountry = () => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get("country") || "viet-nam";
+    };
+
     const [movies, setMovies] = useState([]);
-    const [currentPage, setCurrentPage] = useState(1);
+    const [currentPage, setCurrentPage] = useState(getInitialPage);
     const [totalPages, setTotalPages] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
-    const [searchKeyword, setSearchKeyword] = useState("");
-    const [country, setCountry] = useState("viet-nam");
+    const [searchKeyword, setSearchKeyword] = useState(getInitialKeyword);
+    const [country, setCountry] = useState(getInitialCountry);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [history, setHistory] = useLocalStorage("viewHistory", []);
     const [countries, setCountries] = useState([]);
@@ -40,27 +56,17 @@ export default function Vods() {
     const navigate = useNavigate();
 
     const countriesFetchedRef = useRef(false);
-    const initialFetchDoneRef = useRef(false);
+    const isInitialMount = useRef(true);
 
     useEffect(() => {
         document.title = "VODs — Entertainment";
-        
-        // Initialize from URL first
-        const params = new URLSearchParams(window.location.search);
-        const urlPage = parseInt(params.get("page")) || 1;
-        const urlKeyword = params.get("keyword") || "";
-        const urlCountry = params.get("country") || "viet-nam";
-        
-        setCurrentPage(urlPage);
-        setSearchKeyword(urlKeyword);
-        setCountry(urlCountry);
-        
+
         // Fetch countries
         if (!countriesFetchedRef.current) {
             countriesFetchedRef.current = true;
             fetchCountries();
         }
-        
+
         const onKey = (e) => {
             if (e.key === "ArrowRight") nextPage();
             if (e.key === "ArrowLeft") prevPage();
@@ -78,19 +84,30 @@ export default function Vods() {
         window.history.replaceState({}, "", `?${params.toString()}`);
     }, [currentPage, searchKeyword, country]);
 
-    const prevStateRef = useRef({ keyword: "", country: "viet-nam", page: 1 });
+    const prevStateRef = useRef(null);
     const debounceTimerRef = useRef(null);
 
     // Auto-fetch khi keyword, country, hoặc page thay đổi (với debounce)
     useEffect(() => {
+        // Skip fetch nếu đang initial mount (chưa có state từ URL)
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+            return;
+        }
+
         const prev = prevStateRef.current;
         const stateChanged =
+            !prev ||
             searchKeyword !== prev.keyword ||
             country !== prev.country ||
             currentPage !== prev.page;
 
         if (stateChanged) {
-            prevStateRef.current = { keyword: searchKeyword, country, page: currentPage };
+            prevStateRef.current = {
+                keyword: searchKeyword,
+                country,
+                page: currentPage,
+            };
 
             // Clear previous timer
             if (debounceTimerRef.current) {
@@ -105,13 +122,19 @@ export default function Vods() {
                     sort_field: "year",
                     sort_type: "desc",
                 };
-                
+
                 // Nếu có keyword, dùng /tim-kiem; không thì dùng /quoc-gia/{country}
                 if (searchKeyword.trim() !== "") {
                     params.keyword = searchKeyword;
-                    fetchData(`${CONFIG.APP_DOMAIN_FRONTEND}/v1/api/tim-kiem`, params);
+                    fetchData(
+                        `${CONFIG.APP_DOMAIN_FRONTEND}/v1/api/tim-kiem`,
+                        params,
+                    );
                 } else {
-                    fetchData(`${CONFIG.APP_DOMAIN_FRONTEND}/v1/api/quoc-gia/${country}`, params);
+                    fetchData(
+                        `${CONFIG.APP_DOMAIN_FRONTEND}/v1/api/quoc-gia/${country}`,
+                        params,
+                    );
                 }
             }, 500);
         }
@@ -124,20 +147,25 @@ export default function Vods() {
         };
     }, [searchKeyword, country, currentPage]);
 
-    // Fetch initial data khi countries được load
+    // Fetch initial data sau khi state được init từ URL
     useEffect(() => {
-        if (countries.length > 0 && !initialFetchDoneRef.current) {
-            initialFetchDoneRef.current = true;
-            // Fetch Vietnam movies directly (default country) - no keyword so use quoc-gia endpoint
-            const params = {
-                page: 1,
-                limit: 12,
-                sort_field: "year",
-                sort_type: "desc",
-            };
-            fetchData(`${CONFIG.APP_DOMAIN_FRONTEND}/v1/api/quoc-gia/viet-nam`, params);
+        const params = {
+            page: currentPage,
+            limit: 12,
+            sort_field: "year",
+            sort_type: "desc",
+        };
+
+        if (searchKeyword.trim() !== "") {
+            params.keyword = searchKeyword;
+            fetchData(`${CONFIG.APP_DOMAIN_FRONTEND}/v1/api/tim-kiem`, params);
+        } else {
+            fetchData(
+                `${CONFIG.APP_DOMAIN_FRONTEND}/v1/api/quoc-gia/${country}`,
+                params,
+            );
         }
-    }, [countries]);
+    }, []); // Chỉ chạy 1 lần sau khi mount
 
     function buildQuery(params) {
         return Object.keys(params)
@@ -151,15 +179,15 @@ export default function Vods() {
             const qs = buildQuery(params);
             const fullUrl = `${url}?${qs}`;
             console.log("Fetching:", fullUrl);
-            
+
             const res = await fetch(fullUrl);
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             }
-            
+
             const json = await res.json();
             console.log("Response:", json);
-            
+
             if (!json || !json.data) {
                 console.warn("No data in response:", json);
                 setMovies([]);
@@ -284,14 +312,16 @@ export default function Vods() {
                         <div className="flex-1">
                             <input
                                 value={searchKeyword}
-                                onChange={(e) => setSearchKeyword(e.target.value)}
+                                onChange={(e) =>
+                                    setSearchKeyword(e.target.value)
+                                }
                                 onKeyUp={searchMoviesKey}
                                 type="text"
                                 placeholder="Nhập tên phim..."
                                 className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-500 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                             />
                         </div>
-                        <div className="flex-1 sm:flex-none sm:w-48">
+                        <div className="flex-1 sm:w-48 sm:flex-none">
                             {(() => {
                                 const countryOptions = countries.map((c) => ({
                                     value: c.slug,
@@ -307,7 +337,8 @@ export default function Vods() {
                                         }
                                         onChange={(opt) => {
                                             const val = opt ? opt.value : "";
-                                            const newCountry = val || "viet-nam";
+                                            const newCountry =
+                                                val || "viet-nam";
                                             setCountry(newCountry);
                                             setCurrentPage(1);
                                             setSearchKeyword("");
@@ -322,8 +353,19 @@ export default function Vods() {
                             onClick={toggleHistory}
                             className="flex transform items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow transition-all duration-300 ease-in-out hover:bg-blue-700 hover:shadow-lg active:scale-95"
                         >
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 2m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            <svg
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M12 8v4l3 2m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
                             </svg>
                             <span>Lịch sử</span>
                         </button>
@@ -336,16 +378,16 @@ export default function Vods() {
                         onClick={closeHistory}
                     >
                         <div
-                            className="w-11/12 max-w-2xl max-h-96 rounded-lg bg-white shadow-2xl flex flex-col"
+                            className="flex max-h-96 w-11/12 max-w-2xl flex-col rounded-lg bg-white shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 bg-linear-to-r from-blue-50 to-indigo-50 rounded-t-lg">
+                            <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-gray-200 from-blue-50 to-indigo-50 px-6 py-4">
                                 <h2 className="text-lg font-bold text-gray-900">
                                     Lịch sử xem
                                 </h2>
                                 <button
                                     onClick={closeHistory}
-                                    className="text-gray-400 hover:text-gray-600 transition-colors text-2xl leading-none"
+                                    className="text-2xl leading-none text-gray-400 transition-colors hover:text-gray-600"
                                 >
                                     ×
                                 </button>
@@ -359,7 +401,7 @@ export default function Vods() {
                                 {history.map((item, idx) => (
                                     <li
                                         key={idx}
-                                        className="group flex items-center gap-4 px-6 py-3 hover:bg-blue-50 transition-colors cursor-pointer"
+                                        className="group flex cursor-pointer items-center gap-4 px-6 py-3 transition-colors hover:bg-blue-50"
                                         onClick={() =>
                                             navigate(
                                                 `/vods/play?slug=${item.slug}&episode=${item.lastWatchedEpisode?.key}`,
@@ -370,10 +412,10 @@ export default function Vods() {
                                             src={`https://phimapi.com/image.php?url=${item.poster}`}
                                             alt={item.name}
                                             loading="lazy"
-                                            className="h-16 w-12 rounded-md object-cover shadow-md shrink-0"
+                                            className="h-16 w-12 shrink-0 rounded-md object-cover shadow-md"
                                         />
-                                        <div className="flex-1 min-w-0">
-                                            <h3 className="text-sm font-semibold text-gray-900 truncate">
+                                        <div className="min-w-0 flex-1">
+                                            <h3 className="truncate text-sm font-semibold text-gray-900">
                                                 {item.name}
                                             </h3>
                                             <div className="mt-1 flex gap-2 text-xs text-gray-500">
@@ -393,7 +435,7 @@ export default function Vods() {
                                                     )}
                                                 </span>
                                             </div>
-                                            <div className="mt-1 text-xs text-blue-600 font-medium">
+                                            <div className="mt-1 text-xs font-medium text-blue-600">
                                                 Đã xem:{" "}
                                                 {item.lastWatchedEpisode
                                                     ?.value || "N/A"}
@@ -404,17 +446,21 @@ export default function Vods() {
                                                 e.stopPropagation();
                                                 deleteHistoryItem(item.slug, e);
                                             }}
-                                            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-all opacity-0 group-hover:opacity-100"
+                                            className="rounded p-1 text-gray-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
                                         >
-                                            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/>
+                                            <svg
+                                                className="h-5 w-5"
+                                                fill="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" />
                                             </svg>
                                         </button>
                                     </li>
                                 ))}
                             </ul>
                             {history.length > 0 && (
-                                <div className="border-t border-gray-200 px-6 py-3 bg-gray-50 text-right rounded-b-lg">
+                                <div className="rounded-b-lg border-t border-gray-200 bg-gray-50 px-6 py-3 text-right">
                                     <button
                                         onClick={() => setConfirmDelete(true)}
                                         className="rounded-md bg-red-500 px-4 py-2 text-white shadow transition hover:bg-red-600"
@@ -467,11 +513,15 @@ export default function Vods() {
                                             backgroundSize: "contain",
                                         }}
                                         onLoad={(e) => {
-                                            const loader = e.target.nextElementSibling;
+                                            const loader =
+                                                e.target.nextElementSibling;
                                             if (loader) loader.remove();
                                         }}
                                     />
-                                    <div className="absolute inset-0 flex items-center justify-center bg-linear-to-b from-gray-200 to-gray-300" style={{aspectRatio: "2/3"}}>
+                                    <div
+                                        className="bg-linear-to-b absolute inset-0 flex items-center justify-center from-gray-200 to-gray-300"
+                                        style={{ aspectRatio: "2/3" }}
+                                    >
                                         <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500"></div>
                                     </div>
                                     <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
@@ -523,7 +573,7 @@ export default function Vods() {
                                 <li>
                                     <button
                                         onClick={() => goToPage(1)}
-                                        className="mx-1 flex h-8 w-8 items-center justify-center rounded-full border cursor-pointer text-gray-500 hover:bg-gray-50"
+                                        className="mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border text-gray-500 hover:bg-gray-50"
                                     >
                                         «
                                     </button>
@@ -534,7 +584,7 @@ export default function Vods() {
                                 <li>
                                     <button
                                         onClick={prevPage}
-                                        className="mx-1 flex h-8 w-8 items-center justify-center rounded-full border cursor-pointer text-gray-500 hover:bg-gray-50"
+                                        className="mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border text-gray-500 hover:bg-gray-50"
                                     >
                                         ‹
                                     </button>
@@ -550,7 +600,7 @@ export default function Vods() {
                                                 goToPage(page)
                                             }
                                             disabled={page === currentPage}
-                                            className={`mx-1 flex h-8 w-8 items-center justify-center rounded-full border cursor-pointer ${page === currentPage ? "scale-110 border-blue-500 bg-blue-500 text-white shadow-md" : "text-gray-500 hover:bg-gray-50"}`}
+                                            className={`mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border ${page === currentPage ? "scale-110 border-blue-500 bg-blue-500 text-white shadow-md" : "text-gray-500 hover:bg-gray-50"}`}
                                         >
                                             {page}
                                         </button>
@@ -562,7 +612,7 @@ export default function Vods() {
                                 <li>
                                     <button
                                         onClick={nextPage}
-                                        className="mx-1 flex h-8 w-8 items-center justify-center rounded-full border cursor-pointer text-gray-500 hover:bg-gray-50"
+                                        className="mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border text-gray-500 hover:bg-gray-50"
                                     >
                                         ›
                                     </button>
@@ -573,7 +623,7 @@ export default function Vods() {
                                 <li>
                                     <button
                                         onClick={() => goToPage(totalPages)}
-                                        className="mx-1 flex h-8 w-8 items-center justify-center rounded-full border cursor-pointer text-gray-500 hover:bg-gray-50"
+                                        className="mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border text-gray-500 hover:bg-gray-50"
                                     >
                                         »
                                     </button>
