@@ -1,14 +1,27 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <script>
-    // Redirect any direct path to hash-based route
-    var path = window.location.pathname.replace('/entertainment/', '');
-    if (path && path !== '/') {
-      window.location.replace('/entertainment/#/' + path);
-    }
-  </script>
+    <meta charset="utf-8">
+    <title>Redirecting...</title>
+    <script>
+        // SPA redirect for GitHub Pages
+        var pathSegmentsToKeep = 1; // /entertainment/
+        var l = window.location;
+
+        // Get the path after /entertainment/
+        var pathArray = l.pathname.split('/').slice(1);
+        var path = pathArray.slice(pathSegmentsToKeep).join('/');
+        var query = l.search.slice(1);
+
+        // Redirect to index.html with path info
+        l.replace(
+            l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+            l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') +
+            '/?/' + path +
+            (query ? '&' + query : '') +
+            l.hash
+        );
+    </script>
 </head>
 <body></body>
 </html>
