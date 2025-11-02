@@ -6,7 +6,7 @@ import VodPlay from "./pages/VodPlay";
 
 export default function App() {
     return (
-        <BrowserRouter>
+        <BrowserRouter basename="/entertainment/">
             <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/vods" element={<Vods />} />
