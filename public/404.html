@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script>
+    // Redirect any direct path to hash-based route
+    var path = window.location.pathname.replace('/entertainment/', '');
+    if (path && path !== '/') {
+      window.location.replace('/entertainment/#/' + path);
+    }
+  </script>
+</head>
+<body></body>
+</html>
