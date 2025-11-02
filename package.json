@@ -3,13 +3,10 @@
 	"version": "1.0.0",
 	"description": "",
 	"main": "index.js",
-	"homepage": "https://tchiphuong.github.io/entertainment",
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build",
 		"preview": "vite preview",
-		"predeploy": "npm run build",
-		"deploy": "gh-pages -d dist",
 		"watch": "postcss css/tailwind.css -o build/tailwind.css --watch"
 	},
 	"keywords": [],
@@ -19,7 +16,6 @@
 		"@tailwindcss/postcss": "^4.1.16",
 		"@vitejs/plugin-react": "^4.0.0",
 		"autoprefixer": "^10.4.21",
-		"gh-pages": "^6.3.0",
 		"postcss": "^8.5.6",
 		"postcss-cli": "^11.0.0",
 		"prettier": "^3.2.5",
