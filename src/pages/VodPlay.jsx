@@ -28,32 +28,48 @@ const JWPLAYER_LICENSE_MOCK = {
 };
 
 // Helper function để clean M3U8 content
-function cleanM3U8Content(text) {
+function cleanM3U8Content(text, baseURL = "") {
     const lines = text.split("\n");
-    const finalLines = [];
-
-    let skip = false;
-    for (const line of lines) {
-        if (line.includes("#EXT-X-DISCONTINUITY")) {
-            // Toggle vùng bỏ qua
-            skip = !skip;
-            continue; // không giữ dòng này
-        }
-
-        if (!skip) {
-            finalLines.push(line);
-        }
-    }
-
-    // Loại bỏ dòng trống liên tiếp
     const cleaned = [];
-    let lastEmpty = false;
-    for (const line of finalLines) {
-        const isEmpty = line.trim() === "";
-        if (!isEmpty || !lastEmpty) {
-            cleaned.push(line);
+
+    let skipBlock = false; // Dùng để bỏ nguyên block có #EXT-X-KEY
+
+    for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+
+        // Kiểm tra block bắt đầu bằng #EXT-X-DISCONTINUITY + #EXT-X-KEY:METHOD=NONE
+        if (
+            !skipBlock &&
+            line === "#EXT-X-DISCONTINUITY" &&
+            lines[i + 1]?.startsWith("#EXT-X-KEY:METHOD=NONE")
+        ) {
+            skipBlock = true;
+            i++; // bỏ luôn dòng #EXT-X-KEY
+            continue;
         }
-        lastEmpty = isEmpty;
+
+        // Nếu đang skip block
+        if (skipBlock) {
+            if (line === "#EXT-X-DISCONTINUITY") {
+                skipBlock = false; // kết thúc block
+            }
+            continue; // bỏ tất cả các dòng trong block
+        }
+
+        // Bỏ các #EXT-X-DISCONTINUITY thừa
+        if (line === "#EXT-X-DISCONTINUITY") continue;
+
+        // Nếu là dòng ts có "convertv7/", loại bỏ "convertv7/"
+        if (line.endsWith(".ts") && line.includes("convertv7/")) {
+            line = line.replace("convertv7/", "");
+        }
+
+        // Nếu có baseURL, ghép luôn full link
+        if (baseURL && line.endsWith(".ts")) {
+            line = baseURL + line;
+        }
+
+        cleaned.push(line);
     }
 
     return cleaned.join("\n");
