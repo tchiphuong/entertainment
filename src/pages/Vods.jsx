@@ -4,6 +4,302 @@ import Select from "react-select";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ConfirmDialog from "../components/ConfirmDialog";
 
+// Tooltip Component cho movie details
+function MovieTooltip({ movie, children }) {
+    const [isVisible, setIsVisible] = useState(false);
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [showBelow, setShowBelow] = useState(false);
+    const tooltipRef = useRef(null);
+    const timeoutRef = useRef(null);
+    const containerRef = useRef(null);
+    const mountedRef = useRef(true);
+
+    const showTooltip = (e) => {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+
+        timeoutRef.current = setTimeout(() => {
+            // Kiểm tra component còn mounted không
+            if (!mountedRef.current) return;
+
+            // Sử dụng containerRef thay vì event target để tránh lỗi null
+            const element = containerRef.current;
+            if (!element) return;
+
+            try {
+                const rect = element.getBoundingClientRect();
+                if (!mountedRef.current) return; // Kiểm tra lần nữa sau khi gọi getBoundingClientRect
+
+                // Kiểm tra xem có đủ chỗ để hiển thị tooltip ở phía trên không
+                const tooltipHeight = 200; // Ước tính chiều cao tooltip
+                const spaceAbove = rect.top;
+                const spaceBelow = window.innerHeight - rect.bottom;
+
+                // Quyết định hiển thị ở trên hay dưới
+                const shouldShowBelow =
+                    spaceAbove < tooltipHeight && spaceBelow > spaceAbove;
+
+                setShowBelow(shouldShowBelow);
+                setPosition({
+                    x: rect.left + rect.width / 2,
+                    y: shouldShowBelow ? rect.bottom + 10 : rect.top - 10,
+                });
+                setIsVisible(true);
+            } catch (error) {
+                console.warn("Lỗi khi tính toán vị trí tooltip:", error);
+            }
+        }, 500); // Delay 500ms trước khi hiện tooltip
+    };
+
+    const hideTooltip = () => {
+        if (timeoutRef.current) {
+            clearTimeout(timeoutRef.current);
+            timeoutRef.current = null;
+        }
+        setIsVisible(false);
+    };
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            if (timeoutRef.current) {
+                clearTimeout(timeoutRef.current);
+                timeoutRef.current = null;
+            }
+        };
+    }, []);
+
+    return (
+        <>
+            <div
+                ref={containerRef}
+                onMouseEnter={showTooltip}
+                onMouseLeave={hideTooltip}
+                className="relative"
+            >
+                {children}
+            </div>
+
+            {isVisible && (
+                <div
+                    ref={tooltipRef}
+                    className="fixed z-50 w-[450px] overflow-hidden rounded-xl shadow-2xl backdrop-blur-sm"
+                    style={{
+                        left: `${position.x}px`,
+                        top: `${position.y}px`,
+                        transform: showBelow
+                            ? "translate(-50%, 0%)"
+                            : "translate(-50%, -100%)",
+                        pointerEvents: "none",
+                    }}
+                >
+                    {/* Arrow - Thay đổi hướng tùy theo vị trí tooltip */}
+                    {showBelow ? (
+                        // Arrow pointing up (khi tooltip ở dưới)
+                        <>
+                            <div className="absolute -top-2 left-1/2 h-0 w-0 -translate-x-1/2 border-b-8 border-l-8 border-r-8 border-b-gray-200 border-l-transparent border-r-transparent"></div>
+                            <div className="absolute -top-2 left-1/2 h-0 w-0 -translate-x-1/2 translate-y-px border-b-8 border-l-8 border-r-8 border-b-white border-l-transparent border-r-transparent"></div>
+                        </>
+                    ) : (
+                        // Arrow pointing down (khi tooltip ở trên)
+                        <>
+                            <div className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-gray-200"></div>
+                            <div className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 -translate-y-px border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white"></div>
+                        </>
+                    )}
+
+                    <div className="flex rounded-xl bg-white/95">
+                        {/* Thumbnail */}
+                        <div className="w-32 shrink-0 self-stretch">
+                            <img
+                                src={(() => {
+                                    if (!movie.poster_url)
+                                        return `https://picsum.photos/320/180?random=${new Date().getTime()}`;
+                                    if (
+                                        movie.poster_url.includes(
+                                            "https://phimimg.com/",
+                                        )
+                                    ) {
+                                        return `https://phimapi.com/image.php?url=${movie.poster_url}`;
+                                    }
+                                    return `https://phimapi.com/image.php?url=https://phimimg.com/${movie.poster_url}`;
+                                })()}
+                                alt={movie.name}
+                                className="h-full w-full rounded-l-xl object-cover"
+                            />
+                        </div>
+
+                        {/* Details */}
+                        <div className="flex-1 space-y-2 px-4 py-3">
+                            {/* Title & Quick Info */}
+                            <div>
+                                <h3 className="mb-1 text-sm font-bold leading-tight text-gray-900">
+                                    {movie.name}
+                                </h3>
+
+                                {/* Original Name */}
+                                {movie.origin_name &&
+                                    movie.origin_name !== movie.name && (
+                                        <p className="mb-1.5 text-xs italic text-gray-600">
+                                            {movie.origin_name}
+                                        </p>
+                                    )}
+
+                                {/* Quick Info Row */}
+                                <div className="mb-2 flex items-center gap-2 text-xs">
+                                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+                                        {movie.quality}
+                                    </span>
+                                    <span className="text-gray-600">
+                                        {movie.year || "N/A"}
+                                    </span>
+                                    <span className="text-gray-400">•</span>
+                                    <span className="text-gray-600">
+                                        {movie.episode_current || "N/A"}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Metadata */}
+                            <div className="space-y-2">
+                                {/* Categories */}
+                                {movie.category &&
+                                    movie.category.length > 0 && (
+                                        <div>
+                                            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                                Thể loại
+                                            </h4>
+                                            <div className="flex flex-wrap gap-1">
+                                                {movie.category
+                                                    .slice(0, 3)
+                                                    .map((cat, i) => (
+                                                        <span
+                                                            key={i}
+                                                            className="rounded-md bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-blue-200/50"
+                                                        >
+                                                            {cat.name}
+                                                        </span>
+                                                    ))}
+                                                {movie.category.length > 3 && (
+                                                    <span className="text-xs text-gray-500">
+                                                        +
+                                                        {movie.category.length -
+                                                            3}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                {/* Country & Language Info */}
+                                <div className="flex items-start gap-4 text-xs">
+                                    {movie.country &&
+                                        movie.country.length > 0 && (
+                                            <div>
+                                                <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                                    Quốc gia
+                                                </div>
+                                                <div className="text-gray-700">
+                                                    {movie.country[0]?.name}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                    {movie.lang && (
+                                        <div className="flex-1">
+                                            <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                                Ngôn ngữ
+                                            </div>
+                                            <div className="flex flex-wrap gap-1">
+                                                {movie.lang
+                                                    .split("+")
+                                                    .slice(0, 2)
+                                                    .map((lang, i) => (
+                                                        <span
+                                                            key={i}
+                                                            className="rounded bg-green-50 px-1.5 py-0.5 text-xs font-medium text-green-700 ring-1 ring-green-200/50"
+                                                        >
+                                                            {lang
+                                                                .trim()
+                                                                .replace(
+                                                                    "Thuyết Minh",
+                                                                    "TM",
+                                                                )
+                                                                .replace(
+                                                                    "Lồng Tiếng",
+                                                                    "LT",
+                                                                )
+                                                                .replace(
+                                                                    "Vietsub",
+                                                                    "PĐ",
+                                                                )}
+                                                        </span>
+                                                    ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Additional Info */}
+                            {((movie.time &&
+                                movie.time.trim() !== "" &&
+                                movie.time !== "0") ||
+                                (movie.tmdb?.vote_average &&
+                                    movie.tmdb.vote_average > 0)) && (
+                                <div className="flex items-center gap-4 text-xs">
+                                    {/* Duration */}
+                                    {movie.time &&
+                                        movie.time.trim() !== "" &&
+                                        movie.time !== "0" && (
+                                            <div>
+                                                <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                                    Thời lượng
+                                                </div>
+                                                <div className="text-gray-700">
+                                                    {movie.time}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                    {/* TMDB Rating */}
+                                    {movie.tmdb?.id && (
+                                        <div>
+                                            <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                                                TMDB
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-yellow-600">
+                                                    ★
+                                                </span>
+                                                <span className="text-gray-700">
+                                                    {movie.tmdb.vote_average}
+                                                </span>
+                                                {movie.tmdb.vote_count &&
+                                                    movie.tmdb.vote_count >
+                                                        0 && (
+                                                        <span className="text-gray-500">
+                                                            (
+                                                            {
+                                                                movie.tmdb
+                                                                    .vote_count
+                                                            }
+                                                            )
+                                                        </span>
+                                                    )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
+    );
+}
+
 const CONFIG = {
     APP_DOMAIN_FRONTEND: "https://phimapi.com",
     APP_DOMAIN_CDN_IMAGE: "https://phimimg.com",
@@ -669,10 +965,7 @@ export default function Vods() {
                                 >
                                     {/* Skeleton Image */}
                                     <div className="relative bg-gray-200">
-                                        <div
-                                            className="w-full bg-gray-300"
-                                            style={{ aspectRatio: "2/3" }}
-                                        />
+                                        <div className="aspect-2/3 w-full bg-gray-300" />
                                         {/* Skeleton badges */}
                                         <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
                                             <div className="h-5 w-8 rounded-md bg-gray-400"></div>
@@ -701,81 +994,74 @@ export default function Vods() {
 
                         {!isLoading &&
                             movies.map((movie) => (
-                                <a
-                                    key={movie.slug}
-                                    href={`vods/play?slug=${movie.slug}`}
-                                    title={movie.name}
-                                    className="group relative flex transform cursor-pointer flex-col overflow-hidden rounded-lg bg-white text-inherit no-underline shadow transition-transform hover:scale-105 hover:shadow-lg"
-                                >
-                                    <div className="relative bg-gray-200">
-                                        <img
-                                            src={getMovieImage(
-                                                movie.poster_url,
-                                            )}
-                                            alt={movie.name}
-                                            loading="lazy"
-                                            className="w-full object-cover transition-opacity duration-300"
-                                            style={{
-                                                aspectRatio: "2/3",
-                                                backgroundPosition: "center",
-                                                backgroundRepeat: "no-repeat",
-                                                backgroundSize: "contain",
-                                            }}
-                                            onLoad={(e) => {
-                                                const loader =
-                                                    e.target.nextElementSibling;
-                                                if (loader) loader.remove();
-                                            }}
-                                        />
-                                        <div
-                                            className="bg-linear-to-b absolute inset-0 flex items-center justify-center from-gray-200 to-gray-300"
-                                            style={{ aspectRatio: "2/3" }}
-                                        >
-                                            <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500"></div>
+                                <MovieTooltip key={movie.slug} movie={movie}>
+                                    <a
+                                        href={`vods/play?slug=${movie.slug}`}
+                                        className="group relative flex transform cursor-pointer flex-col overflow-hidden rounded-lg bg-white text-inherit no-underline shadow transition-transform hover:scale-105 hover:shadow-lg"
+                                    >
+                                        <div className="relative bg-gray-200">
+                                            <img
+                                                src={getMovieImage(
+                                                    movie.poster_url,
+                                                )}
+                                                alt={movie.name}
+                                                loading="lazy"
+                                                className="aspect-2/3 w-full bg-contain bg-center bg-no-repeat object-cover transition-opacity duration-300"
+                                                onLoad={(e) => {
+                                                    const loader =
+                                                        e.target
+                                                            .nextElementSibling;
+                                                    if (loader) loader.remove();
+                                                }}
+                                            />
+                                            <div className="bg-linear-to-b aspect-2/3 absolute inset-0 flex items-center justify-center from-gray-200 to-gray-300">
+                                                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500"></div>
+                                            </div>
+                                            <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
+                                                {movie.lang
+                                                    ?.split("+")
+                                                    .map((lang, i) => (
+                                                        <span
+                                                            key={i}
+                                                            className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${langBadgeClass(lang)}`}
+                                                        >
+                                                            {lang
+                                                                .trim()
+                                                                .replace(
+                                                                    "Thuyết Minh",
+                                                                    "TM",
+                                                                )
+                                                                .replace(
+                                                                    "Lồng Tiếng",
+                                                                    "LT",
+                                                                )
+                                                                .replace(
+                                                                    "Vietsub",
+                                                                    "PĐ",
+                                                                )}
+                                                        </span>
+                                                    ))}
+                                            </div>
                                         </div>
-                                        <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
-                                            {movie.lang
-                                                ?.split("+")
-                                                .map((lang, i) => (
-                                                    <span
-                                                        key={i}
-                                                        className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${langBadgeClass(lang)}`}
-                                                    >
-                                                        {lang
-                                                            .trim()
-                                                            .replace(
-                                                                "Thuyết Minh",
-                                                                "TM",
-                                                            )
-                                                            .replace(
-                                                                "Lồng Tiếng",
-                                                                "LT",
-                                                            )
-                                                            .replace(
-                                                                "Vietsub",
-                                                                "PĐ",
-                                                            )}
-                                                    </span>
-                                                ))}
+                                        <div className="flex grow flex-col p-3">
+                                            <h3 className="line-clamp-1 text-sm font-semibold text-gray-800">
+                                                {movie.name}
+                                            </h3>
+                                            <div className="flex justify-between">
+                                                <span className="mt-2 text-xs text-gray-500">
+                                                    {movie.episode_current ||
+                                                        "N/A"}
+                                                </span>
+                                                <span className="mt-2 text-xs  text-gray-500">
+                                                    {movie.year}
+                                                </span>
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div className="flex grow flex-col p-3">
-                                        <h3 className="line-clamp-1 text-sm font-semibold text-gray-800">
-                                            {movie.name}
-                                        </h3>
-                                        <div className="flex justify-between">
-                                            <span className="mt-2 text-xs text-gray-500">
-                                                {movie.episode_current || "N/A"}
-                                            </span>
-                                            <span className="mt-2 text-xs  text-gray-500">
-                                                {movie.year}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <span className="absolute right-2 top-2 inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/10">
-                                        {movie.quality}
-                                    </span>
-                                </a>
+                                        <span className="absolute right-2 top-2 inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/10">
+                                            {movie.quality}
+                                        </span>
+                                    </a>
+                                </MovieTooltip>
                             ))}
                     </div>
                 </div>

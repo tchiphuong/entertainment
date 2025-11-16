@@ -10,3 +10,4 @@
 -   luôn tái sử dụng components khi có thể để tránh lặp code.
 -   Luôn sử dụng font "Inter" cho toàn bộ ứng dụng, import từ npm package "@fontsource/inter".
 -   Luôn đảm bảo ứng dụng responsive, hiển thị tốt trên cả desktop và mobile. Ủu tiên sử dụng Tailwind CSS utilities để đạt được điều này.
+-   Luôn dùng class css, không inline css khi đã có class tương ứng trong Tailwind CSS.
