@@ -9,12 +9,28 @@ function MovieTooltip({ movie, children }) {
     const [isVisible, setIsVisible] = useState(false);
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [showBelow, setShowBelow] = useState(false);
+    const [isMobile, setIsMobile] = useState(false);
     const tooltipRef = useRef(null);
     const timeoutRef = useRef(null);
     const containerRef = useRef(null);
     const mountedRef = useRef(true);
 
+    // Detect mobile device
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth < 1024); // lg breakpoint
+        };
+
+        checkMobile();
+        window.addEventListener("resize", checkMobile);
+
+        return () => window.removeEventListener("resize", checkMobile);
+    }, []);
+
     const showTooltip = (e) => {
+        // Disable tooltip trên mobile
+        if (isMobile) return;
+
         if (timeoutRef.current) clearTimeout(timeoutRef.current);
 
         timeoutRef.current = setTimeout(() => {

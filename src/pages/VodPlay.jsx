@@ -153,7 +153,7 @@ XMLHttpRequest.prototype.send = function (...args) {
                         });
                     }
                 } catch (e) {
-                    console.warn("Failed to clean M3U8 via XHR:", e);
+                    // Failed to clean M3U8 via XHR
                 }
             }
 
@@ -191,6 +191,7 @@ export default function VodPlay() {
     const query = useQuery();
     const slug = query.get("slug");
     const episodeParam = query.get("episode");
+    const serverParam = query.get("server"); // Thêm server param
     const debugTmdb = query.get("debugTmdb") === "true"; // toggle to show raw TMDb JSON for debugging
     const debugMobile = query.get("debugMobile") === "true"; // Debug mode để test mobile behavior
     const navigate = useNavigate();
@@ -206,21 +207,21 @@ export default function VodPlay() {
     const [tmdbData, setTmdbData] = useState(null); // Store TMDb data
     const [tmdbCredits, setTmdbCredits] = useState(null); // Store TMDb credits (cast/crew)
     const [tmdbImages, setTmdbImages] = useState(null); // Store TMDb images
-    const [lastWatchedEpisodes, setLastWatchedEpisodes] = useLocalStorage(
-        "lastWatchedEpisodes",
-        [],
-    );
-    const [, setHistory] = useLocalStorage("viewHistory", []);
+    const [viewHistory, setViewHistory] = useLocalStorage("viewHistory", []);
+    const [bookmarks, setBookmarks] = useLocalStorage("bookmarks", []);
     const [showImageModal, setShowImageModal] = useState(false);
     const [modalImages, setModalImages] = useState([]);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
     const [isTheaterMode, setIsTheaterMode] = useState(false);
+    const [showShareModal, setShowShareModal] = useState(false);
+    const [shareMessage, setShareMessage] = useState("");
     const modalRef = useRef(null);
 
     // Interceptors đã setup từ đầu file
 
     useEffect(() => {
-        document.title = "VOD Player";
+        // Set tiêu đề mặc định khi load
+        document.title = slug ? "Đang tải..." : "VOD Player";
         if (slug) {
             // Reset flags khi load video khác
             hasInitializedRef.current = false;
@@ -229,6 +230,13 @@ export default function VodPlay() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [slug]);
+
+    // Cập nhật tiêu đề khi có dữ liệu movie
+    useEffect(() => {
+        if (movie?.name) {
+            document.title = movie.name;
+        }
+    }, [movie]);
 
     // Xử lý phím ESC để đóng modal
     useEffect(() => {
@@ -260,10 +268,122 @@ export default function VodPlay() {
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, [showImageModal, modalImages.length]);
 
+    // Keyboard shortcuts cho video player (j/l hoặc arrow keys để tua 10s)
+    useEffect(() => {
+        const handleVideoKeyDown = (e) => {
+            // Chỉ xử lý khi không có modal nào đang mở
+            if (showImageModal || showShareModal) return;
+
+            // Bỏ qua nếu đang typing trong input/textarea
+            if (
+                e.target.tagName === "INPUT" ||
+                e.target.tagName === "TEXTAREA"
+            ) {
+                return;
+            }
+
+            // Lấy video element (JWPlayer hoặc HLS)
+            const jwplayer = window.jwplayer && window.jwplayer();
+            const hlsVideo = document.getElementById("hls-video");
+
+            // Tua lùi 10s (j hoặc ArrowLeft)
+            if (e.key === "j" || e.key === "ArrowLeft") {
+                e.preventDefault();
+                if (jwplayer && typeof jwplayer.seek === "function") {
+                    const currentTime = jwplayer.getPosition();
+                    jwplayer.seek(Math.max(0, currentTime - 10));
+                } else if (hlsVideo) {
+                    hlsVideo.currentTime = Math.max(
+                        0,
+                        hlsVideo.currentTime - 10,
+                    );
+                }
+            }
+
+            // Tua tiến 10s (l hoặc ArrowRight)
+            if (e.key === "l" || e.key === "ArrowRight") {
+                e.preventDefault();
+                if (jwplayer && typeof jwplayer.seek === "function") {
+                    const currentTime = jwplayer.getPosition();
+                    const duration = jwplayer.getDuration();
+                    jwplayer.seek(Math.min(duration, currentTime + 10));
+                } else if (hlsVideo) {
+                    hlsVideo.currentTime = Math.min(
+                        hlsVideo.duration,
+                        hlsVideo.currentTime + 10,
+                    );
+                }
+            }
+
+            // Space để play/pause
+            if (e.key === " " || e.code === "Space") {
+                e.preventDefault();
+                if (jwplayer && typeof jwplayer.getState === "function") {
+                    if (jwplayer.getState() === "playing") {
+                        jwplayer.pause();
+                    } else {
+                        jwplayer.play();
+                    }
+                } else if (hlsVideo) {
+                    if (hlsVideo.paused) {
+                        hlsVideo.play();
+                    } else {
+                        hlsVideo.pause();
+                    }
+                }
+            }
+
+            // K để play/pause (giống YouTube)
+            if (e.key === "k" || e.key === "K") {
+                e.preventDefault();
+                if (jwplayer && typeof jwplayer.getState === "function") {
+                    if (jwplayer.getState() === "playing") {
+                        jwplayer.pause();
+                    } else {
+                        jwplayer.play();
+                    }
+                } else if (hlsVideo) {
+                    if (hlsVideo.paused) {
+                        hlsVideo.play();
+                    } else {
+                        hlsVideo.pause();
+                    }
+                }
+            }
+
+            // F để fullscreen
+            if (e.key === "f" || e.key === "F") {
+                e.preventDefault();
+                if (jwplayer && typeof jwplayer.setFullscreen === "function") {
+                    jwplayer.setFullscreen(!jwplayer.getFullscreen());
+                } else if (hlsVideo) {
+                    if (!document.fullscreenElement) {
+                        hlsVideo.requestFullscreen();
+                    } else {
+                        document.exitFullscreen();
+                    }
+                }
+            }
+
+            // M để mute/unmute
+            if (e.key === "m" || e.key === "M") {
+                e.preventDefault();
+                if (jwplayer && typeof jwplayer.getMute === "function") {
+                    jwplayer.setMute(!jwplayer.getMute());
+                } else if (hlsVideo) {
+                    hlsVideo.muted = !hlsVideo.muted;
+                }
+            }
+        };
+
+        window.addEventListener("keydown", handleVideoKeyDown);
+        return () => window.removeEventListener("keydown", handleVideoKeyDown);
+    }, [showImageModal, showShareModal]);
+
     // Get last watched episodes list
     const getLastWatchedList = useCallback(() => {
-        return lastWatchedEpisodes || [];
-    }, [lastWatchedEpisodes]);
+        return viewHistory || [];
+    }, [viewHistory]);
 
     // Fetch movie details
     async function fetchMovieDetails() {
@@ -306,7 +426,6 @@ export default function VodPlay() {
                     });
 
                 setEpisodes(filteredEpisodes);
-                addToHistory(data.movie);
 
                 // Fetch TMDb data, credits, and images nếu có tmdb info
                 if (data.movie.tmdb?.id) {
@@ -326,11 +445,13 @@ export default function VodPlay() {
                 if (filteredEpisodes.length > 0) {
                     initializeFromUrl(filteredEpisodes);
                 }
+
+                // Lưu thông tin cơ bản vào lịch sử ngay khi có movie data
+                addToHistory(data.movie);
             } else {
                 setErrorMessage("Failed to load movie details.");
             }
         } catch (err) {
-            console.error(err);
             setErrorMessage("Failed to load movie details.");
         } finally {
             setIsLoading(false);
@@ -355,7 +476,7 @@ export default function VodPlay() {
                 setTmdbData(data);
             }
         } catch (err) {
-            console.warn("Failed to fetch TMDb data:", err);
+            // Failed to fetch TMDb data
         }
     }
 
@@ -377,7 +498,7 @@ export default function VodPlay() {
                 setTmdbData(data);
             }
         } catch (err) {
-            console.warn("Failed to fetch TMDb TV data:", err);
+            // Failed to fetch TMDb TV data
         }
     }
 
@@ -400,7 +521,7 @@ export default function VodPlay() {
                 setTmdbCredits(data);
             }
         } catch (err) {
-            console.warn("Failed to fetch TMDb credits:", err);
+            // Failed to fetch TMDb credits
         }
     }
 
@@ -423,7 +544,7 @@ export default function VodPlay() {
                 setTmdbImages(data);
             }
         } catch (err) {
-            console.warn("Failed to fetch TMDb images:", err);
+            // Failed to fetch TMDb images
         }
     }
 
@@ -434,53 +555,147 @@ export default function VodPlay() {
             return;
         }
 
-        // Ưu tiên 1: Nếu có URL parameter ?episode=xxx
+        // Ưu tiên 1: Nếu có URL parameter ?episode=xxx&server=xxx
         if (episodeParam) {
-            const matchingEpisode = episodesList.find((episode) =>
-                episode.server_data?.some(
-                    (server) => server.slug === episodeParam,
-                ),
-            );
+            let targetEpisode = null;
+            let targetServer = null;
 
-            if (matchingEpisode) {
-                const matchingServer = matchingEpisode.server_data.find(
-                    (server) => server.slug === episodeParam,
+            // Nếu có cả episode và server param
+            if (serverParam) {
+                const serverName = slugToServerName(serverParam); // Convert "thuyet-minh" → "Thuyết Minh"
+                const episodeNum = episodeParam; // Số tập
+
+                // Tìm episode có server type này với số tập này
+                targetEpisode = episodesList.find(
+                    (episode) =>
+                        episode.server_name === serverName &&
+                        episode.server_data?.some(
+                            (server) =>
+                                getEpisodeKey(server.slug) === episodeNum,
+                        ),
                 );
-                if (matchingServer) {
-                    hasInitializedRef.current = true;
-                    setActiveEpisode(matchingEpisode);
-                    // Truyền episode để lưu server_name đúng
-                    openEpisode(matchingServer, matchingEpisode);
-                    return;
+
+                if (targetEpisode) {
+                    targetServer = targetEpisode.server_data.find(
+                        (server) => getEpisodeKey(server.slug) === episodeNum,
+                    );
                 }
+            }
+
+            // Nếu không tìm thấy bằng server param, fallback về tìm theo episode number
+            if (!targetEpisode) {
+                // Tìm episode có chứa tập với số episode này (vd: episode=01 → tìm "tap-01", "tap-1", etc.)
+                targetEpisode = episodesList.find((episode) =>
+                    episode.server_data?.some((server) => {
+                        const serverEpisodeKey = getEpisodeKey(server.slug);
+                        return (
+                            serverEpisodeKey === episodeParam ||
+                            serverEpisodeKey ===
+                                episodeParam.replace(/^0+/, "") || // "01" → "1"
+                            server.slug.includes(`tap-${episodeParam}`) ||
+                            server.slug.includes(`episode-${episodeParam}`)
+                        );
+                    }),
+                );
+
+                if (targetEpisode) {
+                    // Kiểm tra lịch sử để ưu tiên server type đã lưu
+                    const lastWatchedList = getLastWatchedList();
+                    const movieData = lastWatchedList.find(
+                        (item) => item.slug === slug, // Sửa lỗi: movieSlug → slug
+                    );
+
+                    const savedServerSlug = movieData?.server; // "thuyet-minh", "vietsub", etc.
+
+                    // Ưu tiên server cùng type đã lưu
+                    if (savedServerSlug) {
+                        const savedServerName =
+                            slugToServerName(savedServerSlug);
+                        targetServer = targetEpisode.server_data.find(
+                            (server) => server.server_name === savedServerName,
+                        );
+                    }
+
+                    // Fallback: server đầu tiên có tập này
+                    if (!targetServer) {
+                        targetServer = targetEpisode.server_data.find(
+                            (server) => {
+                                const serverEpisodeKey = getEpisodeKey(
+                                    server.slug,
+                                );
+                                return (
+                                    serverEpisodeKey === episodeParam ||
+                                    serverEpisodeKey ===
+                                        episodeParam.replace(/^0+/, "") ||
+                                    server.slug.includes(
+                                        `tap-${episodeParam}`,
+                                    ) ||
+                                    server.slug.includes(
+                                        `episode-${episodeParam}`,
+                                    )
+                                );
+                            },
+                        );
+                    }
+                }
+            }
+
+            if (targetEpisode && targetServer) {
+                hasInitializedRef.current = true;
+                setActiveEpisode(targetEpisode);
+                openEpisode(targetServer, targetEpisode);
+                return;
             }
         }
 
         // Ưu tiên 2: Tìm tập đang xem từ lịch sử (khi reload không có URL param)
         const lastWatchedList = getLastWatchedList();
-        const movieData = lastWatchedList.find(
-            (item) => item.movieSlug === slug,
-        );
+        const movieData = lastWatchedList.find((item) => item.slug === slug);
 
-        if (movieData?.currentEpisode && episodesList.length > 0) {
+        if (movieData?.current_episode?.key && episodesList.length > 0) {
+            // Tìm episode có chứa tập đang xem
             const matchingEpisode = episodesList.find((episode) =>
                 episode.server_data?.some(
-                    (server) => server.slug === movieData.currentEpisode,
+                    (server) => server.slug === movieData.current_episode.key,
                 ),
             );
+
             if (matchingEpisode) {
-                const matchingServer = matchingEpisode.server_data.find(
-                    (server) => server.slug === movieData.currentEpisode,
-                );
-                if (matchingServer) {
+                // Ưu tiên 1: Tìm server cùng type đã lưu (từ slug server)
+                const savedServerSlug = movieData.server; // "thuyet-minh", "vietsub", etc.
+                let targetServer = null;
+
+                if (savedServerSlug) {
+                    // Convert slug về server name để tìm
+                    const savedServerName = slugToServerName(savedServerSlug);
+                    targetServer = matchingEpisode.server_data.find(
+                        (server) => server.server_name === savedServerName,
+                    );
+                }
+
+                // Ưu tiên 2: Nếu không tìm thấy server cùng type, dùng server có slug giống
+                if (!targetServer) {
+                    targetServer = matchingEpisode.server_data.find(
+                        (server) =>
+                            server.slug === movieData.current_episode.key,
+                    );
+                }
+
+                if (targetServer) {
                     hasInitializedRef.current = true;
                     setActiveEpisode(matchingEpisode);
                     // Truyền episode để lưu server_name đúng
-                    openEpisode(matchingServer, matchingEpisode);
+                    openEpisode(targetServer, matchingEpisode);
 
-                    // Cập nhật URL để giữ nguyên tập khi reload lần sau
-                    const params = new URLSearchParams(window.location.search);
-                    params.set("episode", matchingServer.slug);
+                    // Cập nhật URL với đầy đủ thông tin
+                    const params = new URLSearchParams();
+                    params.set("slug", slug);
+                    const episodeKey = getEpisodeKey(targetServer.slug);
+                    params.set("episode", episodeKey); // Số tập
+                    params.set(
+                        "server",
+                        serverNameToSlug(matchingEpisode.server_name),
+                    ); // Server type
                     window.history.replaceState(
                         {},
                         "",
@@ -506,59 +721,48 @@ export default function VodPlay() {
     // Add to watch history
     function addToHistory(movieData) {
         try {
-            const history =
-                JSON.parse(localStorage.getItem("viewHistory")) || [];
+            const history = [...viewHistory];
             const existingIndex = history.findIndex((h) => h.slug === slug);
 
             const entry = {
                 slug: movieData.slug,
                 name: movieData.name,
-                poster: movieData.poster_url,
-                timestamp: new Date().toISOString(),
+                poster: movieData.poster_url || movieData.thumb_url || "",
+                server: "", // Server slug hiện tại
+                current_episode: {}, // Object với key và value
+                time: new Date().toISOString(),
+                episodes: [], // Mảng các tập đã xem với position
             };
 
-            // Chỉ thêm lastWatchedEpisode nếu có thông tin thực sự
+            // Chỉ cập nhật current_episode nếu có thông tin thực sự
             if (activeEpisode?.server_name && currentEpisodeId) {
-                entry.lastWatchedEpisode = {
-                    key: activeEpisode.server_name,
-                    value: currentEpisodeId,
+                entry.current_episode = {
+                    key: currentEpisodeId,
+                    value: `Tập ${currentEpisodeId.split("-").pop()}`,
                 };
             }
 
             if (existingIndex >= 0) {
-                // Giữ lại lastWatchedEpisode cũ nếu không có thông tin mới
-                if (
-                    !entry.lastWatchedEpisode &&
-                    history[existingIndex].lastWatchedEpisode
-                ) {
-                    entry.lastWatchedEpisode =
-                        history[existingIndex].lastWatchedEpisode;
+                // Nếu đã có dữ liệu cũ, giữ lại episodes và thông tin xem
+                const oldData = history[existingIndex];
+                if (oldData.episodes) {
+                    entry.episodes = oldData.episodes;
+                }
+                if (oldData.server) {
+                    entry.server = oldData.server;
+                }
+                if (oldData.current_episode && !entry.current_episode.key) {
+                    entry.current_episode = oldData.current_episode;
                 }
                 history[existingIndex] = entry;
             } else {
                 history.unshift(entry);
             }
-            setHistory(history.slice(0, 20));
-        } catch (e) {
-            console.error("Error adding to history:", e);
-        }
-    }
 
-    // Save watch history position
-    function saveWatchHistory(episodeSlug) {
-        try {
-            const history =
-                JSON.parse(localStorage.getItem("viewHistory")) || [];
-            const existingIndex = history.findIndex((h) => h.slug === slug);
-            if (existingIndex !== -1 && movie) {
-                history[existingIndex].lastWatchedEpisode = {
-                    key: episodeSlug,
-                    value: `Tập ${episodeSlug.split("-").pop()}`,
-                };
-                localStorage.setItem("viewHistory", JSON.stringify(history));
-            }
+            // Giữ tối đa 20 phim
+            setViewHistory(history.slice(0, 20));
         } catch (e) {
-            console.error("Error saving watch history:", e);
+            // Error adding to history
         }
     }
 
@@ -576,18 +780,83 @@ export default function VodPlay() {
         return episodeNumber;
     }
 
+    // Helper function: Extract server type từ server name (vd: "#Hà Nội (Vietsub)" → "Vietsub")
+    function extractServerType(serverName) {
+        if (!serverName) return "";
+
+        // Tìm text trong ngoặc đơn cuối cùng
+        const match = serverName.match(/\(([^)]+)\)$/);
+        if (match) {
+            return match[1]; // "Vietsub", "Thuyết Minh", "Lồng Tiếng"
+        }
+
+        // Fallback: tìm các keywords trong string
+        if (serverName.toLowerCase().includes("vietsub")) return "Vietsub";
+        if (
+            serverName.toLowerCase().includes("thuyết minh") ||
+            serverName.toLowerCase().includes("thuyet minh")
+        )
+            return "Thuyết Minh";
+        if (
+            serverName.toLowerCase().includes("lồng tiếng") ||
+            serverName.toLowerCase().includes("long tieng")
+        )
+            return "Lồng Tiếng";
+
+        return serverName;
+    }
+
+    // Helper function: Chuẩn hóa server name thành URL slug
+    function serverNameToSlug(serverName) {
+        // Server name đã được chuẩn hóa trong fetchMovieDetails() rồi
+        const mapping = {
+            Vietsub: "vietsub",
+            "Thuyết Minh": "thuyet-minh",
+            "Lồng Tiếng": "long-tieng",
+        };
+        return (
+            mapping[serverName] || serverName.toLowerCase().replace(/\s+/g, "-")
+        );
+    }
+
+    // Helper function: Chuẩn hóa URL slug thành server name
+    function slugToServerName(slug) {
+        const mapping = {
+            vietsub: "Vietsub",
+            "thuyet-minh": "Thuyết Minh",
+            "long-tieng": "Lồng Tiếng",
+        };
+        return mapping[slug] || slug;
+    }
+
+    // Helper function: Lấy position đã xem của episode từ lịch sử
+    function getLastWatchedPosition(episodeSlug) {
+        const movieData = viewHistory.find((item) => item.slug === slug);
+
+        if (!movieData || !movieData.episodes) return 0;
+
+        const episodeData = movieData.episodes.find(
+            (ep) => ep.episode === episodeSlug,
+        );
+        return episodeData ? episodeData.position : 0;
+    }
+
     // Set watchlist - save current episode & position
     function setWatchlist(episodeSlug, position = null, episode = null) {
         try {
-            const list = [...lastWatchedEpisodes];
-            let movieData = list.find((item) => item.movieSlug === slug);
+            const list = [...viewHistory];
+            let movieData = list.find((item) => item.slug === slug);
+
             if (!movieData) {
+                // Tạo movieData mới theo format JSON đơn giản
                 movieData = {
-                    movieSlug: slug,
-                    currentEpisode: episodeSlug,
-                    currentEpisodeNumber: null,
-                    server: "", // Lưu server riêng biệt
-                    episodes: {}, // Lưu position theo tập
+                    slug: slug,
+                    name: movie?.name || "",
+                    poster: movie?.poster_url || movie?.thumb_url || "",
+                    server: "",
+                    current_episode: {},
+                    time: new Date().toISOString(),
+                    episodes: [],
                 };
                 list.push(movieData);
             }
@@ -595,31 +864,55 @@ export default function VodPlay() {
             // Extract episode key (số tập)
             const episodeKey = getEpisodeKey(episodeSlug);
 
-            // Chỉ cập nhật server nếu có episode parameter được truyền vào
+            // Cập nhật server nếu có episode parameter được truyền vào
             if (episode) {
-                movieData.server = episode.server_name || "";
+                const serverSlug = serverNameToSlug(episode.server_name || "");
+                console.log("🔍 Saving server to history:", {
+                    episodeName: episode.server_name,
+                    serverSlug: serverSlug,
+                });
+                movieData.server = serverSlug;
             }
 
-            // Lưu position cho tập này
-            const lastPosition =
-                movieData.episodes?.[episodeKey]?.position || 0;
-            movieData.currentEpisode = episodeSlug; // Lưu slug cụ thể (để restore đúng)
-            movieData.currentEpisodeNumber = episodeKey; // Lưu số tập
-            movieData.episodes[episodeKey] = {
-                position: position !== null ? position : lastPosition,
-                timestamp: new Date().toISOString(),
+            // Cập nhật current episode với format object
+            movieData.current_episode = {
+                key: episodeSlug,
+                value: `Tập ${episodeSlug.split("-").pop()}`,
             };
+            movieData.time = new Date().toISOString();
 
-            setLastWatchedEpisodes(list);
+            // Tìm hoặc tạo episode trong mảng episodes
+            let episodeData = movieData.episodes.find(
+                (ep) => ep.episode === episodeSlug,
+            );
+            if (!episodeData) {
+                episodeData = {
+                    episode: episodeSlug,
+                    position: 0,
+                };
+                movieData.episodes.push(episodeData);
+            }
 
-            // Update URL để lưu cả episode slug (bao gồm cả server info)
-            const params = new URLSearchParams(window.location.search);
-            params.set("episode", episodeSlug);
-            window.history.replaceState({}, "", `?${params.toString()}`);
+            // Cập nhật position cho episode này
+            if (position !== null) {
+                episodeData.position = position;
+            }
 
-            saveWatchHistory(episodeSlug);
+            setViewHistory(list);
+
+            // Chỉ update URL khi không phải đang initialize
+            if (hasInitializedRef.current) {
+                // Update URL với đầy đủ thông tin: slug + episode number + server type
+                const params = new URLSearchParams();
+                params.set("slug", slug);
+                params.set("episode", episodeKey); // Chỉ số tập (vd: "5")
+                if (episode?.server_name) {
+                    params.set("server", serverNameToSlug(episode.server_name)); // Server slug (vd: "thuyet-minh")
+                }
+                window.history.replaceState({}, "", `?${params.toString()}`);
+            }
         } catch (e) {
-            console.error("Error setting watchlist:", e);
+            // Error setting watchlist
         }
     }
 
@@ -813,7 +1106,7 @@ export default function VodPlay() {
                     // Clear reference
                     playerRef.current = null;
                 } catch (e) {
-                    console.warn("Failed to remove old player:", e);
+                    // Failed to remove old player
                 }
             }
 
@@ -827,7 +1120,7 @@ export default function VodPlay() {
                 const player = window.jwplayer("player-container").setup({
                     file: masterUrl,
                     type: "hls",
-                    image: movie?.poster_url || "",
+                    image: movie?.thumb_url || movie?.poster_url || "",
                     title: movie?.name || "Video",
                     width: "100%",
                     aspectratio: "16:9",
@@ -851,11 +1144,8 @@ export default function VodPlay() {
                         (item) => item.movieSlug === slug,
                     );
 
-                    // Extract episode key từ slug
-                    const episodeKey = getEpisodeKey(episodeSlug);
-
-                    const lastPosition =
-                        movieData?.episodes?.[episodeKey]?.position || 0;
+                    // Lấy position đã xem từ lịch sử mới
+                    const lastPosition = getLastWatchedPosition(episodeSlug);
 
                     if (lastPosition > 0) {
                         player.seek(lastPosition);
@@ -897,7 +1187,6 @@ export default function VodPlay() {
                 });
 
                 player.on("error", (event) => {
-                    console.error("JWPlayer error:", event.message);
                     setErrorMessage(`Playback error: ${event.message}`);
                 });
 
@@ -962,17 +1251,8 @@ export default function VodPlay() {
                     setCurrentEpisodeId(episodeSlug);
                     setWatchlist(episodeSlug);
 
-                    // Restore playback position (dùng episodeKey để share giữa các server)
-                    const lastWatchedList = getLastWatchedList();
-                    const movieData = lastWatchedList.find(
-                        (item) => item.movieSlug === slug,
-                    );
-
-                    // Extract episode key từ slug
-                    const episodeKey = getEpisodeKey(episodeSlug);
-
-                    const lastPosition =
-                        movieData?.episodes?.[episodeKey]?.position || 0;
+                    // Restore playback position từ lịch sử mới
+                    const lastPosition = getLastWatchedPosition(episodeSlug);
 
                     if (lastPosition > 0) {
                         video.currentTime = lastPosition;
@@ -1010,17 +1290,8 @@ export default function VodPlay() {
                     setCurrentEpisodeId(episodeSlug);
                     setWatchlist(episodeSlug);
 
-                    // Restore playback position (dùng episodeKey để share giữa các server)
-                    const lastWatchedList = getLastWatchedList();
-                    const movieData = lastWatchedList.find(
-                        (item) => item.movieSlug === slug,
-                    );
-
-                    // Extract episode key từ slug
-                    const episodeKey = getEpisodeKey(episodeSlug);
-
-                    const lastPosition =
-                        movieData?.episodes?.[episodeKey]?.position || 0;
+                    // Restore playback position từ lịch sử mới
+                    const lastPosition = getLastWatchedPosition(episodeSlug);
 
                     if (lastPosition > 0) {
                         video.currentTime = lastPosition;
@@ -1057,8 +1328,10 @@ export default function VodPlay() {
     }
 
     function openEpisode(server, episode = null) {
-        // Update document title
-        document.title = `[${server.name}] - ${movie?.name}`;
+        // Update document title - chỉ update khi có đầy đủ thông tin
+        if (server?.name && movie?.name) {
+            document.title = `[${server.name}] - ${movie.name}`;
+        }
 
         // Lưu server ngay (không delay) - truyền episode để lấy server_name
         setWatchlist(server.slug, null, episode);
@@ -1069,57 +1342,150 @@ export default function VodPlay() {
 
     // Play next episode
     function playNextEpisode() {
-        if (!activeEpisode) return;
+        if (!episodes || episodes.length === 0) return;
 
-        const currentServerIndex =
-            activeEpisode.server_data?.findIndex(
-                (server) => server.slug === currentEpisodeId,
-            ) || -1;
+        // Lấy thông tin từ lịch sử
+        const lastWatchedList = getLastWatchedList();
+        const movieData = lastWatchedList.find((item) => item.slug === slug);
 
-        if (currentServerIndex !== -1) {
-            // Check if there's another server in current episode
-            if (currentServerIndex + 1 < activeEpisode.server_data.length) {
-                openEpisode(
-                    activeEpisode.server_data[currentServerIndex + 1],
-                    activeEpisode,
+        if (!movieData?.current_episode?.key) return;
+
+        const currentEpisodeSlug = movieData.current_episode.key;
+
+        // Xử lý trường hợp đặc biệt: phim lẻ (key = "full")
+        if (currentEpisodeSlug === "full") {
+            setErrorMessage("Đây là phim lẻ, không có tập tiếp theo.");
+            setTimeout(() => {
+                setErrorMessage(null);
+            }, 3000);
+            return;
+        }
+
+        // Tìm tập hiện tại và tập tiếp theo dựa vào thứ tự trong server_data
+        let currentEpisode = null;
+        let currentServerIndex = -1;
+        let nextServer = null;
+
+        // Tìm episode và server hiện tại
+        for (const episode of episodes) {
+            if (episode.server_data) {
+                const serverIndex = episode.server_data.findIndex(
+                    (server) => server.slug === currentEpisodeSlug,
                 );
+                if (serverIndex !== -1) {
+                    currentEpisode = episode;
+                    currentServerIndex = serverIndex;
+                    break;
+                }
+            }
+        }
+
+        if (!currentEpisode || currentServerIndex === -1) {
+            setErrorMessage("Không tìm thấy tập hiện tại.");
+            setTimeout(() => {
+                setErrorMessage(null);
+            }, 3000);
+            return;
+        }
+
+        // Tìm tập tiếp theo: ưu tiên tập tiếp theo trong cùng episode, sau đó tìm episode khác với cùng server type
+        if (currentServerIndex + 1 < currentEpisode.server_data.length) {
+            // Có tập tiếp theo trong cùng episode type
+            nextServer = currentEpisode.server_data[currentServerIndex + 1];
+
+            if (nextServer) {
+                setActiveEpisode(currentEpisode);
+                openEpisode(nextServer, currentEpisode);
                 return;
             }
         }
 
-        // Move to next episode if available
-        if (!episodes || episodes.length === 0) return;
+        // Không có tập tiếp theo trong cùng episode, tìm episode khác với cùng server type
+        const savedServerSlug = movieData.server; // "thuyet-minh", "vietsub", etc.
+
+        console.log("🔍 Auto-play debug:", {
+            savedServerSlug: savedServerSlug,
+            availableEpisodes: episodes.map((ep) => ({
+                name: ep.server_name,
+                serverData: ep.server_data?.length || 0,
+            })),
+        });
+
+        if (savedServerSlug) {
+            const savedServerName = slugToServerName(savedServerSlug); // Convert "thuyet-minh" → "Thuyết Minh"
+            console.log("🔍 Converting server:", {
+                savedServerSlug: savedServerSlug,
+                savedServerName: savedServerName,
+            });
+
+            // Tìm episode tiếp theo có cùng server type
+            const currentEpisodeIndex = episodes.findIndex(
+                (ep) => ep === currentEpisode,
+            );
+
+            for (let i = currentEpisodeIndex + 1; i < episodes.length; i++) {
+                const nextEpisode = episodes[i];
+
+                console.log("🔍 Checking episode:", {
+                    nextEpisodeName: nextEpisode.server_name,
+                    savedServerName: savedServerName,
+                    match: nextEpisode.server_name === savedServerName,
+                });
+
+                // Tìm server đầu tiên trong episode này có cùng server type
+                // So sánh với episode.server_name (đã chuẩn hóa) thay vì server.server_name
+                if (nextEpisode.server_name === savedServerName) {
+                    // Lấy server đầu tiên trong episode này
+                    const firstServer = nextEpisode.server_data?.[0];
+                    if (firstServer) {
+                        console.log(
+                            "✅ Found matching episode, auto-playing:",
+                            nextEpisode.server_name,
+                        );
+                        setActiveEpisode(nextEpisode);
+                        openEpisode(firstServer, nextEpisode);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Fallback: Tìm episode tiếp theo với server đầu tiên (nếu không tìm thấy cùng server type)
         const currentEpisodeIndex = episodes.findIndex(
-            (ep) => ep === activeEpisode,
+            (ep) => ep === currentEpisode,
         );
 
-        if (
-            currentEpisodeIndex !== -1 &&
-            currentEpisodeIndex + 1 < episodes.length
-        ) {
-            const nextEpisode = episodes[currentEpisodeIndex + 1];
-            switchTab(nextEpisode);
-        } else {
-            setErrorMessage("No more episodes available.");
+        for (let i = currentEpisodeIndex + 1; i < episodes.length; i++) {
+            const nextEpisode = episodes[i];
+
+            if (nextEpisode.server_data?.length > 0) {
+                const firstServer = nextEpisode.server_data[0];
+                setActiveEpisode(nextEpisode);
+                openEpisode(firstServer, nextEpisode);
+                return;
+            }
         }
+
+        // Không tìm thấy tập tiếp theo
+        setErrorMessage("Đã xem hết tất cả các tập.");
+        setTimeout(() => {
+            setErrorMessage(null);
+        }, 3000);
     }
 
     // Switch to different episode (tab) - try to keep same server, fallback to first
     function switchTab(episode) {
         setActiveEpisode(episode);
 
-        const lastWatchedList = getLastWatchedList();
-        const movieData = lastWatchedList.find(
-            (item) => item.movieSlug === slug,
-        );
-
-        // Ưu tiên 1: Sử dụng server đã lưu (movieData.server là tên hiển thị như "Vietsub")
-        const savedServerName = movieData?.server;
-
-        if (savedServerName && savedServerName.trim() !== "") {
-            // Tìm server có server_name (tên hiển thị sau normalize) trùng với saved
+        // Ưu tiên 1: Giữ nguyên server type của tập hiện tại (dùng activeEpisode.server_name)
+        if (activeEpisode?.server_name) {
+            const currentServerType = extractServerType(
+                activeEpisode.server_name,
+            );
             const matchingServer = episode.server_data?.find((server) => {
-                return server.server_name === savedServerName;
+                return (
+                    extractServerType(server.server_name) === currentServerType
+                );
             });
             if (matchingServer) {
                 openEpisode(matchingServer, episode);
@@ -1127,7 +1493,25 @@ export default function VodPlay() {
             }
         }
 
-        // Ưu tiên 2: Sử dụng server tương tự như tập hiện tại (so sánh slug)
+        // Ưu tiên 2: Sử dụng server đã lưu từ lịch sử
+        const lastWatchedList = getLastWatchedList();
+        const movieData = lastWatchedList.find((item) => item.slug === slug);
+        const savedServerSlug = movieData?.server; // "thuyet-minh", "vietsub", etc.
+
+        if (savedServerSlug && savedServerSlug.trim() !== "") {
+            const savedServerName = slugToServerName(savedServerSlug);
+            const matchingServer = episode.server_data?.find((server) => {
+                return (
+                    extractServerType(server.server_name) === savedServerName
+                );
+            });
+            if (matchingServer) {
+                openEpisode(matchingServer, episode);
+                return;
+            }
+        }
+
+        // Ưu tiên 3: Sử dụng server tương tự như tập hiện tại (so sánh slug pattern)
         const currentSlug = currentEpisodeId;
         const matchingServer = episode.server_data?.find(
             (server) => server.slug === currentSlug,
@@ -1143,6 +1527,92 @@ export default function VodPlay() {
         }
     }
 
+    // Bookmark functions
+    function isBookmarked(slug) {
+        return bookmarks.some((bookmark) => bookmark.slug === slug);
+    }
+
+    function toggleBookmark(movie) {
+        const isCurrentlyBookmarked = isBookmarked(movie.slug);
+
+        if (isCurrentlyBookmarked) {
+            // Remove bookmark
+            const newBookmarks = bookmarks.filter(
+                (bookmark) => bookmark.slug !== movie.slug,
+            );
+            setBookmarks(newBookmarks);
+            setErrorMessage("Đã bỏ thích phim này!");
+        } else {
+            // Add bookmark
+            const bookmark = {
+                slug: movie.slug,
+                name: movie.name,
+                poster: movie.poster_url || movie.thumb_url || "",
+                year: movie.year,
+                quality: movie.quality,
+                time: new Date().toISOString(),
+            };
+            setBookmarks([bookmark, ...bookmarks]);
+            setErrorMessage("Đã thêm vào danh sách yêu thích!");
+        }
+
+        // Auto hide message after 2 seconds
+        setTimeout(() => {
+            setErrorMessage(null);
+        }, 2000);
+    }
+
+    // Share function - mở modal
+    function shareMovie(movie) {
+        setShowShareModal(true);
+    }
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard) {
+            navigator.clipboard
+                .writeText(text)
+                .then(() => {
+                    setShareMessage("✓ Đã sao chép link!");
+                    setTimeout(() => {
+                        setShareMessage("");
+                    }, 2000);
+                })
+                .catch(() => {
+                    fallbackCopyTextToClipboard(text);
+                });
+        } else {
+            fallbackCopyTextToClipboard(text);
+        }
+    }
+
+    function fallbackCopyTextToClipboard(text) {
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.top = "0";
+        textArea.style.left = "0";
+        textArea.style.position = "fixed";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+
+        try {
+            const successful = document.execCommand("copy");
+            if (successful) {
+                setErrorMessage("Đã sao chép link vào clipboard!");
+                setTimeout(() => {
+                    setErrorMessage(null);
+                }, 2000);
+            }
+        } catch (err) {
+            setErrorMessage("Không thể sao chép link!");
+            setTimeout(() => {
+                setErrorMessage(null);
+            }, 2000);
+        }
+
+        document.body.removeChild(textArea);
+    }
+
     return (
         <div>
             <LoadingSpinner isLoading={isLoading} />
@@ -1152,6 +1622,157 @@ export default function VodPlay() {
                         {errorMessage}
                     </div>
                 </div>
+            )}
+            {/* Skeleton Loading cho toàn bộ trang */}
+            {isLoading && !movie && (
+                <main className="container mx-auto flex h-full flex-col gap-4 p-4">
+                    {/* Skeleton Breadcrumb */}
+                    <nav className="text-sm text-gray-600">
+                        <div className="flex items-center gap-2">
+                            <div className="h-4 w-20 animate-pulse rounded bg-gray-300"></div>
+                            <div>/</div>
+                            <div className="h-4 w-40 animate-pulse rounded bg-gray-300"></div>
+                        </div>
+                    </nav>
+
+                    <div className="flex h-full w-full flex-col justify-start gap-4 lg:h-auto lg:flex-row lg:justify-center">
+                        {/* Skeleton Player */}
+                        <div className="flex w-full flex-col overflow-hidden rounded-md border-gray-50 bg-white shadow lg:w-8/12">
+                            <div
+                                className="w-full animate-pulse bg-gray-300"
+                                style={{ aspectRatio: "16/9" }}
+                            ></div>
+                        </div>
+
+                        {/* Skeleton Episode List */}
+                        <div className="flex w-full flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow lg:w-4/12">
+                            {/* Skeleton Tabs */}
+                            <div className="border-b-2 border-gray-300 bg-gray-100">
+                                <ul className="flex list-none overflow-x-auto">
+                                    {Array.from({ length: 3 }).map((_, i) => (
+                                        <li key={i} className="px-6 py-3.5">
+                                            <div className="h-5 w-20 animate-pulse rounded bg-gray-300"></div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            {/* Skeleton Episode Grid */}
+                            <div className="grid h-fit max-h-96 auto-rows-max grid-cols-3 items-start gap-4 overflow-y-auto p-4 lg:h-0 lg:max-h-none lg:grow lg:grid-cols-4">
+                                {Array.from({ length: 12 }).map((_, i) => (
+                                    <div
+                                        key={i}
+                                        className="animate-pulse rounded-md border-2 border-transparent bg-gray-200 px-3 py-2 text-center"
+                                    >
+                                        <div className="h-4 rounded bg-gray-300"></div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Skeleton Movie Info */}
+                    <div className="rounded-md border border-gray-200 bg-white p-4 shadow-md">
+                        <div className="flex flex-col gap-4 lg:flex-row">
+                            {/* Skeleton Poster */}
+                            <div
+                                className="hidden h-56 shrink-0 lg:block"
+                                style={{ aspectRatio: "2/3" }}
+                            >
+                                <div className="h-full w-full animate-pulse rounded-md bg-gray-300"></div>
+                            </div>
+                            <div
+                                className="w-full shrink-0 lg:hidden"
+                                style={{ aspectRatio: "16/9" }}
+                            >
+                                <div className="h-full w-full animate-pulse rounded-md bg-gray-300"></div>
+                            </div>
+
+                            {/* Skeleton Content */}
+                            <div className="flex grow flex-col gap-3">
+                                {/* Skeleton Title */}
+                                <div>
+                                    <div className="mb-2 h-6 w-3/4 animate-pulse rounded bg-gray-300"></div>
+                                    <div className="h-4 w-1/2 animate-pulse rounded bg-gray-200"></div>
+                                </div>
+
+                                {/* Skeleton Tags */}
+                                <div className="flex flex-wrap gap-2">
+                                    {Array.from({ length: 4 }).map((_, i) => (
+                                        <div
+                                            key={i}
+                                            className="h-6 w-20 animate-pulse rounded-md bg-gray-300"
+                                        ></div>
+                                    ))}
+                                </div>
+
+                                {/* Skeleton Categories */}
+                                <div className="flex flex-wrap gap-2">
+                                    {Array.from({ length: 4 }).map((_, i) => (
+                                        <div
+                                            key={i}
+                                            className="h-6 w-16 animate-pulse rounded-md bg-gray-300"
+                                        ></div>
+                                    ))}
+                                </div>
+
+                                {/* Skeleton Actors */}
+                                <div className="flex flex-wrap gap-2">
+                                    {Array.from({ length: 5 }).map((_, i) => (
+                                        <div
+                                            key={i}
+                                            className="h-6 w-24 animate-pulse rounded-md bg-gray-300"
+                                        ></div>
+                                    ))}
+                                </div>
+
+                                {/* Skeleton Description */}
+                                <div className="space-y-2">
+                                    <div className="h-4 animate-pulse rounded bg-gray-300"></div>
+                                    <div className="h-4 w-5/6 animate-pulse rounded bg-gray-300"></div>
+                                    <div className="h-4 w-4/6 animate-pulse rounded bg-gray-300"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Skeleton Cast Section */}
+                    <div>
+                        <div className="mb-4 h-6 w-32 animate-pulse rounded bg-gray-300"></div>
+                        <div className="rounded-md border border-gray-200 bg-white p-6 shadow-md">
+                            <div className="grid grid-cols-4 gap-4 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10">
+                                {Array.from({ length: 10 }).map((_, i) => (
+                                    <div
+                                        key={i}
+                                        className="flex flex-col items-center gap-2 text-center"
+                                    >
+                                        <div className="bg-linear-to-br h-16 w-16 animate-pulse rounded-full from-gray-300 via-gray-400 to-gray-500"></div>
+                                        <div className="w-32">
+                                            <div className="mb-1 h-4 animate-pulse rounded bg-gray-300"></div>
+                                            <div className="h-3 w-3/4 animate-pulse rounded bg-gray-200"></div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Skeleton Images Section */}
+                    <div>
+                        <div className="mb-4 h-6 w-36 animate-pulse rounded bg-gray-300"></div>
+                        <div className="rounded-md border border-gray-200 bg-white p-6 shadow-md">
+                            <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6">
+                                {Array.from({ length: 8 }).map((_, i) => (
+                                    <div
+                                        key={i}
+                                        className="animate-pulse overflow-hidden rounded-lg bg-gray-300"
+                                        style={{ aspectRatio: "16/9" }}
+                                    ></div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </main>
             )}
             {/* Image Modal */}
             {showImageModal && modalImages.length > 0 && (
@@ -1251,26 +1872,170 @@ export default function VodPlay() {
                     </div>
                 </div>
             )}{" "}
+            {/* Share Modal */}
+            {showShareModal && movie && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                    onClick={() => setShowShareModal(false)}
+                >
+                    <div
+                        className="w-full max-w-md rounded-xl bg-white shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Header */}
+                        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+                            <h3 className="text-lg font-bold text-gray-900">
+                                Chia sẻ phim
+                            </h3>
+                            <button
+                                onClick={() => setShowShareModal(false)}
+                                className="cursor-pointer rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                            >
+                                <svg
+                                    className="h-6 w-6"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M6 18L18 6M6 6l12 12"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6">
+                            {/* Movie Info */}
+                            <div className="mb-6 flex items-center gap-4">
+                                <img
+                                    src={movie.poster_url}
+                                    alt={movie.name}
+                                    className="h-20 w-14 rounded-md object-cover shadow-md"
+                                />
+                                <div className="flex-1">
+                                    <h4 className="font-semibold text-gray-900">
+                                        {movie.name}
+                                    </h4>
+                                    <p className="text-sm text-gray-500">
+                                        {movie.origin_name}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Copy Link */}
+                            <div className="">
+                                <label className="mb-2 block text-sm font-medium text-gray-700">
+                                    Link phim
+                                </label>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        readOnly
+                                        value={window.location.href}
+                                        className="flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700"
+                                    />
+                                    <button
+                                        onClick={() =>
+                                            copyToClipboard(
+                                                window.location.href,
+                                            )
+                                        }
+                                        className="cursor-pointer rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                                {shareMessage && (
+                                    <p className="mt-2 text-sm text-green-600">
+                                        {shareMessage}
+                                    </p>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
             {movie && (
                 <>
                     <main className="container mx-auto flex h-full flex-col gap-4 p-4">
-                        {/* Breadcrumb Navigation */}
-                        <nav className="text-sm text-gray-600">
-                            <ul className="flex items-center gap-2">
-                                <li className="flex items-center">
-                                    <button
-                                        onClick={() => navigate("/vods")}
-                                        className="flex items-center gap-1 text-blue-500 hover:underline"
+                        {/* Breadcrumb Navigation with Actions */}
+                        <div className="flex items-center justify-between">
+                            <nav className="text-sm text-gray-600">
+                                <ul className="flex items-center gap-2">
+                                    <li className="flex items-center">
+                                        <button
+                                            onClick={() => navigate("/vods")}
+                                            className="flex items-center gap-1 text-blue-500 hover:underline"
+                                        >
+                                            Trang chủ
+                                        </button>
+                                    </li>
+                                    <li>/</li>
+                                    <li className="font-semibold text-gray-800">
+                                        {movie.name}
+                                    </li>
+                                </ul>
+                            </nav>
+
+                            {/* Quick Actions */}
+                            <div className="flex items-center gap-2">
+                                {/* Bookmark Button */}
+                                <button
+                                    onClick={() => toggleBookmark(movie)}
+                                    className={`flex cursor-pointer items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                                        isBookmarked(movie.slug)
+                                            ? "bg-red-100 text-red-700 hover:bg-red-200"
+                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                    }`}
+                                >
+                                    <svg
+                                        className="h-4 w-4"
+                                        fill={
+                                            isBookmarked(movie.slug)
+                                                ? "currentColor"
+                                                : "none"
+                                        }
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
                                     >
-                                        Trang chủ
-                                    </button>
-                                </li>
-                                <li>/</li>
-                                <li className="font-semibold text-gray-800">
-                                    {movie.name}
-                                </li>
-                            </ul>
-                        </nav>
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                                        />
+                                    </svg>
+                                    {isBookmarked(movie.slug)
+                                        ? "Đã thích"
+                                        : "Thích"}
+                                </button>
+
+                                {/* Share Button */}
+                                <button
+                                    onClick={() => shareMovie(movie)}
+                                    className="flex cursor-pointer items-center gap-1 rounded-lg bg-blue-100 px-3 py-1.5 text-sm font-medium text-blue-700 transition-all hover:bg-blue-200"
+                                >
+                                    <svg
+                                        className="h-4 w-4"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"
+                                        />
+                                    </svg>
+                                    Chia sẻ
+                                </button>
+                            </div>
+                        </div>
 
                         <div
                             className={`flex h-full w-full flex-col justify-start gap-4 transition-all duration-300 ${
@@ -1312,7 +2077,8 @@ export default function VodPlay() {
                                                     switchTab(episode)
                                                 }
                                                 className={`border-b-3 relative cursor-pointer whitespace-nowrap px-6 py-3.5 text-base font-bold transition-all ${
-                                                    activeEpisode === episode
+                                                    activeEpisode?.server_name ===
+                                                    episode.server_name
                                                         ? "border-b-4 border-blue-600 bg-white text-blue-600 shadow-sm"
                                                         : "border-transparent bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900"
                                                 }`}
@@ -1338,7 +2104,10 @@ export default function VodPlay() {
                                                     <div
                                                         key={server.slug}
                                                         onClick={() =>
-                                                            openEpisode(server)
+                                                            openEpisode(
+                                                                server,
+                                                                activeEpisode,
+                                                            )
                                                         }
                                                         className={`cursor-pointer rounded-md border-2 border-transparent px-3 py-2 text-center shadow transition-all ${
                                                             server.slug ===
@@ -1408,6 +2177,27 @@ export default function VodPlay() {
                                         <span className="inline-block rounded-md bg-purple-100 px-2 py-1 text-sm text-purple-800">
                                             <strong>Năm:</strong> {movie.year}
                                         </span>
+                                        {tmdbData?.vote_average && (
+                                            <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-sm text-amber-800">
+                                                <svg
+                                                    className="h-4 w-4 fill-current"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                                </svg>
+                                                <strong>
+                                                    {tmdbData.vote_average.toFixed(
+                                                        1,
+                                                    )}
+                                                    /10
+                                                </strong>
+                                                <span className="text-xs">
+                                                    (
+                                                    {tmdbData.vote_count?.toLocaleString()}
+                                                    )
+                                                </span>
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {movie.category?.map((cat, idx) => (
@@ -1429,9 +2219,8 @@ export default function VodPlay() {
                                             </span>
                                         ))}
                                     </div> */}
-
                                     <div
-                                        className="line-clamp-3 text-sm text-gray-600"
+                                        className="line-clamp-4 text-sm text-gray-600"
                                         title={movie.content}
                                     >
                                         {movie.content}
@@ -1440,39 +2229,74 @@ export default function VodPlay() {
                             </div>
                         </div>
 
-                        {/* TMDb Cast (top 6) - Trước Thư viện hình ảnh */}
-                        {tmdbCredits?.cast && tmdbCredits.cast.length > 0 && (
+                        {/* Diễn viên - TMDb hoặc movie.actor */}
+                        {((tmdbCredits?.cast && tmdbCredits.cast.length > 0) ||
+                            (movie.actor && movie.actor.length > 0)) && (
                             <>
                                 <h3 className="text-lg font-semibold text-gray-800">
                                     Diễn viên chính
                                 </h3>
                                 <div className="rounded-md border border-gray-200 bg-white p-6 shadow-md">
-                                    <div className="flex flex-wrap items-start justify-start gap-6">
-                                        {tmdbCredits.cast.map((c) => (
+                                    <div className="grid grid-cols-4 gap-4 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10">
+                                        {/* Ưu tiên TMDb, fallback về movie.actor */}
+                                        {(tmdbCredits?.cast &&
+                                        tmdbCredits.cast.length > 0
+                                            ? tmdbCredits.cast
+                                            : movie.actor?.map((name, idx) => ({
+                                                  cast_id: idx,
+                                                  id: idx,
+                                                  name: name,
+                                                  character: "",
+                                                  profile_path: null,
+                                              })) || []
+                                        ).map((c) => (
                                             <div
                                                 key={c.cast_id || c.id}
-                                                className="flex flex-col items-center gap-2 text-center"
+                                                className="group flex cursor-pointer flex-col items-center gap-2 text-center"
                                             >
                                                 {c.profile_path ? (
                                                     <img
                                                         src={`https://image.tmdb.org/t/p/w92${c.profile_path}`}
                                                         alt={c.name}
-                                                        className="h-24 w-24 rounded-lg object-cover shadow-md"
+                                                        className="h-16 w-16 rounded-full object-cover shadow-md transition-all duration-300 group-hover:shadow-lg "
                                                         onError={(e) =>
                                                             (e.target.style.display =
                                                                 "none")
                                                         }
                                                     />
                                                 ) : (
-                                                    <div className="h-24 w-24 rounded-lg bg-gray-200" />
+                                                    <div className="bg-linear-to-br flex h-16 w-16 items-center justify-center rounded-full from-gray-400 via-gray-500 to-gray-600 shadow-md transition-all duration-300 group-hover:shadow-lg">
+                                                        <span className="text-lg font-bold text-white">
+                                                            {c.name
+                                                                ? c.name
+                                                                      .split(
+                                                                          " ",
+                                                                      )
+                                                                      .map(
+                                                                          (
+                                                                              word,
+                                                                          ) =>
+                                                                              word[0],
+                                                                      )
+                                                                      .join("")
+                                                                      .slice(
+                                                                          0,
+                                                                          2,
+                                                                      )
+                                                                      .toUpperCase()
+                                                                : "?"}
+                                                        </span>
+                                                    </div>
                                                 )}
                                                 <div className="w-32">
-                                                    <div className="line-clamp-2 text-sm font-semibold text-gray-800">
+                                                    <div className="line-clamp-2 text-sm font-semibold text-gray-800 transition-colors duration-300 group-hover:text-blue-600">
                                                         {c.name}
                                                     </div>
-                                                    <div className="line-clamp-2 text-xs text-gray-500">
-                                                        {c.character}
-                                                    </div>
+                                                    {c.character && (
+                                                        <div className="line-clamp-2 text-xs text-gray-500 transition-colors duration-300 group-hover:text-gray-700">
+                                                            {c.character}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         ))}
