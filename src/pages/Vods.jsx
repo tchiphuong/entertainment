@@ -53,10 +53,12 @@ export default function Vods() {
     const [history, setHistory] = useLocalStorage("viewHistory", []);
     const [countries, setCountries] = useState([]);
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [isSearching, setIsSearching] = useState(false); // Track khi đang search/debounce
     const navigate = useNavigate();
 
     const countriesFetchedRef = useRef(false);
     const isInitialMount = useRef(true);
+    const pageInputTimerRef = useRef(null); // Debounce cho page input
 
     useEffect(() => {
         document.title = "VODs — Entertainment";
@@ -114,7 +116,12 @@ export default function Vods() {
                 clearTimeout(debounceTimerRef.current);
             }
 
-            // Set new debounce timer (500ms delay)
+            // Set searching state khi user đang nhập
+            if (searchKeyword.trim() !== "") {
+                setIsSearching(true);
+            }
+
+            // Set new debounce timer (300ms delay để responsive hơn)
             debounceTimerRef.current = setTimeout(() => {
                 const params = {
                     page: currentPage,
@@ -136,13 +143,16 @@ export default function Vods() {
                         params,
                     );
                 }
-            }, 500);
+            }, 300);
         }
 
         // Cleanup on unmount
         return () => {
             if (debounceTimerRef.current) {
                 clearTimeout(debounceTimerRef.current);
+            }
+            if (pageInputTimerRef.current) {
+                clearTimeout(pageInputTimerRef.current);
             }
         };
     }, [searchKeyword, country, currentPage]);
@@ -175,10 +185,10 @@ export default function Vods() {
 
     async function fetchData(url, params = {}) {
         setIsLoading(true);
+        setIsSearching(false); // Clear searching state khi bắt đầu fetch thực sự
         try {
             const qs = buildQuery(params);
             const fullUrl = `${url}?${qs}`;
-            console.log("Fetching:", fullUrl);
 
             const res = await fetch(fullUrl);
             if (!res.ok) {
@@ -186,10 +196,8 @@ export default function Vods() {
             }
 
             const json = await res.json();
-            console.log("Response:", json);
 
             if (!json || !json.data) {
-                console.warn("No data in response:", json);
                 setMovies([]);
                 setTotalPages(1);
             } else {
@@ -197,7 +205,6 @@ export default function Vods() {
                 setTotalPages(json.data.params?.pagination?.totalPages || 1);
             }
         } catch (err) {
-            console.error("Error fetching data:", err);
             setMovies([]);
             setTotalPages(1);
         } finally {
@@ -207,6 +214,10 @@ export default function Vods() {
 
     function searchMoviesKey(e) {
         if (e.key === "Enter") {
+            // Clear debounce timer để search ngay lập tức
+            if (debounceTimerRef.current) {
+                clearTimeout(debounceTimerRef.current);
+            }
             setCurrentPage(1); // useEffect sẽ auto fetch khi currentPage thay đổi
         }
     }
@@ -223,9 +234,7 @@ export default function Vods() {
     function toggleHistory(e) {
         if (e) e.stopPropagation();
         const h = JSON.parse(localStorage.getItem("viewHistory")) || [];
-        setHistory(
-            h.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)),
-        );
+        setHistory(h.sort((a, b) => new Date(b.time) - new Date(a.time)));
         setIsHistoryOpen(!isHistoryOpen);
     }
 
@@ -244,10 +253,6 @@ export default function Vods() {
         localStorage.setItem("viewHistory", JSON.stringify([]));
         setHistory([]);
         setConfirmDelete(false);
-    }
-
-    function openMovie(slug) {
-        navigate(`/vods/play?slug=${slug}`);
     }
 
     function nextPage() {
@@ -285,7 +290,7 @@ export default function Vods() {
                 );
             setCountries(sorted);
         } catch (err) {
-            console.error("Error fetching countries:", err);
+            // Error fetching countries
         }
     }
     // Using `react-select` package for the country dropdown (replaces the previous custom ReactSelect).
@@ -309,7 +314,7 @@ export default function Vods() {
             <main className="container mx-auto flex flex-1 flex-col px-4 py-6 lg:px-32">
                 <div className="mb-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
-                        <div className="flex-1">
+                        <div className="relative flex-1">
                             <input
                                 value={searchKeyword}
                                 onChange={(e) =>
@@ -318,40 +323,124 @@ export default function Vods() {
                                 onKeyUp={searchMoviesKey}
                                 type="text"
                                 placeholder="Nhập tên phim..."
-                                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-500 shadow-sm transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                className={`w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-500 transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 ${
+                                    (isLoading || isSearching) &&
+                                    searchKeyword.trim() !== ""
+                                        ? "pr-10"
+                                        : ""
+                                }`}
                             />
+                            {/* Loading indicator cho search */}
+                            {(isLoading || isSearching) &&
+                                searchKeyword.trim() !== "" && (
+                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500"></div>
+                                    </div>
+                                )}
                         </div>
                         <div className="flex-1 sm:w-48 sm:flex-none">
-                            {(() => {
-                                const countryOptions = countries.map((c) => ({
-                                    value: c.slug,
-                                    label: c.name,
-                                }));
-                                return (
-                                    <Select
-                                        options={countryOptions}
-                                        value={
-                                            countryOptions.find(
-                                                (o) => o.value === country,
-                                            ) || null
-                                        }
-                                        onChange={(opt) => {
-                                            const val = opt ? opt.value : "";
-                                            const newCountry =
-                                                val || "viet-nam";
-                                            setCountry(newCountry);
-                                            setCurrentPage(1);
-                                            setSearchKeyword("");
-                                        }}
-                                        placeholder="Chọn"
-                                        isClearable
-                                    />
-                                );
-                            })()}
+                            {countries.length === 0 ? (
+                                // Skeleton cho Country Select khi đang load
+                                <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-300"></div>
+                            ) : (
+                                (() => {
+                                    const countryOptions = countries.map(
+                                        (c) => ({
+                                            value: c.slug,
+                                            label: c.name,
+                                        }),
+                                    );
+                                    return (
+                                        <Select
+                                            options={countryOptions}
+                                            value={
+                                                countryOptions.find(
+                                                    (o) => o.value === country,
+                                                ) || null
+                                            }
+                                            onChange={(opt) => {
+                                                const val = opt
+                                                    ? opt.value
+                                                    : "";
+                                                const newCountry =
+                                                    val || "viet-nam";
+                                                setCountry(newCountry);
+                                                setCurrentPage(1);
+                                                setSearchKeyword("");
+                                            }}
+                                            placeholder="Chọn quốc gia"
+                                            isClearable
+                                            styles={{
+                                                control: (provided, state) => ({
+                                                    ...provided,
+                                                    minHeight: "42px", // Match với input py-2.5
+                                                    borderColor: state.isFocused
+                                                        ? "#3b82f6"
+                                                        : "#d1d5db", // border-gray-300 & focus:border-blue-500
+                                                    borderRadius: "0.5rem", // rounded-lg
+                                                    boxShadow: state.isFocused
+                                                        ? "0 0 0 2px rgba(59, 130, 246, 0.2)" // focus:ring-2 focus:ring-blue-200
+                                                        : "none", // Không có shadow
+                                                    "&:hover": {
+                                                        borderColor:
+                                                            state.isFocused
+                                                                ? "#3b82f6"
+                                                                : "#d1d5db",
+                                                    },
+                                                    fontSize: "0.875rem", // text-sm
+                                                    transition:
+                                                        "all 0.15s ease-in-out",
+                                                }),
+                                                valueContainer: (provided) => ({
+                                                    ...provided,
+                                                    padding: "0 12px", // px-3
+                                                    minHeight: "38px",
+                                                }),
+                                                input: (provided) => ({
+                                                    ...provided,
+                                                    margin: 0,
+                                                    padding: 0,
+                                                    color: "#111827", // text-gray-900
+                                                    fontSize: "0.875rem", // text-sm
+                                                }),
+                                                placeholder: (provided) => ({
+                                                    ...provided,
+                                                    color: "#6b7280", // placeholder-gray-500
+                                                    fontSize: "0.875rem", // text-sm
+                                                }),
+                                                singleValue: (provided) => ({
+                                                    ...provided,
+                                                    color: "#111827", // text-gray-900
+                                                    fontSize: "0.875rem", // text-sm
+                                                }),
+                                                indicatorSeparator: () => ({
+                                                    display: "none",
+                                                }),
+                                                dropdownIndicator: (
+                                                    provided,
+                                                ) => ({
+                                                    ...provided,
+                                                    color: "#6b7280", // text-gray-500
+                                                    "&:hover": {
+                                                        color: "#6b7280",
+                                                    },
+                                                }),
+                                                clearIndicator: (provided) => ({
+                                                    ...provided,
+                                                    color: "#6b7280", // text-gray-500
+                                                    "&:hover": {
+                                                        color: "#ef4444", // text-red-500
+                                                    },
+                                                }),
+                                            }}
+                                        />
+                                    );
+                                })()
+                            )}
                         </div>
                         <button
                             onClick={toggleHistory}
-                            className="flex transform items-center justify-center gap-2 whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow transition-all duration-300 ease-in-out hover:bg-blue-700 hover:shadow-lg active:scale-95"
+                            className="flex transform items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-medium text-white transition-all duration-300 ease-in-out hover:bg-blue-700 active:scale-95"
                         >
                             <svg
                                 className="h-4 w-4"
@@ -393,71 +482,156 @@ export default function Vods() {
                                 </button>
                             </div>
                             <ul className="flex-1 divide-y divide-gray-100 overflow-y-auto">
-                                {history.length === 0 && (
+                                {history.length === 0 && !isLoading && (
                                     <li className="flex items-center justify-center py-12 text-gray-400">
                                         Oops~ Bạn chưa xem phim nào cả! 🥺
                                     </li>
                                 )}
-                                {history.map((item, idx) => (
-                                    <li
-                                        key={idx}
-                                        className="group flex cursor-pointer items-center gap-4 px-6 py-3 transition-colors hover:bg-blue-50"
-                                        onClick={() =>
-                                            navigate(
-                                                `/vods/play?slug=${item.slug}&episode=${item.lastWatchedEpisode?.key}`,
-                                            )
-                                        }
-                                    >
-                                        <img
-                                            src={`https://phimapi.com/image.php?url=${item.poster}`}
-                                            alt={item.name}
-                                            loading="lazy"
-                                            className="h-16 w-12 shrink-0 rounded-md object-cover shadow-md"
-                                        />
-                                        <div className="min-w-0 flex-1">
-                                            <h3 className="truncate text-sm font-semibold text-gray-900">
-                                                {item.name}
-                                            </h3>
-                                            <div className="mt-1 flex gap-2 text-xs text-gray-500">
-                                                <span>
-                                                    {new Date(
-                                                        item.timestamp,
-                                                    ).toLocaleDateString(
-                                                        "vi-VN",
-                                                    )}
-                                                </span>
-                                                <span>•</span>
-                                                <span>
-                                                    {new Date(
-                                                        item.timestamp,
-                                                    ).toLocaleTimeString(
-                                                        "vi-VN",
-                                                    )}
-                                                </span>
-                                            </div>
-                                            <div className="mt-1 text-xs font-medium text-blue-600">
-                                                Đã xem:{" "}
-                                                {item.lastWatchedEpisode
-                                                    ?.value || "N/A"}
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                deleteHistoryItem(item.slug, e);
-                                            }}
-                                            className="rounded p-1 text-gray-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
-                                        >
-                                            <svg
-                                                className="h-5 w-5"
-                                                fill="currentColor"
-                                                viewBox="0 0 24 24"
+
+                                {/* Skeleton Loading cho History */}
+                                {isLoading &&
+                                    Array.from({ length: 5 }).map(
+                                        (_, index) => (
+                                            <li
+                                                key={`history-skeleton-${index}`}
+                                                className="flex animate-pulse items-center gap-4 px-6 py-3"
                                             >
-                                                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" />
-                                            </svg>
-                                        </button>
-                                    </li>
-                                ))}
+                                                {/* Skeleton Poster */}
+                                                <div className="h-16 w-12 shrink-0 rounded-md bg-gray-300"></div>
+
+                                                {/* Skeleton Content */}
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="mb-2 h-4 w-3/4 rounded bg-gray-300"></div>
+                                                    <div className="mb-1 flex gap-2">
+                                                        <div className="h-3 w-20 rounded bg-gray-200"></div>
+                                                        <div className="h-3 w-1 rounded bg-gray-200"></div>
+                                                        <div className="h-3 w-16 rounded bg-gray-200"></div>
+                                                    </div>
+                                                    <div className="h-3 w-24 rounded bg-gray-200"></div>
+                                                </div>
+
+                                                {/* Skeleton Delete Button */}
+                                                <div className="h-5 w-5 rounded bg-gray-300"></div>
+                                            </li>
+                                        ),
+                                    )}
+
+                                {!isLoading &&
+                                    history.map((item, idx) => (
+                                        <li
+                                            key={idx}
+                                            className="group relative"
+                                        >
+                                            <a
+                                                href={(() => {
+                                                    const episodeKey =
+                                                        item.current_episode
+                                                            ?.key;
+                                                    const serverSlug =
+                                                        item.server;
+
+                                                    let url = `vods/play?slug=${item.slug}`;
+                                                    if (episodeKey) {
+                                                        // Nếu episodeKey là slug đầy đủ (vd: "tap-4-vietsub"), extract số tập
+                                                        const episodeNumber =
+                                                            episodeKey.match(
+                                                                /\d+/,
+                                                            )?.[0] ||
+                                                            episodeKey;
+                                                        url += `&episode=${episodeNumber}`;
+                                                    }
+                                                    if (serverSlug) {
+                                                        url += `&server=${serverSlug}`;
+                                                    }
+                                                    return url;
+                                                })()}
+                                                className="flex cursor-pointer items-center gap-4 px-6 py-3 text-inherit no-underline transition-colors hover:bg-blue-50"
+                                            >
+                                                <img
+                                                    src={getMovieImage(
+                                                        item.poster,
+                                                    )}
+                                                    alt={item.name}
+                                                    loading="lazy"
+                                                    className="h-16 w-12 shrink-0 rounded-md object-cover shadow-md"
+                                                />
+                                                <div className="min-w-0 flex-1">
+                                                    <h3 className="truncate text-sm font-semibold text-gray-900">
+                                                        {item.name}
+                                                    </h3>
+                                                    <div className="mt-1 flex gap-2 text-xs text-gray-500">
+                                                        <span>
+                                                            {new Date(
+                                                                item.timestamp ||
+                                                                    item.time,
+                                                            ).toLocaleDateString(
+                                                                "vi-VN",
+                                                            )}
+                                                        </span>
+                                                        <span>•</span>
+                                                        <span>
+                                                            {new Date(
+                                                                item.timestamp ||
+                                                                    item.time,
+                                                            ).toLocaleTimeString(
+                                                                "vi-VN",
+                                                            )}
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-1 text-xs font-medium text-blue-600">
+                                                        Đã xem:{" "}
+                                                        {(() => {
+                                                            if (
+                                                                item
+                                                                    .current_episode
+                                                                    ?.value
+                                                            ) {
+                                                                return item
+                                                                    .current_episode
+                                                                    .value;
+                                                            }
+                                                            if (
+                                                                item
+                                                                    .current_episode
+                                                                    ?.key
+                                                            ) {
+                                                                // Tạo value từ key (vd: "tap-4" → "Tập 4")
+                                                                const match =
+                                                                    item.current_episode.key.match(
+                                                                        /\d+/,
+                                                                    );
+                                                                return match
+                                                                    ? `Tập ${match[0]}`
+                                                                    : item
+                                                                          .current_episode
+                                                                          .key;
+                                                            }
+                                                            return "Chưa xem";
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            </a>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    deleteHistoryItem(
+                                                        item.slug,
+                                                        e,
+                                                    );
+                                                }}
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+                                            >
+                                                <svg
+                                                    className="h-5 w-5"
+                                                    fill="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" />
+                                                </svg>
+                                            </button>
+                                        </li>
+                                    ))}
                             </ul>
                             {history.length > 0 && (
                                 <div className="rounded-b-lg border-t border-gray-200 bg-gray-50 px-6 py-3 text-right">
@@ -486,6 +660,38 @@ export default function Vods() {
 
                 <div className="flex-1">
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+                        {/* Skeleton Loading */}
+                        {isLoading &&
+                            Array.from({ length: 12 }).map((_, index) => (
+                                <div
+                                    key={`skeleton-${index}`}
+                                    className="group relative flex transform animate-pulse cursor-pointer flex-col overflow-hidden rounded-lg bg-white shadow"
+                                >
+                                    {/* Skeleton Image */}
+                                    <div className="relative bg-gray-200">
+                                        <div
+                                            className="w-full bg-gray-300"
+                                            style={{ aspectRatio: "2/3" }}
+                                        />
+                                        {/* Skeleton badges */}
+                                        <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
+                                            <div className="h-5 w-8 rounded-md bg-gray-400"></div>
+                                            <div className="h-5 w-6 rounded-md bg-gray-400"></div>
+                                        </div>
+                                    </div>
+                                    {/* Skeleton Content */}
+                                    <div className="flex grow flex-col p-3">
+                                        <div className="mb-2 h-4 rounded bg-gray-300"></div>
+                                        <div className="mt-auto flex justify-between">
+                                            <div className="h-3 w-16 rounded bg-gray-200"></div>
+                                            <div className="h-3 w-12 rounded bg-gray-200"></div>
+                                        </div>
+                                    </div>
+                                    {/* Skeleton Quality Badge */}
+                                    <div className="absolute right-2 top-2 h-5 w-12 rounded-md bg-gray-400"></div>
+                                </div>
+                            ))}
+
                         {!isLoading && movies.length === 0 && (
                             <div className="col-span-full py-4 text-center text-gray-500">
                                 Oops~ Không có phim nào trong danh sách của bạn!
@@ -493,106 +699,167 @@ export default function Vods() {
                             </div>
                         )}
 
-                        {movies.map((movie) => (
-                            <div
-                                key={movie.slug}
-                                title={movie.name}
-                                className="group relative flex transform cursor-pointer flex-col overflow-hidden rounded-lg bg-white shadow transition-transform hover:scale-105 hover:shadow-lg"
-                                onClick={() => openMovie(movie.slug)}
-                            >
-                                <div className="relative bg-gray-200">
-                                    <img
-                                        src={getMovieImage(movie.poster_url)}
-                                        alt={movie.name}
-                                        loading="lazy"
-                                        className="w-full object-cover transition-opacity duration-300"
-                                        style={{
-                                            aspectRatio: "2/3",
-                                            backgroundPosition: "center",
-                                            backgroundRepeat: "no-repeat",
-                                            backgroundSize: "contain",
-                                        }}
-                                        onLoad={(e) => {
-                                            const loader =
-                                                e.target.nextElementSibling;
-                                            if (loader) loader.remove();
-                                        }}
-                                    />
-                                    <div
-                                        className="bg-linear-to-b absolute inset-0 flex items-center justify-center from-gray-200 to-gray-300"
-                                        style={{ aspectRatio: "2/3" }}
-                                    >
-                                        <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500"></div>
+                        {!isLoading &&
+                            movies.map((movie) => (
+                                <a
+                                    key={movie.slug}
+                                    href={`vods/play?slug=${movie.slug}`}
+                                    title={movie.name}
+                                    className="group relative flex transform cursor-pointer flex-col overflow-hidden rounded-lg bg-white text-inherit no-underline shadow transition-transform hover:scale-105 hover:shadow-lg"
+                                >
+                                    <div className="relative bg-gray-200">
+                                        <img
+                                            src={getMovieImage(
+                                                movie.poster_url,
+                                            )}
+                                            alt={movie.name}
+                                            loading="lazy"
+                                            className="w-full object-cover transition-opacity duration-300"
+                                            style={{
+                                                aspectRatio: "2/3",
+                                                backgroundPosition: "center",
+                                                backgroundRepeat: "no-repeat",
+                                                backgroundSize: "contain",
+                                            }}
+                                            onLoad={(e) => {
+                                                const loader =
+                                                    e.target.nextElementSibling;
+                                                if (loader) loader.remove();
+                                            }}
+                                        />
+                                        <div
+                                            className="bg-linear-to-b absolute inset-0 flex items-center justify-center from-gray-200 to-gray-300"
+                                            style={{ aspectRatio: "2/3" }}
+                                        >
+                                            <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500"></div>
+                                        </div>
+                                        <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
+                                            {movie.lang
+                                                ?.split("+")
+                                                .map((lang, i) => (
+                                                    <span
+                                                        key={i}
+                                                        className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${langBadgeClass(lang)}`}
+                                                    >
+                                                        {lang
+                                                            .trim()
+                                                            .replace(
+                                                                "Thuyết Minh",
+                                                                "TM",
+                                                            )
+                                                            .replace(
+                                                                "Lồng Tiếng",
+                                                                "LT",
+                                                            )
+                                                            .replace(
+                                                                "Vietsub",
+                                                                "PĐ",
+                                                            )}
+                                                    </span>
+                                                ))}
+                                        </div>
                                     </div>
-                                    <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
-                                        {movie.lang
-                                            ?.split("+")
-                                            .map((lang, i) => (
-                                                <span
-                                                    key={i}
-                                                    className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${langBadgeClass(lang)}`}
-                                                >
-                                                    {lang
-                                                        .trim()
-                                                        .replace(
-                                                            "Thuyết Minh",
-                                                            "TM",
-                                                        )
-                                                        .replace(
-                                                            "Lồng Tiếng",
-                                                            "LT",
-                                                        )
-                                                        .replace(
-                                                            "Vietsub",
-                                                            "PĐ",
-                                                        )}
-                                                </span>
-                                            ))}
+                                    <div className="flex grow flex-col p-3">
+                                        <h3 className="line-clamp-1 text-sm font-semibold text-gray-800">
+                                            {movie.name}
+                                        </h3>
+                                        <div className="flex justify-between">
+                                            <span className="mt-2 text-xs text-gray-500">
+                                                {movie.episode_current || "N/A"}
+                                            </span>
+                                            <span className="mt-2 text-xs  text-gray-500">
+                                                {movie.year}
+                                            </span>
+                                        </div>
                                     </div>
-                                </div>
-                                <div className="flex grow flex-col p-3">
-                                    <h3 className="line-clamp-1 text-sm font-semibold text-gray-800">
-                                        {movie.name}
-                                    </h3>
-                                    <p className="mt-2 text-xs text-gray-500">
-                                        {movie.episode_current || "N/A"}
-                                    </p>
-                                </div>
-                                <span className="absolute right-2 top-2 inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/10">
-                                    {movie.quality}
-                                </span>
-                            </div>
-                        ))}
+                                    <span className="absolute right-2 top-2 inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/10">
+                                        {movie.quality}
+                                    </span>
+                                </a>
+                            ))}
                     </div>
                 </div>
 
-                {movies.length > 0 && (
-                    <nav className="mt-4 flex w-full items-center justify-center">
-                        <ul className="flex h-10 items-center text-base">
-                            {currentPage > 1 && (
-                                <li>
-                                    <button
-                                        onClick={() => goToPage(1)}
-                                        className="mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border text-gray-500 hover:bg-gray-50"
-                                    >
-                                        «
-                                    </button>
-                                </li>
-                            )}
+                {/* Skeleton Pagination khi đang loading */}
+                {isLoading && (
+                    <nav className="mt-8 flex w-full flex-col items-center justify-center gap-4 sm:flex-row">
+                        {/* Skeleton Pagination buttons */}
+                        <div className="flex h-11 animate-pulse items-center rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+                            <ul className="flex items-center">
+                                {Array.from({ length: 5 }).map((_, index) => (
+                                    <li key={`pagination-skeleton-${index}`}>
+                                        <div className="mx-0.5 h-9 w-9 rounded-md bg-gray-300"></div>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
 
-                            {currentPage > 1 && (
-                                <li>
-                                    <button
-                                        onClick={prevPage}
-                                        className="mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border text-gray-500 hover:bg-gray-50"
-                                    >
-                                        ‹
-                                    </button>
-                                </li>
-                            )}
+                        {/* Skeleton Page input */}
+                        <div className="flex h-11 animate-pulse items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 shadow-sm">
+                            <div className="flex items-center gap-2">
+                                <div className="h-4 w-8 rounded bg-gray-300"></div>{" "}
+                                {/* "Trang:" */}
+                                <div className="h-7 w-16 rounded-md bg-gray-300"></div>{" "}
+                                {/* Input */}
+                                <div className="h-4 w-6 rounded bg-gray-300"></div>{" "}
+                                {/* "/ X" */}
+                            </div>
+                        </div>
+                    </nav>
+                )}
 
-                            {generateVisiblePages(totalPages, currentPage).map(
-                                (page) => (
+                {!isLoading && movies.length > 0 && (
+                    <nav className="mt-3 flex w-full flex-col items-center justify-center gap-4 sm:flex-row">
+                        {/* Pagination buttons */}
+                        <div className="flex h-11 items-center rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+                            <ul className="flex items-center">
+                                {currentPage > 1 && (
+                                    <>
+                                        <li>
+                                            <button
+                                                onClick={() => goToPage(1)}
+                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-all duration-200 hover:bg-blue-50 hover:text-blue-600"
+                                                title="Trang đầu"
+                                            >
+                                                <svg
+                                                    className="h-4 w-4"
+                                                    fill="currentColor"
+                                                    viewBox="0 0 20 20"
+                                                >
+                                                    <path
+                                                        fillRule="evenodd"
+                                                        d="M15.707 15.707a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 010 1.414zm-6 0a1 1 0 01-1.414 0l-5-5a1 1 0 010-1.414l5-5a1 1 0 011.414 1.414L5.414 10l4.293 4.293a1 1 0 010 1.414z"
+                                                        clipRule="evenodd"
+                                                    />
+                                                </svg>
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button
+                                                onClick={prevPage}
+                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-all duration-200 hover:bg-blue-50 hover:text-blue-600"
+                                                title="Trang trước"
+                                            >
+                                                <svg
+                                                    className="h-4 w-4"
+                                                    fill="currentColor"
+                                                    viewBox="0 0 20 20"
+                                                >
+                                                    <path
+                                                        fillRule="evenodd"
+                                                        d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                                                        clipRule="evenodd"
+                                                    />
+                                                </svg>
+                                            </button>
+                                        </li>
+                                    </>
+                                )}
+
+                                {generateVisiblePages(
+                                    totalPages,
+                                    currentPage,
+                                ).map((page) => (
                                     <li key={page}>
                                         <button
                                             onClick={() =>
@@ -600,36 +867,168 @@ export default function Vods() {
                                                 goToPage(page)
                                             }
                                             disabled={page === currentPage}
-                                            className={`mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border ${page === currentPage ? "scale-110 border-blue-500 bg-blue-500 text-white shadow-md" : "text-gray-500 hover:bg-gray-50"}`}
+                                            className={`mx-0.5 flex h-9 w-9 items-center justify-center rounded-md font-medium transition-all duration-200 ${
+                                                page === currentPage
+                                                    ? "bg-blue-600 text-white shadow-md"
+                                                    : "text-gray-700 hover:bg-blue-50 hover:text-blue-600"
+                                            }`}
                                         >
                                             {page}
                                         </button>
                                     </li>
-                                ),
-                            )}
+                                ))}
 
-                            {currentPage < totalPages && (
-                                <li>
-                                    <button
-                                        onClick={nextPage}
-                                        className="mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border text-gray-500 hover:bg-gray-50"
-                                    >
-                                        ›
-                                    </button>
-                                </li>
-                            )}
+                                {currentPage < totalPages && (
+                                    <>
+                                        <li>
+                                            <button
+                                                onClick={nextPage}
+                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-all duration-200 hover:bg-blue-50 hover:text-blue-600"
+                                                title="Trang sau"
+                                            >
+                                                <svg
+                                                    className="h-4 w-4"
+                                                    fill="currentColor"
+                                                    viewBox="0 0 20 20"
+                                                >
+                                                    <path
+                                                        fillRule="evenodd"
+                                                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                                                        clipRule="evenodd"
+                                                    />
+                                                </svg>
+                                            </button>
+                                        </li>
+                                        <li>
+                                            <button
+                                                onClick={() =>
+                                                    goToPage(totalPages)
+                                                }
+                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-all duration-200 hover:bg-blue-50 hover:text-blue-600"
+                                                title="Trang cuối"
+                                            >
+                                                <svg
+                                                    className="h-4 w-4"
+                                                    fill="currentColor"
+                                                    viewBox="0 0 20 20"
+                                                >
+                                                    <path
+                                                        fillRule="evenodd"
+                                                        d="M10.293 15.707a1 1 0 010-1.414L14.586 10l-4.293-4.293a1 1 0 111.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z"
+                                                        clipRule="evenodd"
+                                                    />
+                                                    <path
+                                                        fillRule="evenodd"
+                                                        d="M4.293 15.707a1 1 0 010-1.414L8.586 10 4.293 5.707a1 1 0 011.414-1.414l5 5a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0z"
+                                                        clipRule="evenodd"
+                                                    />
+                                                </svg>
+                                            </button>
+                                        </li>
+                                    </>
+                                )}
+                            </ul>
+                        </div>
 
-                            {currentPage < totalPages && (
-                                <li>
-                                    <button
-                                        onClick={() => goToPage(totalPages)}
-                                        className="mx-1 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border text-gray-500 hover:bg-gray-50"
-                                    >
-                                        »
-                                    </button>
-                                </li>
-                            )}
-                        </ul>
+                        {/* Page input */}
+                        <div className="flex h-11 items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 shadow-sm">
+                            <div className="flex items-center gap-2">
+                                <label className="text-sm font-medium text-gray-700">
+                                    Trang:
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        placeholder={currentPage.toString()}
+                                        onKeyUp={(e) => {
+                                            if (e.key === "Enter") {
+                                                // Clear debounce khi nhấn Enter để xử lý ngay lập tức
+                                                if (pageInputTimerRef.current) {
+                                                    clearTimeout(
+                                                        pageInputTimerRef.current,
+                                                    );
+                                                }
+
+                                                const value = parseInt(
+                                                    e.target.value,
+                                                );
+                                                if (
+                                                    !isNaN(value) &&
+                                                    value >= 1 &&
+                                                    value <= totalPages
+                                                ) {
+                                                    goToPage(value);
+                                                    e.target.value = ""; // Clear input sau khi nhảy thành công
+                                                    // Reset style
+                                                    e.target.style.borderColor =
+                                                        "";
+                                                    e.target.style.backgroundColor =
+                                                        "";
+                                                } else if (
+                                                    !isNaN(value) &&
+                                                    value >= 1
+                                                ) {
+                                                    // Số hợp lệ nhưng vượt quá totalPages
+                                                    e.target.style.borderColor =
+                                                        "#ef4444";
+                                                    e.target.style.backgroundColor =
+                                                        "#fef2f2";
+                                                    e.target.select(); // Chọn hết text để dễ sửa
+                                                } else {
+                                                    // Số không hợp lệ (< 1 hoặc NaN)
+                                                    e.target.style.borderColor =
+                                                        "#ef4444";
+                                                    e.target.style.backgroundColor =
+                                                        "#fef2f2";
+                                                    e.target.select();
+                                                }
+                                            }
+                                        }}
+                                        onInput={(e) => {
+                                            // Reset style khi đang gõ
+                                            e.target.style.borderColor = "";
+                                            e.target.style.backgroundColor = "";
+
+                                            // Debounce auto navigation
+                                            if (pageInputTimerRef.current) {
+                                                clearTimeout(
+                                                    pageInputTimerRef.current,
+                                                );
+                                            }
+
+                                            const value = parseInt(
+                                                e.target.value,
+                                            );
+                                            if (
+                                                !isNaN(value) &&
+                                                value >= 1 &&
+                                                value <= totalPages
+                                            ) {
+                                                // Set debounce timer cho valid input
+                                                pageInputTimerRef.current =
+                                                    setTimeout(() => {
+                                                        goToPage(value);
+                                                        e.target.value = ""; // Clear input sau khi nhảy
+                                                    }, 800); // 800ms delay
+                                            }
+                                        }}
+                                        onFocus={(e) => {
+                                            // Reset style khi focus
+                                            e.target.style.borderColor = "";
+                                            e.target.style.backgroundColor = "";
+                                        }}
+                                        className="w-16 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-center text-sm font-medium text-gray-900 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                    />
+                                </div>
+                                <span className="text-sm text-gray-500">
+                                    /{" "}
+                                    <span className="font-medium text-gray-700">
+                                        {totalPages}
+                                    </span>
+                                </span>
+                            </div>
+                        </div>
                     </nav>
                 )}
             </main>
