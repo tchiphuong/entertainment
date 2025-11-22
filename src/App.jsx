@@ -10,6 +10,7 @@ export default function App() {
             <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/vods" element={<Vods />} />
+                <Route path="/vods/play/:slug" element={<VodPlay />} />
                 <Route path="/vods/play" element={<VodPlay />} />
             </Routes>
         </BrowserRouter>

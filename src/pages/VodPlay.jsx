@@ -1,13 +1,32 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import LoadingSpinner from "../components/LoadingSpinner";
 // Dynamic import HLS.js khi cần
 let Hls = null;
 
 const CONFIG = {
     API_ENDPOINT: "https://phimapi.com/phim",
+    APP_DOMAIN_KKPHIM: "https://phimapi.com",
+    APP_DOMAIN_KKPHIM_CDN_IMAGE: "https://phimimg.com",
+    APP_DOMAIN_NGUONC: "https://phim.nguonc.com",
+    APP_DOMAIN_OPHIM: "https://ophim1.com",
+    APP_DOMAIN_OPHIM_FRONTEND: "https://ophim17.cc",
+    APP_DOMAIN_OPHIM_CDN_IMAGE: "https://img.ophim.live",
     TMDB_API_KEY: "3356865d41894a2fa9bfa84b2b5f59bb",
     TMDB_BASE_URL: "https://api.themoviedb.org/3",
+};
+
+// Source constants
+const SOURCES = {
+    NGUONC: "nguonc",
+    KKPHIM: "kkphim",
+    OPHIM: "ophim",
 };
 
 // Detect mobile device - support debug mode via ?debugMobile=true
@@ -187,6 +206,66 @@ function useLocalStorage(key, initial) {
     return [state, setState];
 }
 
+// Helper để load hình ảnh theo source
+function getMovieImage(imagePath, source) {
+    if (!imagePath)
+        return `https://picsum.photos/2000/3000?random=${new Date().getTime()}`;
+
+    // Nếu là URL tuyệt đối
+    if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+        // Nếu source là kkphim hoặc ophim thì proxy những domain của CDN/primary
+        if (source === "kkphim" || source === "ophim") {
+            const hostname = (() => {
+                try {
+                    return new URL(imagePath).hostname || "";
+                } catch (e) {
+                    return "";
+                }
+            })();
+
+            if (
+                hostname.indexOf("phimimg.com") !== -1 ||
+                hostname.indexOf("phimapi.com") !== -1 ||
+                hostname.indexOf("img.ophim.live") !== -1
+            ) {
+                const domain =
+                    source === "kkphim"
+                        ? CONFIG.APP_DOMAIN_KKPHIM
+                        : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
+                if (source === "ophim") {
+                    return `${domain}/_next/image?url=${encodeURIComponent(imagePath)}&w=1080&q=75`;
+                } else {
+                    return `${domain}/image.php?url=${encodeURIComponent(imagePath)}`;
+                }
+            }
+
+            // Domain khác (ví dụ nguonc) — vẫn trả nguyên URL
+            return imagePath;
+        }
+
+        // Nếu không phải kkphim hoặc ophim: giữ nguyên URL gốc
+        return imagePath;
+    }
+
+    // Nếu là đường dẫn relative hoặc chỉ filename => gán CDN chính
+    const cdnUrl = `${source === "kkphim" ? CONFIG.APP_DOMAIN_KKPHIM_CDN_IMAGE : CONFIG.APP_DOMAIN_OPHIM_CDN_IMAGE}/${imagePath}`;
+    if (source === "kkphim" || source === "ophim") {
+        // Proxy khi source là kkphim hoặc ophim
+        const domain =
+            source === "kkphim"
+                ? CONFIG.APP_DOMAIN_KKPHIM
+                : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
+        if (source === "ophim") {
+            return `${domain}/_next/image?url=${encodeURIComponent(cdnUrl)}&w=1080&q=75`;
+        } else {
+            return `${domain}/image.php?url=${encodeURIComponent(cdnUrl)}`;
+        }
+    }
+
+    // Nguồn khác: trả URL CDN gốc (không proxy)
+    return cdnUrl;
+}
+
 export default function VodPlay() {
     // Lưu và lấy âm lượng từ localStorage
     const VOLUME_KEY = "vodPlayerVolume";
@@ -206,9 +285,11 @@ export default function VodPlay() {
         } catch {}
     };
     const query = useQuery();
-    const slug = query.get("slug");
+    const params = useParams();
+    const slug = params.slug || query.get("slug");
     const episodeParam = query.get("episode");
     const serverParam = query.get("server"); // Thêm server param
+    const source = SOURCES.OPHIM; // Không cần param source nữa vì fetch tất cả
     const debugTmdb = query.get("debugTmdb") === "true"; // toggle to show raw TMDb JSON for debugging
     const debugMobile = query.get("debugMobile") === "true"; // Debug mode để test mobile behavior
     const navigate = useNavigate();
@@ -224,6 +305,7 @@ export default function VodPlay() {
     const [tmdbData, setTmdbData] = useState(null); // Store TMDb data
     const [tmdbCredits, setTmdbCredits] = useState(null); // Store TMDb credits (cast/crew)
     const [tmdbImages, setTmdbImages] = useState(null); // Store TMDb images
+    const [tmdbVideos, setTmdbVideos] = useState(null); // Store TMDb videos
     const [viewHistory, setViewHistory] = useLocalStorage("viewHistory", []);
     const [bookmarks, setBookmarks] = useLocalStorage("bookmarks", []);
     const [showImageModal, setShowImageModal] = useState(false);
@@ -233,6 +315,22 @@ export default function VodPlay() {
     const [showShareModal, setShowShareModal] = useState(false);
     const [shareMessage, setShareMessage] = useState("");
     const modalRef = useRef(null);
+
+    const maxDigits = useMemo(() => {
+        const allEpisodeNumbers = episodes.flatMap((ep) =>
+            ep.server_data.map((s) => {
+                const match = s.name.match(/^\d+/);
+                return match ? parseInt(match[0]) : 0;
+            }),
+        );
+        const maxEpisode = Math.max(...allEpisodeNumbers, 0);
+        let digits = 1;
+        if (maxEpisode >= 10000) digits = 4;
+        else if (maxEpisode >= 1000) digits = 3;
+        else if (maxEpisode >= 100) digits = 2;
+        else digits = 1;
+        return digits;
+    }, [episodes]);
 
     // Interceptors đã setup từ đầu file
 
@@ -254,6 +352,104 @@ export default function VodPlay() {
             document.title = movie.name;
         }
     }, [movie]);
+
+    // Initialize player after movie and episodes are loaded
+    useEffect(() => {
+        if (movie && !hasInitializedRef.current) {
+            if (episodes.length > 0) {
+                initializeFromUrl(episodes, movie);
+            } else {
+                // Check for trailer if no episodes
+                console.log(
+                    "No episodes, checking trailer: movie.trailer_url=",
+                    movie.trailer_url,
+                    "tmdbVideos=",
+                    !!tmdbVideos,
+                );
+                let trailerUrl = null;
+                if (movie.trailer_url) {
+                    trailerUrl = movie.trailer_url;
+                    if (trailerUrl.includes("youtube.com/watch?v=")) {
+                        const videoId = trailerUrl.split("v=")[1].split("&")[0];
+                        trailerUrl = `https://www.youtube.com/embed/${videoId}`;
+                    }
+                } else if (tmdbVideos) {
+                    const trailer = tmdbVideos.find(
+                        (v) => v.type === "Trailer" && v.site === "YouTube",
+                    );
+                    if (trailer && trailer.key) {
+                        trailerUrl = `https://www.youtube.com/embed/${trailer.key}`;
+                    }
+                }
+                console.log("Trailer URL found:", trailerUrl);
+                if (trailerUrl) {
+                    const trailerEpisode = {
+                        server_name: "Trailer",
+                        server_data: [
+                            {
+                                name: "Trailer",
+                                slug: "trailer",
+                                link_embed: trailerUrl,
+                                link_m3u8: null,
+                            },
+                        ],
+                    };
+                    setEpisodes([trailerEpisode]);
+                    setActiveEpisode(trailerEpisode);
+                    initializeFromUrl([trailerEpisode], movie);
+                } else if (!movie.tmdb || tmdbVideos !== null) {
+                    // No trailer available, set error
+                    console.log("No trailer, setting error");
+                    setErrorMessage(
+                        "Không có link phát phim và trailer cho tập này. Vui lòng thử tập khác hoặc liên hệ admin.",
+                    );
+                }
+            }
+        }
+    }, [movie, episodes, tmdbVideos]);
+
+    // Check for trailer when TMDB videos load
+    useEffect(() => {
+        if (
+            movie &&
+            episodes.length === 0 &&
+            tmdbVideos &&
+            !hasInitializedRef.current
+        ) {
+            // Check for trailer
+            let trailerUrl = null;
+            if (movie.trailer_url) {
+                trailerUrl = movie.trailer_url;
+                if (trailerUrl.includes("youtube.com/watch?v=")) {
+                    const videoId = trailerUrl.split("v=")[1].split("&")[0];
+                    trailerUrl = `https://www.youtube.com/embed/${videoId}`;
+                }
+            } else if (tmdbVideos) {
+                const trailer = tmdbVideos.find(
+                    (v) => v.type === "Trailer" && v.site === "YouTube",
+                );
+                if (trailer && trailer.key) {
+                    trailerUrl = `https://www.youtube.com/embed/${trailer.key}`;
+                }
+            }
+            if (trailerUrl) {
+                const trailerEpisode = {
+                    server_name: "Trailer",
+                    server_data: [
+                        {
+                            name: "Trailer",
+                            slug: "trailer",
+                            link_embed: trailerUrl,
+                            link_m3u8: null,
+                        },
+                    ],
+                };
+                setEpisodes([trailerEpisode]);
+                setActiveEpisode(trailerEpisode);
+                initializeFromUrl([trailerEpisode], movie);
+            }
+        }
+    }, [tmdbVideos, movie, episodes]);
 
     // Xử lý phím ESC để đóng modal
     useEffect(() => {
@@ -402,15 +598,88 @@ export default function VodPlay() {
         return viewHistory || [];
     }, [viewHistory]);
 
-    // Fetch movie details
-    async function fetchMovieDetails() {
-        setIsLoading(true);
+    // Helper function to format episode name
+    const formatEpisodeName = useCallback(
+        (name) => {
+            if (name && /^Tập \d+/.test(name)) {
+                const num = parseInt(name.match(/\d+/)[0]);
+                return `Tập ${num.toString().padStart(maxDigits, "0")}`;
+            } else if (name && /^\d+/.test(name)) {
+                const num = parseInt(name);
+                return `Tập ${num.toString().padStart(maxDigits, "0")}`;
+            }
+            return name;
+        },
+        [maxDigits],
+    );
+
+    // Normalize movie fields depending on source
+    function normalizeMovieForSource(item, source) {
+        if (!item) return item;
+        // Ensure we don't mutate unexpected prototypes
+        const m = { ...item };
+
+        // nguonc: use thumb_url as poster_url for display
+        if (source === SOURCES.NGUONC) {
+            // Swap: poster_url <- thumb_url, thumbnail <- poster_url
+            m.poster_url = getMovieImage(m.thumb_url || m.poster_url, source);
+            m.thumbnail = getMovieImage(m.thumb_url || m.poster_url, source);
+
+            // Additional mappings for nguonc
+            m.episode_current = m.current_episode;
+            m.lang = m.language;
+            m.content = m.description;
+            m.actor = m.casts ? m.casts.split(", ") : [];
+            m.director = m.director;
+
+            // Flatten category from object to array
+            if (m.category && typeof m.category === "object") {
+                m.category = Object.values(m.category).flatMap(
+                    (group) => group.list || [],
+                );
+            }
+        } else if (source === SOURCES.OPHIM) {
+            // Ophim: use thumb_url as poster_url, thêm prefix uploads/movies/ nếu cần
+            let posterPath = m.thumb_url || m.poster_url;
+            if (posterPath && !posterPath.startsWith("uploads/movies/")) {
+                posterPath = `uploads/movies/${posterPath}`;
+            }
+            m.poster_url = getMovieImage(posterPath, source);
+            m.thumbnail = getMovieImage(posterPath, source);
+
+            // Additional mappings for ophim
+            m.episode_current = m.episode_current;
+            m.lang = m.lang;
+            m.content = m.content;
+            m.actor = m.actor;
+            m.director = m.director;
+            m.trailer_url = m.trailer_url;
+        } else {
+            // primary: ensure poster_url exists
+            if (!m.poster_url)
+                m.poster_url = getMovieImage(
+                    m.poster || m.thumbnail || m.image || "",
+                    source,
+                );
+        }
+
+        // Ensure poster field exists for history/list usage
+        if (!m.poster) m.poster = m.poster_url || m.thumbnail || "";
+
+        return m;
+    }
+
+    // Fetch movie data from primary source (returns data instead of setting state)
+    async function fetchPrimaryMovieData() {
         try {
             const res = await fetch(`${CONFIG.API_ENDPOINT}/${slug}`);
             const json = await res.json();
             const data = json;
             if (data.status && data.movie) {
-                setMovie(data.movie);
+                const normalizedMovie = normalizeMovieForSource(
+                    data.movie,
+                    "primary",
+                );
 
                 // Lọc episodes: chỉ giữ lại Vietsub, Thuyết Minh, Lồng Tiếng
                 const allowedTypes = ["Vietsub", "Thuyết Minh", "Lồng Tiếng"];
@@ -442,7 +711,22 @@ export default function VodPlay() {
                         };
                     });
 
-                setEpisodes(filteredEpisodes);
+                return { movie: normalizedMovie, episodes: filteredEpisodes };
+            }
+        } catch (err) {
+            console.error("Error fetching primary movie data:", err);
+        }
+        return null;
+    }
+
+    // Fetch movie details for primary source
+    async function fetchPrimaryMovieDetails() {
+        setIsLoading(true);
+        try {
+            const data = await fetchPrimaryMovieData();
+            if (data) {
+                setMovie(data.movie);
+                setEpisodes(data.episodes);
 
                 // Fetch TMDb data, credits, and images nếu có tmdb info
                 if (data.movie.tmdb?.id) {
@@ -459,18 +743,277 @@ export default function VodPlay() {
                     fetchTmdbImages(tmdbId, tmdbType);
                 }
 
-                if (filteredEpisodes.length > 0) {
-                    initializeFromUrl(filteredEpisodes);
+                if (data.episodes.length > 0) {
+                    setActiveEpisode(data.episodes[0]);
+                    initializeFromUrl(data.episodes);
                 }
             } else {
-                setErrorMessage("Failed to load movie details 1.");
+                setErrorMessage(
+                    "Failed to load movie details from primary source.",
+                );
             }
         } catch (err) {
-            console.log(err);
-            setErrorMessage("Failed to load movie details 2.");
+            console.error("Error fetching primary movie details:", err);
+            setErrorMessage(
+                "Failed to load movie details from primary source.",
+            );
         } finally {
             setIsLoading(false);
         }
+    }
+
+    // Fetch movie data from nguonc source (returns data instead of setting state)
+    async function fetchNguoncMovieData() {
+        try {
+            const res = await fetch(
+                `${CONFIG.APP_DOMAIN_NGUONC}/api/film/${slug}`,
+            );
+            const json = await res.json();
+            const data = json;
+            console.log("Nguonc API response:", data); // Thêm log để debug
+            if (data.status === "success" && data.movie) {
+                const normalizedMovie = normalizeMovieForSource(
+                    data.movie,
+                    "nguonc",
+                );
+
+                // Normalize episodes for nguonc
+                let episodesData = [];
+                if (data.movie.episodes && Array.isArray(data.movie.episodes)) {
+                    console.log("Episodes array:", data.movie.episodes); // Log episodes
+                    episodesData = data.movie.episodes.map((ep) => ({
+                        server_name: ep.server_name,
+                        server_data: ep.items.map((item) => ({
+                            name: item.name,
+                            slug: item.slug,
+                            link_embed: item.embed,
+                            link_m3u8: item.m3u8,
+                        })),
+                    }));
+                } else {
+                    console.error(
+                        "Episodes data is not an array or undefined:",
+                        data.movie.episodes,
+                    );
+                }
+
+                // Lọc episodes: chỉ giữ lại Vietsub, Thuyết Minh, Lồng Tiếng
+                const allowedTypes = ["Vietsub", "Thuyết Minh", "Lồng Tiếng"];
+                const filteredEpisodes = (episodesData || [])
+                    .filter((episode) => {
+                        const serverName = episode.server_name || "";
+                        return allowedTypes.some((type) =>
+                            serverName
+                                .toLowerCase()
+                                .includes(type.toLowerCase()),
+                        );
+                    })
+                    .map((episode) => {
+                        // Chuẩn hóa tên tab: chỉ giữ lại loại phụ đề
+                        let displayName = episode.server_name;
+                        allowedTypes.forEach((type) => {
+                            if (
+                                displayName
+                                    .toLowerCase()
+                                    .includes(type.toLowerCase())
+                            ) {
+                                displayName = type;
+                            }
+                        });
+                        return {
+                            ...episode,
+                            original_server_name: episode.server_name, // Lưu lại tên gốc
+                            server_name: displayName, // Tên hiển thị đã chuẩn hóa
+                        };
+                    });
+
+                return { movie: normalizedMovie, episodes: filteredEpisodes };
+            }
+        } catch (err) {
+            console.error("Error fetching nguonc movie data:", err);
+        }
+        return null;
+    }
+
+    // Fetch movie details for nguonc source
+    async function fetchNguoncMovieDetails() {
+        setIsLoading(true);
+        try {
+            const data = await fetchNguoncMovieData();
+            if (data) {
+                setMovie(data.movie);
+                setEpisodes(data.episodes);
+
+                // Nguonc không có TMDb data, skip
+
+                if (data.episodes.length > 0) {
+                    setActiveEpisode(data.episodes[0]);
+                    initializeFromUrl(data.episodes);
+                }
+            } else {
+                setErrorMessage(
+                    "Failed to load movie details from nguonc source.",
+                );
+            }
+        } catch (err) {
+            console.error("Error fetching nguonc movie details:", err);
+            setErrorMessage("Failed to load movie details from nguonc source.");
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    // Fetch movie data from ophim source (returns data instead of setting state)
+    async function fetchOphimMovieData() {
+        try {
+            const response = await fetch(
+                `${CONFIG.APP_DOMAIN_OPHIM}/v1/api/phim/${slug}`,
+            );
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.data && data.data.item) {
+                    const movieData = normalizeMovieForSource(
+                        data.data.item,
+                        "ophim",
+                    );
+                    const episodesData = data.data.item.episodes || [];
+                    return { movie: movieData, episodes: episodesData };
+                }
+            }
+        } catch (err) {
+            console.error("Error fetching ophim movie data:", err);
+        }
+        return null;
+    }
+
+    // Fetch movie details for ophim source
+    async function fetchOphimMovieDetails() {
+        setIsLoading(true);
+        try {
+            const data = await fetchOphimMovieData();
+            if (data) {
+                setMovie(data.movie);
+                setEpisodes(data.episodes);
+                setActiveEpisode(
+                    data.episodes && data.episodes.length > 0
+                        ? data.episodes[0]
+                        : null,
+                );
+
+                // Fetch TMDb data if available
+                if (data.movie.tmdb && data.movie.tmdb.id) {
+                    fetchTmdbMovieData(data.movie.tmdb.id);
+                    fetchTmdbCredits(data.movie.tmdb.id);
+                    fetchTmdbImages(data.movie.tmdb.id);
+                }
+            } else {
+                setErrorMessage(
+                    "Failed to load movie details from ophim source.",
+                );
+            }
+        } catch (err) {
+            console.error("Error fetching ophim movie details:", err);
+            setErrorMessage("Failed to load movie details from ophim source.");
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    // Fetch movie details from all sources
+    async function fetchAllMovieDetails() {
+        setIsLoading(true);
+        try {
+            const sources = [SOURCES.OPHIM, SOURCES.KKPHIM, SOURCES.NGUONC];
+            const results = await Promise.allSettled(
+                sources.map(async (src) => {
+                    try {
+                        if (src === SOURCES.NGUONC) {
+                            return await fetchNguoncMovieData();
+                        } else if (src === SOURCES.OPHIM) {
+                            return await fetchOphimMovieData();
+                        } else {
+                            return await fetchPrimaryMovieData();
+                        }
+                    } catch (error) {
+                        console.warn(`Failed to fetch from ${src}:`, error);
+                        return null;
+                    }
+                }),
+            );
+
+            // Set movie from the first successful source
+            let movieData = null;
+            for (const result of results) {
+                if (
+                    result.status === "fulfilled" &&
+                    result.value &&
+                    result.value.movie
+                ) {
+                    movieData = result.value.movie;
+                    setMovie(movieData);
+                    break;
+                }
+            }
+
+            // Merge episodes from all sources
+            const allEpisodes = [];
+            results.forEach((result, index) => {
+                if (
+                    result.status === "fulfilled" &&
+                    result.value &&
+                    result.value.episodes
+                ) {
+                    const src = sources[index];
+                    // Add source prefix to server_name to avoid conflicts
+                    const prefixedEpisodes = result.value.episodes.map(
+                        (ep) => ({
+                            ...ep,
+                            server_name: `${src.toUpperCase()} - ${ep.server_name}`,
+                        }),
+                    );
+                    allEpisodes.push(...prefixedEpisodes);
+                }
+            });
+
+            // Filter out episodes with no server_data
+            const filteredEpisodes = allEpisodes.filter(
+                (ep) => ep.server_data && ep.server_data.length > 0,
+            );
+
+            setEpisodes(filteredEpisodes);
+
+            // Fetch TMDb data if movie has tmdb info
+            if (movieData && movieData.tmdb && movieData.tmdb.id) {
+                console.log("Fetching TMDB for movie:", movieData.tmdb);
+                const tmdbId = movieData.tmdb.id;
+                const tmdbType = movieData.tmdb.type || "movie";
+
+                if (tmdbType === "movie") {
+                    fetchTmdbMovieData(tmdbId);
+                } else if (tmdbType === "tv") {
+                    fetchTmdbTvData(tmdbId);
+                }
+
+                fetchTmdbCredits(tmdbId, tmdbType);
+                fetchTmdbImages(tmdbId, tmdbType);
+            } else {
+                console.log("No TMDB data for movie:", movieData?.slug);
+            }
+
+            if (filteredEpisodes.length > 0) {
+                setActiveEpisode(filteredEpisodes[0]);
+            }
+        } catch (err) {
+            console.error("Error fetching all movie details:", err);
+            setErrorMessage("Failed to load movie details from all sources.");
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    // Fetch movie details
+    async function fetchMovieDetails() {
+        await fetchAllMovieDetails();
     }
 
     // Fetch TMDb movie data
@@ -489,6 +1032,16 @@ export default function VodPlay() {
             if (response.ok) {
                 const data = await response.json();
                 setTmdbData(data);
+
+                // Fetch videos
+                const videosResponse = await fetch(
+                    `${CONFIG.TMDB_BASE_URL}/movie/${tmdbId}/videos?api_key=${apiKey}&language=vi`,
+                );
+                if (videosResponse.ok) {
+                    const videosData = await videosResponse.json();
+                    console.log("TMDB videos:", videosData.results);
+                    setTmdbVideos(videosData.results || []);
+                }
             }
         } catch (err) {
             // Failed to fetch TMDb data
@@ -511,6 +1064,16 @@ export default function VodPlay() {
             if (response.ok) {
                 const data = await response.json();
                 setTmdbData(data);
+
+                // Fetch videos
+                const videosResponse = await fetch(
+                    `${CONFIG.TMDB_BASE_URL}/tv/${tmdbId}/videos?api_key=${apiKey}&language=vi`,
+                );
+                if (videosResponse.ok) {
+                    const videosData = await videosResponse.json();
+                    console.log("TMDB videos:", videosData.results);
+                    setTmdbVideos(videosData.results || []);
+                }
             }
         } catch (err) {
             // Failed to fetch TMDb TV data
@@ -564,7 +1127,7 @@ export default function VodPlay() {
     }
 
     // Initialize from URL parameters - ưu tiên: URL param → last watched → tập đầu
-    function initializeFromUrl(episodesList) {
+    function initializeFromUrl(episodesList, movie) {
         // Skip nếu đã initialize rồi
         if (hasInitializedRef.current) {
             return;
@@ -583,7 +1146,8 @@ export default function VodPlay() {
                 // Tìm episode có server type này với số tập này
                 targetEpisode = episodesList.find(
                     (episode) =>
-                        episode.server_name === serverName &&
+                        episode.server_name === serverName ||
+                        episode.server_name.endsWith(` - ${serverName}`) ||
                         episode.server_data?.some(
                             (server) =>
                                 getEpisodeKey(server.slug) === episodeNum,
@@ -627,7 +1191,11 @@ export default function VodPlay() {
                         const savedServerName =
                             slugToServerName(savedServerSlug);
                         targetServer = targetEpisode.server_data.find(
-                            (server) => server.server_name === savedServerName,
+                            (server) =>
+                                server.server_name === savedServerName ||
+                                server.server_name?.endsWith(
+                                    ` - ${savedServerName}`,
+                                ),
                         );
                     }
 
@@ -658,7 +1226,7 @@ export default function VodPlay() {
             if (targetEpisode && targetServer) {
                 hasInitializedRef.current = true;
                 setActiveEpisode(targetEpisode);
-                openEpisode(targetServer, targetEpisode);
+                openEpisode(targetServer, targetEpisode, movie);
                 return;
             }
         }
@@ -689,7 +1257,13 @@ export default function VodPlay() {
                     // Convert slug về server name để tìm
                     const savedServerName = slugToServerName(savedServerSlug);
                     targetServer = matchingEpisode.server_data.find(
-                        (server) => server.server_name === savedServerName,
+                        (server) =>
+                            server &&
+                            (server.server_name === savedServerName ||
+                                (server.server_name &&
+                                    server.server_name?.endsWith(
+                                        ` - ${savedServerName}`,
+                                    ))),
                     );
                 }
 
@@ -697,6 +1271,7 @@ export default function VodPlay() {
                 if (!targetServer) {
                     targetServer = matchingEpisode.server_data.find(
                         (server) => {
+                            if (!server) return false;
                             const serverKey = getEpisodeKey(server.slug);
                             return serverKey === episodeKey;
                         },
@@ -707,11 +1282,11 @@ export default function VodPlay() {
                     hasInitializedRef.current = true;
                     setActiveEpisode(matchingEpisode);
                     // Truyền episode để lưu server_name đúng
-                    openEpisode(targetServer, matchingEpisode);
+                    openEpisode(targetServer, matchingEpisode, movie);
 
                     // Cập nhật URL với đầy đủ thông tin
                     const params = new URLSearchParams();
-                    params.set("slug", dataSlug);
+                    params.set("slug", cleanSlug);
                     params.set("episode", episodeKey); // Số tập
                     params.set(
                         "server",
@@ -734,7 +1309,7 @@ export default function VodPlay() {
             setActiveEpisode(firstEpisode);
             if (firstEpisode.server_data?.length > 0) {
                 // Truyền episode để lưu server_name đúng
-                openEpisode(firstEpisode.server_data[0], firstEpisode);
+                openEpisode(firstEpisode.server_data[0], firstEpisode, movie);
             }
         }
     }
@@ -1015,8 +1590,49 @@ export default function VodPlay() {
         }
     }
 
-    async function initializePlayer(masterUrl, episodeSlug) {
+    async function initializePlayer(server, episodeSlug, movie) {
+        // Clear previous errors
+        setErrorMessage(null);
+
+        // Ưu tiên m3u8 cho Ophim để autoplay
+        let masterUrl = server.link_m3u8 || server.link_embed;
+
+        console.log(
+            "Initializing player with URL:",
+            masterUrl,
+            "Episode:",
+            episodeSlug,
+            "Source:",
+            source,
+            "Server:",
+            server,
+        ); // Thêm log
         if (!masterUrl) {
+            // Fallback to trailer if available
+            if (movie?.trailer_url) {
+                let embedUrl = movie.trailer_url;
+                if (embedUrl.includes("youtube.com/watch?v=")) {
+                    const videoId = embedUrl.split("v=")[1].split("&")[0];
+                    embedUrl = `https://www.youtube.com/embed/${videoId}`;
+                }
+                console.log("Playing trailer:", embedUrl);
+                await setupEmbedPlayer(embedUrl, episodeSlug);
+                return;
+            }
+            const trailer = tmdbVideos?.find(
+                (v) => v.type === "Trailer" && v.site === "YouTube",
+            );
+            if (trailer) {
+                console.log("Playing TMDB trailer:", trailer.key);
+                await setupEmbedPlayer(
+                    `https://www.youtube.com/embed/${trailer.key}`,
+                    episodeSlug,
+                );
+                return;
+            }
+            setErrorMessage(
+                "Không có link phát phim và trailer cho tập này. Vui lòng thử tập khác hoặc liên hệ admin.",
+            );
             return;
         }
 
@@ -1171,7 +1787,17 @@ export default function VodPlay() {
                 });
 
                 player.on("error", (event) => {
-                    setErrorMessage(`Playback error: ${event.message}`);
+                    console.log("JWPlayer error:", event);
+                    // Fallback to embed if available and different from current URL
+                    if (server.link_embed && server.link_embed !== masterUrl) {
+                        console.log(
+                            "Falling back to embed:",
+                            server.link_embed,
+                        );
+                        setupEmbedPlayer(server.link_embed, episodeSlug);
+                    } else {
+                        setErrorMessage(`Playback error: ${event.message}`);
+                    }
                 });
 
                 // Set lại âm lượng đã lưu khi player sẵn sàng
@@ -1195,6 +1821,35 @@ export default function VodPlay() {
         } catch (err) {
             // Fallback to HLS.js player
             await setupHlsPlayer(masterUrl, episodeSlug);
+        }
+    }
+
+    // Fallback embed player using iframe
+    async function setupEmbedPlayer(embedUrl, episodeSlug) {
+        try {
+            const playerDiv = document.getElementById("player-container");
+            if (!playerDiv) throw new Error("Player container not found");
+
+            // Clear container
+            playerDiv.innerHTML = "";
+
+            // Create iframe with 16:9 aspect ratio
+            const iframe = document.createElement("iframe");
+            iframe.src = embedUrl;
+            iframe.className = "w-full aspect-video";
+            iframe.style.cssText = "border:none;";
+            iframe.allowFullscreen = true;
+            iframe.allow = "autoplay; encrypted-media";
+
+            playerDiv.appendChild(iframe);
+
+            // Set current episode
+            setCurrentEpisodeId(episodeSlug);
+            currentUrlRef.current = embedUrl;
+
+            console.log("Embed player setup with URL:", embedUrl);
+        } catch (err) {
+            setErrorMessage(`Embed player setup failed: ${err.message}`);
         }
     }
 
@@ -1329,17 +1984,25 @@ export default function VodPlay() {
         }
     }
 
-    function openEpisode(server, episode = null) {
+    function openEpisode(server, episode = null, movie) {
+        console.log("Opening episode:", server, episode); // Thêm log
         // Update document title - chỉ update khi có đầy đủ thông tin
-        if (server?.name && movie?.name) {
-            document.title = `[${server.name}] - ${movie.name}`;
+        if (movie?.name) {
+            const episodeName = server.name || "Trailer";
+            document.title = `[${formatEpisodeName(episodeName)}] - ${movie.name}`;
         }
 
         // Lưu server ngay (không delay) - truyền episode để lấy server_name
         setWatchlist(server.slug, null, episode, movie);
 
-        // Initialize player with URL - sẽ tự set currentEpisodeId khi ready
-        initializePlayer(server.link_m3u8, server.slug);
+        // Initialize player with server - ưu tiên m3u8, fallback embed nếu lỗi
+        console.log(
+            "Master URL:",
+            server.link_m3u8,
+            "Embed:",
+            server.link_embed,
+        ); // Log URL
+        initializePlayer(server, server.slug, movie);
     }
 
     // Play next episode
@@ -1401,7 +2064,7 @@ export default function VodPlay() {
 
             if (nextServer) {
                 setActiveEpisode(currentEpisode);
-                openEpisode(nextServer, currentEpisode);
+                openEpisode(nextServer, currentEpisode, movie);
                 return;
             }
         }
@@ -1435,12 +2098,19 @@ export default function VodPlay() {
                 console.log("🔍 Checking episode:", {
                     nextEpisodeName: nextEpisode.server_name,
                     savedServerName: savedServerName,
-                    match: nextEpisode.server_name === savedServerName,
+                    match:
+                        nextEpisode.server_name === savedServerName ||
+                        nextEpisode.server_name.endsWith(
+                            ` - ${savedServerName}`,
+                        ),
                 });
 
                 // Tìm server đầu tiên trong episode này có cùng server type
                 // So sánh với episode.server_name (đã chuẩn hóa) thay vì server.server_name
-                if (nextEpisode.server_name === savedServerName) {
+                if (
+                    nextEpisode.server_name === savedServerName ||
+                    nextEpisode.server_name.endsWith(` - ${savedServerName}`)
+                ) {
                     // Lấy server đầu tiên trong episode này
                     const firstServer = nextEpisode.server_data?.[0];
                     if (firstServer) {
@@ -1449,7 +2119,7 @@ export default function VodPlay() {
                             nextEpisode.server_name,
                         );
                         setActiveEpisode(nextEpisode);
-                        openEpisode(firstServer, nextEpisode);
+                        openEpisode(firstServer, nextEpisode, movie);
                         return;
                     }
                 }
@@ -1467,7 +2137,7 @@ export default function VodPlay() {
             if (nextEpisode.server_data?.length > 0) {
                 const firstServer = nextEpisode.server_data[0];
                 setActiveEpisode(nextEpisode);
-                openEpisode(firstServer, nextEpisode);
+                openEpisode(firstServer, nextEpisode, movie);
                 return;
             }
         }
@@ -1495,7 +2165,7 @@ export default function VodPlay() {
             });
 
             if (matchingServer) {
-                openEpisode(matchingServer, episode);
+                openEpisode(matchingServer, episode, movie);
                 return;
             }
         }
@@ -1519,7 +2189,7 @@ export default function VodPlay() {
                 );
             });
             if (matchingServer) {
-                openEpisode(matchingServer, episode);
+                openEpisode(matchingServer, episode, movie);
                 return;
             }
         }
@@ -1531,10 +2201,10 @@ export default function VodPlay() {
         );
 
         if (matchingServer) {
-            openEpisode(matchingServer, episode);
+            openEpisode(matchingServer, episode, movie);
         } else if (episode.server_data?.length > 0) {
             // Fallback: server đầu tiên
-            openEpisode(episode.server_data[0], episode);
+            openEpisode(episode.server_data[0], episode, movie);
         } else {
             setErrorMessage("No servers available for this episode.");
         }
@@ -1976,7 +2646,7 @@ export default function VodPlay() {
                 <>
                     <main className="container mx-auto flex h-full flex-col gap-4 p-4">
                         {/* Breadcrumb Navigation with Actions */}
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                             <nav className="text-sm text-gray-600">
                                 <ul className="flex items-center gap-2">
                                     <li className="flex items-center">
@@ -1995,7 +2665,7 @@ export default function VodPlay() {
                             </nav>
 
                             {/* Quick Actions */}
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-end gap-2">
                                 {/* Bookmark Button */}
                                 <button
                                     onClick={() => toggleBookmark(movie)}
@@ -2120,6 +2790,7 @@ export default function VodPlay() {
                                                             openEpisode(
                                                                 server,
                                                                 activeEpisode,
+                                                                movie,
                                                             )
                                                         }
                                                         className={`cursor-pointer rounded-md border-2 border-transparent px-3 py-2 text-center shadow transition-all ${
@@ -2130,7 +2801,10 @@ export default function VodPlay() {
                                                         }`}
                                                     >
                                                         <p className="text-sm font-semibold">
-                                                            {server.name}
+                                                            {formatEpisodeName(
+                                                                server.name ||
+                                                                    "Trailer",
+                                                            )}
                                                         </p>
                                                     </div>
                                                 ),
@@ -2179,38 +2853,53 @@ export default function VodPlay() {
                                         </div>
                                     </div>
                                     <div className="flex flex-wrap gap-2">
-                                        <span className="inline-block rounded-md bg-blue-100 px-2 py-1 text-sm text-blue-800">
-                                            <strong>Thời lượng:</strong>{" "}
-                                            {movie.time}
-                                        </span>
-                                        <span className="inline-block rounded-md bg-green-100 px-2 py-1 text-sm text-green-800">
-                                            <strong>Chất lượng:</strong>{" "}
-                                            {movie.quality}
-                                        </span>
-                                        <span className="inline-block rounded-md bg-purple-100 px-2 py-1 text-sm text-purple-800">
-                                            <strong>Năm:</strong> {movie.year}
-                                        </span>
-                                        {tmdbData?.vote_average && (
-                                            <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-sm text-amber-800">
-                                                <svg
-                                                    className="h-4 w-4 fill-current"
-                                                    viewBox="0 0 24 24"
-                                                >
-                                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                                                </svg>
-                                                <strong>
-                                                    {tmdbData.vote_average.toFixed(
-                                                        1,
-                                                    )}
-                                                    /10
-                                                </strong>
-                                                <span className="text-xs">
-                                                    (
-                                                    {tmdbData.vote_count?.toLocaleString()}
-                                                    )
-                                                </span>
+                                        {movie.time && movie.time !== "0" && (
+                                            <span className="inline-block rounded-md bg-blue-100 px-2 py-1 text-sm text-blue-800">
+                                                <strong>Thời lượng:</strong>{" "}
+                                                {movie.time}
                                             </span>
                                         )}
+                                        {movie.quality &&
+                                            movie.quality !== "0" && (
+                                                <span className="inline-block rounded-md bg-green-100 px-2 py-1 text-sm text-green-800">
+                                                    <strong>Chất lượng:</strong>{" "}
+                                                    {movie.quality}
+                                                </span>
+                                            )}
+                                        {movie.year &&
+                                            movie.year !== 0 &&
+                                            movie.year !== "0" && (
+                                                <span className="inline-block rounded-md bg-purple-100 px-2 py-1 text-sm text-purple-800">
+                                                    <strong>Năm:</strong>{" "}
+                                                    {movie.year}
+                                                </span>
+                                            )}
+                                        {tmdbData?.vote_average &&
+                                            tmdbData.vote_average > 0 &&
+                                            tmdbData?.vote_count &&
+                                            tmdbData.vote_count > 0 && (
+                                                <>
+                                                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-sm text-amber-800">
+                                                        <svg
+                                                            className="h-4 w-4 fill-current"
+                                                            viewBox="0 0 24 24"
+                                                        >
+                                                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                                        </svg>
+                                                        <strong>
+                                                            {tmdbData.vote_average.toFixed(
+                                                                1,
+                                                            )}
+                                                            /10
+                                                        </strong>
+                                                        <span className="text-xs">
+                                                            (
+                                                            {tmdbData.vote_count.toLocaleString()}
+                                                            )
+                                                        </span>
+                                                    </span>
+                                                </>
+                                            )}
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {movie.category?.map((cat, idx) => (
@@ -2235,9 +2924,10 @@ export default function VodPlay() {
                                     <div
                                         className="line-clamp-4 text-sm text-gray-600"
                                         title={movie.content}
-                                    >
-                                        {movie.content}
-                                    </div>
+                                        dangerouslySetInnerHTML={{
+                                            __html: movie.content,
+                                        }}
+                                    ></div>
                                 </div>
                             </div>
                         </div>

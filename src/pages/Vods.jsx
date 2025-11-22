@@ -4,6 +4,91 @@ import Select from "react-select";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ConfirmDialog from "../components/ConfirmDialog";
 
+// Global config for domains
+const CONFIG = {
+    APP_DOMAIN_KKPHIM: "https://phimapi.com",
+    APP_DOMAIN_KKPHIM_CDN_IMAGE: "https://phimimg.com",
+    APP_DOMAIN_NGUONC: "https://phim.nguonc.com",
+    APP_DOMAIN_OPHIM: "https://ophim1.com",
+    APP_DOMAIN_OPHIM_FRONTEND: "https://ophim17.cc",
+    APP_DOMAIN_OPHIM_CDN_IMAGE: "https://img.ophim.live",
+};
+
+// Source constants
+const SOURCES = {
+    NGUONC: "nguonc",
+    KKPHIM: "kkphim",
+    OPHIM: "ophim",
+};
+
+// Helper để tính URL ảnh phù hợp theo nguồn đã lưu
+function getMovieImage(imagePath) {
+    function getSelectedSource() {
+        try {
+            const v = localStorage.getItem("selected_source");
+            if (!v) return "kkphim"; // default to kkphim
+            if (v === SOURCES.KKPHIM) return "kkphim";
+            if (v === SOURCES.OPHIM) return "ophim";
+            if (v === SOURCES.NGUONC) return "nguonc";
+            return "kkphim";
+        } catch (e) {
+            return "kkphim";
+        }
+    }
+
+    if (!imagePath)
+        return `https://picsum.photos/2000/3000?random=${new Date().getTime()}`;
+
+    const source = getSelectedSource();
+
+    if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+        if (source === "kkphim" || source === "ophim") {
+            const hostname = (() => {
+                try {
+                    return new URL(imagePath).hostname || "";
+                } catch (e) {
+                    return "";
+                }
+            })();
+
+            if (
+                hostname.indexOf("phimimg.com") !== -1 ||
+                hostname.indexOf("phimapi.com") !== -1 ||
+                hostname.indexOf("img.ophim.live") !== -1
+            ) {
+                const domain =
+                    source === "kkphim"
+                        ? CONFIG.APP_DOMAIN_KKPHIM
+                        : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
+                if (source === "ophim") {
+                    return `${domain}/_next/image?url=${encodeURIComponent(imagePath)}&w=1080&q=75`;
+                } else {
+                    return `${domain}/image.php?url=${encodeURIComponent(imagePath)}`;
+                }
+            }
+
+            return imagePath;
+        }
+
+        return imagePath;
+    }
+
+    const cdnUrl = `${source === "kkphim" ? CONFIG.APP_DOMAIN_KKPHIM_CDN_IMAGE : CONFIG.APP_DOMAIN_OPHIM_CDN_IMAGE}/${imagePath}`;
+    if (source === "kkphim" || source === "ophim") {
+        const domain =
+            source === "kkphim"
+                ? CONFIG.APP_DOMAIN_KKPHIM
+                : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
+        if (source === "ophim") {
+            return `${domain}/_next/image?url=${encodeURIComponent(cdnUrl)}&w=1080&q=75`;
+        } else {
+            return `${domain}/image.php?url=${encodeURIComponent(cdnUrl)}`;
+        }
+    }
+
+    return cdnUrl;
+}
+
 // Tooltip Component cho movie details
 function MovieTooltip({ movie, children }) {
     const [isVisible, setIsVisible] = useState(false);
@@ -128,18 +213,7 @@ function MovieTooltip({ movie, children }) {
                         {/* Thumbnail */}
                         <div className="w-32 shrink-0 self-stretch">
                             <img
-                                src={(() => {
-                                    if (!movie.poster_url)
-                                        return `https://picsum.photos/320/180?random=${new Date().getTime()}`;
-                                    if (
-                                        movie.poster_url.includes(
-                                            "https://phimimg.com/",
-                                        )
-                                    ) {
-                                        return `https://phimapi.com/image.php?url=${movie.poster_url}`;
-                                    }
-                                    return `https://phimapi.com/image.php?url=https://phimimg.com/${movie.poster_url}`;
-                                })()}
+                                src={getMovieImage(movie.poster_url)}
                                 alt={movie.name}
                                 className="h-full w-full rounded-l-xl object-cover"
                             />
@@ -166,12 +240,11 @@ function MovieTooltip({ movie, children }) {
                                     <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
                                         {movie.quality}
                                     </span>
+                                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                                        {movie.episode_current || "N/A"}
+                                    </span>
                                     <span className="text-gray-600">
                                         {movie.year || "N/A"}
-                                    </span>
-                                    <span className="text-gray-400">•</span>
-                                    <span className="text-gray-600">
-                                        {movie.episode_current || "N/A"}
                                     </span>
                                 </div>
                             </div>
@@ -316,11 +389,6 @@ function MovieTooltip({ movie, children }) {
     );
 }
 
-const CONFIG = {
-    APP_DOMAIN_FRONTEND: "https://phimapi.com",
-    APP_DOMAIN_CDN_IMAGE: "https://phimimg.com",
-};
-
 function useLocalStorage(key, initial) {
     const [state, setState] = useState(() => {
         try {
@@ -360,6 +428,7 @@ export default function Vods() {
     const [totalPages, setTotalPages] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
     const [searchKeyword, setSearchKeyword] = useState(getInitialKeyword);
+    const [searchInputValue, setSearchInputValue] = useState(getInitialKeyword);
     const [country, setCountry] = useState(getInitialCountry);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [history, setHistory] = useLocalStorage("viewHistory", []);
@@ -368,9 +437,42 @@ export default function Vods() {
     const [isSearching, setIsSearching] = useState(false); // Track khi đang search/debounce
     const navigate = useNavigate();
 
+    // Thêm state cho source: nguonc, kkphim, all
+    const [source, setSource] = useState(() => {
+        try {
+            return localStorage.getItem("selected_source") || SOURCES.OPHIM;
+        } catch (e) {
+            return SOURCES.OPHIM;
+        }
+    });
+
+    // Persist source selection
+    useEffect(() => {
+        try {
+            localStorage.setItem("selected_source", source);
+        } catch (e) {}
+    }, [source]);
+
     const countriesFetchedRef = useRef(false);
-    const isInitialMount = useRef(true);
     const pageInputTimerRef = useRef(null); // Debounce cho page input
+    const searchInputTimerRef = useRef(null); // Debounce cho search input
+
+    const goToPage = useCallback(
+        (page) => {
+            if (page >= 1 && page <= totalPages) {
+                setCurrentPage(page);
+            }
+        },
+        [totalPages],
+    );
+
+    const nextPage = useCallback(() => {
+        if (currentPage < totalPages) goToPage(currentPage + 1);
+    }, [currentPage, totalPages, goToPage]);
+
+    const prevPage = useCallback(() => {
+        if (currentPage > 1) goToPage(currentPage - 1);
+    }, [currentPage, goToPage]);
 
     useEffect(() => {
         document.title = "VODs — Entertainment";
@@ -382,12 +484,22 @@ export default function Vods() {
         }
 
         const onKey = (e) => {
+            // Skip if user is typing in input/textarea
+            if (
+                document.activeElement.tagName === "INPUT" ||
+                document.activeElement.tagName === "TEXTAREA" ||
+                document.activeElement.contentEditable === "true"
+            ) {
+                return;
+            }
             if (e.key === "ArrowRight") nextPage();
             if (e.key === "ArrowLeft") prevPage();
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, []);
+    }, [nextPage, prevPage]);
+
+    // no-op: primary-only source
 
     // Sync URL khi state thay đổi
     useEffect(() => {
@@ -395,99 +507,84 @@ export default function Vods() {
         params.set("page", currentPage);
         if (searchKeyword.trim() !== "") params.set("keyword", searchKeyword);
         if (country.trim() !== "") params.set("country", country);
+        if (source !== SOURCES.NGUONC) params.set("source", source);
         window.history.replaceState({}, "", `?${params.toString()}`);
-    }, [currentPage, searchKeyword, country]);
+    }, [currentPage, searchKeyword, country, source]);
+
+    // Sync searchInputValue with searchKeyword
+    useEffect(() => {
+        setSearchInputValue(searchKeyword);
+    }, [searchKeyword]);
 
     const prevStateRef = useRef(null);
-    const debounceTimerRef = useRef(null);
 
-    // Auto-fetch khi keyword, country, hoặc page thay đổi (với debounce)
+    // Auto-fetch khi keyword, country, page, hoặc source thay đổi (với debounce)
     useEffect(() => {
-        // Skip fetch nếu đang initial mount (chưa có state từ URL)
-        if (isInitialMount.current) {
-            isInitialMount.current = false;
-            return;
-        }
-
         const prev = prevStateRef.current;
         const stateChanged =
             !prev ||
             searchKeyword !== prev.keyword ||
             country !== prev.country ||
-            currentPage !== prev.page;
+            currentPage !== prev.page ||
+            source !== prev.source;
 
         if (stateChanged) {
             prevStateRef.current = {
                 keyword: searchKeyword,
                 country,
                 page: currentPage,
+                source,
             };
 
-            // Clear previous timer
-            if (debounceTimerRef.current) {
-                clearTimeout(debounceTimerRef.current);
-            }
+            // Fetch ngay khi state thay đổi
+            const params = {
+                page: currentPage,
+                limit: 12,
+                sort_field: "year",
+                sort_type: "desc",
+            };
 
-            // Set searching state khi user đang nhập
             if (searchKeyword.trim() !== "") {
-                setIsSearching(true);
-            }
-
-            // Set new debounce timer (300ms delay để responsive hơn)
-            debounceTimerRef.current = setTimeout(() => {
-                const params = {
-                    page: currentPage,
-                    limit: 12,
-                    sort_field: "year",
-                    sort_type: "desc",
-                };
-
-                // Nếu có keyword, dùng /tim-kiem; không thì dùng /quoc-gia/{country}
-                if (searchKeyword.trim() !== "") {
-                    params.keyword = searchKeyword;
-                    fetchData(
-                        `${CONFIG.APP_DOMAIN_FRONTEND}/v1/api/tim-kiem`,
-                        params,
-                    );
-                } else {
-                    fetchData(
-                        `${CONFIG.APP_DOMAIN_FRONTEND}/v1/api/quoc-gia/${country}`,
-                        params,
-                    );
+                params.keyword = searchKeyword;
+                if (source === SOURCES.NGUONC) {
+                    fetchNguoncData({ ...params, type: "search" });
+                } else if (source === SOURCES.KKPHIM) {
+                    fetchKKPhimData({ ...params, type: "search" });
+                } else if (source === SOURCES.OPHIM) {
+                    const ophimParams = { ...params };
+                    delete ophimParams.sort_field;
+                    delete ophimParams.sort_type;
+                    fetchOphimData({ ...ophimParams, type: "search" });
                 }
-            }, 300);
+            } else {
+                if (source === SOURCES.NGUONC) {
+                    const paramsNguonc = {
+                        page: params.page || 1,
+                        limit: 12,
+                    };
+                    fetchNguoncData({ ...paramsNguonc, country });
+                } else if (source === SOURCES.KKPHIM) {
+                    fetchKKPhimData({ ...params, country });
+                } else if (source === SOURCES.OPHIM) {
+                    const paramsOphim = {
+                        page: params.page || 1,
+                        limit: 12,
+                    };
+                    fetchOphimData({ ...paramsOphim, country });
+                }
+            }
         }
 
         // Cleanup on unmount
         return () => {
-            if (debounceTimerRef.current) {
-                clearTimeout(debounceTimerRef.current);
-            }
             if (pageInputTimerRef.current) {
                 clearTimeout(pageInputTimerRef.current);
             }
         };
-    }, [searchKeyword, country, currentPage]);
+    }, [searchKeyword, country, currentPage, source]);
 
-    // Fetch initial data sau khi state được init từ URL
-    useEffect(() => {
-        const params = {
-            page: currentPage,
-            limit: 12,
-            sort_field: "year",
-            sort_type: "desc",
-        };
-
-        if (searchKeyword.trim() !== "") {
-            params.keyword = searchKeyword;
-            fetchData(`${CONFIG.APP_DOMAIN_FRONTEND}/v1/api/tim-kiem`, params);
-        } else {
-            fetchData(
-                `${CONFIG.APP_DOMAIN_FRONTEND}/v1/api/quoc-gia/${country}`,
-                params,
-            );
-        }
-    }, []); // Chỉ chạy 1 lần sau khi mount
+    // Khi người dùng đổi `source` (A / C / ALL) — reset page và refetch ngay
+    // Removed: now handled by the main useEffect above
 
     function buildQuery(params) {
         return Object.keys(params)
@@ -495,27 +592,407 @@ export default function Vods() {
             .join("&");
     }
 
-    async function fetchData(url, params = {}) {
+    // Hỗ trợ serialize params nâng cao: array hoặc object -> bracket notation
+    function buildQueryExtended(params) {
+        const parts = [];
+
+        function add(key, value) {
+            parts.push(
+                `${encodeURIComponent(key)}=${encodeURIComponent(value)}`,
+            );
+        }
+
+        Object.keys(params).forEach((k) => {
+            const v = params[k];
+            if (v == null) return; // skip null/undefined
+
+            if (Array.isArray(v)) {
+                v.forEach((item, idx) => {
+                    add(`${k}[${idx}]`, item == null ? "" : item);
+                });
+            } else if (typeof v === "object") {
+                // support object map -> cats: {1: '', 6: '', 47: '52'} => cats[1]=&cats[6]=...
+                Object.keys(v).forEach((sub) => {
+                    add(`${k}[${sub}]`, v[sub] == null ? "" : v[sub]);
+                });
+            } else {
+                add(k, v);
+            }
+        });
+
+        return parts.join("&");
+    }
+
+    async function fetchData(url, params = {}, source = SOURCES.NGUONC) {
         setIsLoading(true);
         setIsSearching(false); // Clear searching state khi bắt đầu fetch thực sự
         try {
             const qs = buildQuery(params);
             const fullUrl = `${url}?${qs}`;
 
+            // Nếu gọi tới nguonc, dùng fetchFromUrl + parseApiJson để chấp nhận nhiều kiểu response
+            if (fullUrl.indexOf(CONFIG.APP_DOMAIN_NGUONC) !== -1) {
+                const result = await fetchFromUrl(fullUrl);
+                const { items, totalPages, cat } = result;
+                let normalizedItems = items.map((it) =>
+                    normalizeMovieForSource(it, "nguonc"),
+                );
+                if (cat) {
+                    normalizedItems = normalizedItems.map((m) => ({
+                        ...m,
+                        country: [{ name: cat.title, slug: cat.slug }],
+                    }));
+                }
+                setMovies(normalizedItems);
+                setTotalPages(totalPages);
+                return;
+            }
+
+            // Nếu gọi tới ophim, dùng fetchFromUrl + parseApiJson
+            if (fullUrl.indexOf(CONFIG.APP_DOMAIN_OPHIM) !== -1) {
+                const result = await fetchFromUrl(fullUrl);
+                const { items, totalPages } = result;
+                const normalizedItems = items.map((it) =>
+                    normalizeMovieForSource(it, SOURCES.OPHIM),
+                );
+                setMovies(normalizedItems);
+                setTotalPages(totalPages);
+                return;
+            }
+
             const res = await fetch(fullUrl);
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             }
 
-            const json = await res.json();
+            // Thử parse JSON; nếu parsing error, in ra text để debug
+            let json;
+            try {
+                json = await res.json();
+            } catch (parseErr) {
+                const txt = await res.text();
+                console.error(
+                    "fetchData: failed to parse JSON from:",
+                    fullUrl,
+                    "body:",
+                    txt,
+                );
+                throw parseErr;
+            }
 
             if (!json || !json.data) {
                 setMovies([]);
                 setTotalPages(1);
             } else {
-                setMovies(json.data.items || []);
+                const itemsRaw = json.data.items || [];
+                const items = itemsRaw.map((it) =>
+                    normalizeMovieForSource(it, source),
+                );
+                setMovies(items);
                 setTotalPages(json.data.params?.pagination?.totalPages || 1);
             }
+        } catch (err) {
+            console.error("fetchData error:", err);
+            setMovies([]);
+            setTotalPages(1);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    // Hàm fetch riêng cho Ophim
+    async function fetchOphimData(params = {}) {
+        setIsLoading(true);
+        setIsSearching(false);
+        try {
+            const qsParts = [];
+            if (params.page) qsParts.push(`page=${params.page}`);
+            if (params.limit) qsParts.push(`limit=${params.limit}`);
+            const qs = qsParts.join("&");
+            const isSearch = params.type === "search";
+            const basePath = isSearch
+                ? `tim-kiem?keyword=${encodeURIComponent(params.keyword || "")}`
+                : `quoc-gia/${params.country || "viet-nam"}`;
+            const fullUrl = `${CONFIG.APP_DOMAIN_OPHIM}/v1/api/${basePath}${qs ? `${isSearch ? "&" : "?"}${qs}` : ""}`;
+            const res = await fetch(fullUrl);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const json = await res.json();
+            const items = json.data?.items || [];
+            const totalItems = json.data?.params?.pagination?.totalItems || 0;
+            const totalItemsPerPage =
+                json.data?.params?.pagination?.totalItemsPerPage || 10;
+            const totalPages = Math.ceil(totalItems / totalItemsPerPage);
+            const normalizedItems = items.map((it) =>
+                normalizeMovieForSource(it, SOURCES.OPHIM),
+            );
+            setMovies(normalizedItems);
+            setTotalPages(totalPages);
+        } catch (err) {
+            console.error("fetchOphimData error:", err);
+            setMovies([]);
+            setTotalPages(1);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    // Hàm fetch riêng cho KKPhim
+    async function fetchKKPhimData(params = {}) {
+        setIsLoading(true);
+        setIsSearching(false);
+        try {
+            const qs = buildQuery(params);
+            const fullUrl = `${CONFIG.APP_DOMAIN_KKPHIM}/v1/api/${params.type === "search" ? "tim-kiem" : `quoc-gia/${params.country || "viet-nam"}`}?${qs}`;
+            const res = await fetch(fullUrl);
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            }
+            const json = await res.json();
+            if (!json || !json.data) {
+                setMovies([]);
+                setTotalPages(1);
+            } else {
+                const itemsRaw = json.data.items || [];
+                const items = itemsRaw.map((it) =>
+                    normalizeMovieForSource(it, SOURCES.KKPHIM),
+                );
+                setMovies(items);
+                setTotalPages(json.data.params?.pagination?.totalPages || 1);
+            }
+        } catch (err) {
+            console.error("fetchKKPhimData error:", err);
+            setMovies([]);
+            setTotalPages(1);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    // Hàm fetch riêng cho Nguonc
+    async function fetchNguoncData(params = {}) {
+        setIsLoading(true);
+        setIsSearching(false);
+        try {
+            const qs = buildQuery(params);
+            const fullUrl = `${CONFIG.APP_DOMAIN_NGUONC}/api/films/${params.type === "search" ? "search" : `quoc-gia/${params.country || "viet-nam"}`}?${qs}`;
+            const result = await fetchFromUrl(fullUrl);
+            const { items, totalPages, cat } = result;
+            let normalizedItems = items.map((it) =>
+                normalizeMovieForSource(it, SOURCES.NGUONC),
+            );
+            if (cat) {
+                normalizedItems = normalizedItems.map((m) => ({
+                    ...m,
+                    country: [{ name: cat.title, slug: cat.slug }],
+                }));
+            }
+            setMovies(normalizedItems);
+            setTotalPages(totalPages);
+        } catch (err) {
+            console.error("fetchNguoncData error:", err);
+            setMovies([]);
+            setTotalPages(1);
+        } finally {
+            setIsLoading(false);
+        }
+    }
+
+    // Helper: parse nhiều kiểu response từ các nguồn khác nhau
+    function parseApiJson(json) {
+        let items = [];
+        let totalPages = 1;
+        let cat = null;
+
+        if (!json) return { items, totalPages, cat };
+
+        if (json.paginate && Array.isArray(json.items)) {
+            // nguonc response
+            items = json.items;
+            totalPages = json.paginate.total_page || totalPages;
+            cat = json.cat || null;
+        } else if (json.data && Array.isArray(json.data.items)) {
+            // primary response
+            items = json.data.items;
+            totalPages = json.data.params?.pagination?.totalPages || totalPages;
+        } else if (
+            json.data &&
+            json.data.items &&
+            json.data.params &&
+            json.data.params.pagination
+        ) {
+            // Ophim response
+            items = json.data.items;
+            totalPages = Math.ceil(
+                json.data.params.pagination.totalItems /
+                    json.data.params.pagination.totalItemsPerPage,
+            );
+        } else if (Array.isArray(json)) {
+            items = json;
+        } else if (Array.isArray(json.items)) {
+            items = json.items;
+        } else if (Array.isArray(json.films)) {
+            items = json.films;
+        } else if (Array.isArray(json.data)) {
+            items = json.data;
+        } else if (json.results && Array.isArray(json.results)) {
+            items = json.results;
+        }
+
+        // try to find common pagination fields if not set
+        if (!totalPages || totalPages === 1) {
+            totalPages =
+                json?.meta?.last_page ||
+                json?.pagination?.totalPages ||
+                json?.total_pages ||
+                json?.totalPages ||
+                totalPages;
+        }
+
+        return { items, totalPages, cat };
+    }
+
+    // Normalize movie fields depending on source
+    function normalizeMovieForSource(item, source) {
+        if (!item) return item;
+        // Ensure we don't mutate unexpected prototypes
+        const m = { ...item };
+
+        // nguonc: use thumb_url as poster_url for display
+        if (source === SOURCES.NGUONC) {
+            // Swap: poster_url <- thumb_url, thumbnail <- poster_url
+            m.poster_url = m.thumb_url || m.poster_url;
+            m.thumbnail = m.poster_url || m.thumb_url;
+
+            // Additional mappings for nguonc
+            m.episode_current = m.current_episode;
+            m.lang = m.language;
+            // Keep other fields like director, casts if needed
+        } else if (source === SOURCES.OPHIM) {
+            // Ophim: use thumb_url as poster_url, thêm prefix uploads/movies/ nếu cần
+            let posterPath = m.thumb_url || m.poster_url;
+            if (posterPath && !posterPath.startsWith("uploads/movies/")) {
+                posterPath = `uploads/movies/${posterPath}`;
+            }
+            m.poster_url = posterPath;
+            m.thumbnail = m.poster_url || m.thumb_url;
+
+            // Additional mappings for ophim
+            m.episode_current = m.episode_current;
+            m.lang = m.lang;
+        } else {
+            // primary: ensure poster_url exists
+            if (!m.poster_url)
+                m.poster_url = m.poster || m.thumbnail || m.image || "";
+        }
+
+        // Ensure poster field exists for history/list usage
+        if (!m.poster) m.poster = m.poster_url || m.thumbnail || "";
+
+        // Thêm trường source
+        m.source = source;
+
+        return m;
+    }
+
+    async function fetchFromUrl(fullUrl) {
+        try {
+            const res = await fetch(fullUrl);
+            if (!res.ok) return { items: [], totalPages: 1, cat: null };
+            const json = await res.json();
+            return parseApiJson(json);
+        } catch (e) {
+            return { items: [], totalPages: 1, cat: null };
+        }
+    }
+
+    // Gọi song song 2 nguồn, gộp kết quả và loại trùng theo `slug`
+    async function fetchCombined(type, params = {}) {
+        setIsLoading(true);
+        setIsSearching(false);
+
+        try {
+            const qs = buildQuery(params);
+            const page = params.page || 1;
+            const limit = params.limit || 12;
+
+            const urls = [];
+
+            if (type === "search") {
+                // nguồn chính (phimapi)
+                urls.push(`${CONFIG.APP_DOMAIN_KKPHIM}/v1/api/tim-kiem?${qs}`);
+
+                // nguồn phụ (nguonc) - chỉ gửi các param hiện có: keyword, page, limit, sort_field, sort_type
+                const paramsNguonc = {
+                    keyword: params.keyword || "",
+                    page,
+                    limit,
+                    sort_field: params.sort_field || params.sortField || "",
+                    sort_type: params.sort_type || params.sortType || "",
+                };
+                const q2 = buildQuery(paramsNguonc);
+                urls.push(`${CONFIG.APP_DOMAIN_NGUONC}/api/films/search?${q2}`);
+            } else {
+                // type === 'country'
+                const countrySlug = params.country || "viet-nam";
+                urls.push(
+                    `${CONFIG.APP_DOMAIN_KKPHIM}/v1/api/quoc-gia/${countrySlug}?${qs}`,
+                );
+
+                // nguonc country endpoint: chỉ page (và nếu có sort_field/sort_type gửi thêm)
+                const paramsNguonc = {
+                    page,
+                    sort_field: params.sort_field || params.sortField || "",
+                    sort_type: params.sort_type || params.sortType || "",
+                };
+                const q3 = buildQuery(paramsNguonc);
+                urls.push(
+                    `${CONFIG.APP_DOMAIN_NGUONC}/api/films/quoc-gia/${countrySlug}?${q3}`,
+                );
+            }
+
+            const results = await Promise.allSettled(
+                urls.map((u) => fetchFromUrl(u)),
+            );
+
+            let combinedItems = [];
+            let maxPages = 1;
+
+            results.forEach((r, idx) => {
+                if (r.status === "fulfilled" && r.value) {
+                    // Determine source by URL order
+                    const url = urls[idx] || "";
+                    const src =
+                        url.indexOf(CONFIG.APP_DOMAIN_NGUONC) !== -1
+                            ? "nguonc"
+                            : "primary";
+                    const { items, totalPages, cat } = r.value;
+                    const normalized = items.map((it) => {
+                        const m = normalizeMovieForSource(it, src);
+                        if (src === "nguonc" && cat) {
+                            m.country = [{ name: cat.title, slug: cat.slug }];
+                        }
+                        return m;
+                    });
+                    combinedItems = combinedItems.concat(normalized);
+                    maxPages = Math.max(maxPages, totalPages || 1);
+                }
+            });
+
+            // dedupe theo slug (giữ item đầu tiên gặp)
+            const map = new Map();
+            combinedItems.forEach((it) => {
+                if (!it) return;
+                const key = it.slug || it.id || it._id || JSON.stringify(it);
+                if (!map.has(key)) {
+                    // Thêm trường source
+                    it.source = it.source || it._normalizedSource || "A"; // giả sử normalize đã set
+                    map.set(key, it);
+                }
+            });
+
+            const items = Array.from(map.values());
+            setMovies(items);
+            setTotalPages(1); // Không phân trang cho ALL
         } catch (err) {
             setMovies([]);
             setTotalPages(1);
@@ -524,23 +1001,94 @@ export default function Vods() {
         }
     }
 
+    // Gọi riêng nguồn Nguonc và đặt kết quả
+    // fetchNguonc removed — primary-only source
+
     function searchMoviesKey(e) {
         if (e.key === "Enter") {
-            // Clear debounce timer để search ngay lập tức
-            if (debounceTimerRef.current) {
-                clearTimeout(debounceTimerRef.current);
-            }
+            // Update searchKeyword immediately on Enter
+            setSearchKeyword(searchInputValue);
             setCurrentPage(1); // useEffect sẽ auto fetch khi currentPage thay đổi
         }
     }
 
     function getMovieImage(imagePath) {
+        // Helper: xác định nguồn hiện tại (primary là mặc định).
+        function getSelectedSource() {
+            try {
+                const v = localStorage.getItem("selected_source");
+                if (!v) return "kkphim"; // default to kkphim
+                if (v === SOURCES.KKPHIM) return "kkphim";
+                if (v === SOURCES.OPHIM) return "ophim";
+                if (v === SOURCES.NGUONC) return "nguonc";
+                return "kkphim";
+            } catch (e) {
+                return "kkphim";
+            }
+        }
+
+        // Nếu không có imagePath trả placeholder
         if (!imagePath)
             return `https://picsum.photos/2000/3000?random=${new Date().getTime()}`;
-        if (imagePath.includes("https://phimimg.com/")) {
-            return `https://phimapi.com/image.php?url=${imagePath}`;
+
+        const source = getSelectedSource();
+
+        // Nếu là URL tuyệt đối
+        if (
+            imagePath.startsWith("http://") ||
+            imagePath.startsWith("https://")
+        ) {
+            // Nếu source là kkphim hoặc ophim thì proxy những domain của CDN/primary
+            if (source === "kkphim" || source === "ophim") {
+                const hostname = (() => {
+                    try {
+                        return new URL(imagePath).hostname || "";
+                    } catch (e) {
+                        return "";
+                    }
+                })();
+
+                if (
+                    hostname.indexOf("phimimg.com") !== -1 ||
+                    hostname.indexOf("phimapi.com") !== -1 ||
+                    hostname.indexOf("img.ophim.live") !== -1
+                ) {
+                    const domain =
+                        source === "kkphim"
+                            ? CONFIG.APP_DOMAIN_KKPHIM
+                            : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
+                    if (source === "ophim") {
+                        return `${domain}/_next/image?url=${encodeURIComponent(imagePath)}&w=1080&q=75`;
+                    } else {
+                        return `${domain}/image.php?url=${encodeURIComponent(imagePath)}`;
+                    }
+                }
+
+                // Domain khác (ví dụ nguonc) — vẫn trả nguyên URL
+                return imagePath;
+            }
+
+            // Nếu không phải kkphim hoặc ophim: giữ nguyên URL gốc
+            return imagePath;
         }
-        return `https://phimapi.com/image.php?url=${CONFIG.APP_DOMAIN_CDN_IMAGE}/${imagePath}`;
+
+        // Nếu là đường dẫn relative hoặc chỉ filename => gán CDN chính
+        const cdnUrl = `${source === "kkphim" ? CONFIG.APP_DOMAIN_KKPHIM_CDN_IMAGE : CONFIG.APP_DOMAIN_OPHIM_CDN_IMAGE}/${imagePath}`;
+        if (source === "kkphim" || source === "ophim") {
+            // Proxy khi source là kkphim hoặc ophim
+            const domain =
+                source === "kkphim"
+                    ? CONFIG.APP_DOMAIN_KKPHIM
+                    : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
+            if (source === "ophim") {
+                return `${domain}/_next/image?url=${encodeURIComponent(cdnUrl)}&w=1080&q=75`;
+            } else {
+                return `${domain}/image.php?url=${encodeURIComponent(cdnUrl)}`;
+            }
+        }
+
+        // Nguồn khác: trả URL CDN gốc (không proxy)
+        return cdnUrl;
     }
 
     function toggleHistory(e) {
@@ -567,14 +1115,6 @@ export default function Vods() {
         setConfirmDelete(false);
     }
 
-    function nextPage() {
-        if (currentPage < totalPages) goToPage(currentPage + 1);
-    }
-
-    function prevPage() {
-        if (currentPage > 1) goToPage(currentPage - 1);
-    }
-
     function generateVisiblePages(totalPages, currentPage) {
         const visiblePages = [];
         const range = 1;
@@ -584,15 +1124,9 @@ export default function Vods() {
         return visiblePages;
     }
 
-    function goToPage(page) {
-        if (page >= 1 && page <= totalPages) {
-            setCurrentPage(page);
-        }
-    }
-
     async function fetchCountries() {
         try {
-            const res = await fetch(`${CONFIG.APP_DOMAIN_FRONTEND}/quoc-gia`);
+            const res = await fetch(`${CONFIG.APP_DOMAIN_KKPHIM}/quoc-gia`);
             const data = await res.json();
             // sort countries by localized name (if available)
             const sorted = (data || [])
@@ -628,18 +1162,38 @@ export default function Vods() {
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
                         <div className="relative flex-1">
                             <input
-                                value={searchKeyword}
-                                onChange={(e) =>
-                                    setSearchKeyword(e.target.value)
-                                }
+                                value={searchInputValue}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    setSearchInputValue(value); // Update input value immediately
+                                    setIsSearching(true); // Bắt đầu debounce
+                                    if (searchInputTimerRef.current) {
+                                        clearTimeout(
+                                            searchInputTimerRef.current,
+                                        );
+                                    }
+                                    searchInputTimerRef.current = setTimeout(
+                                        () => {
+                                            setSearchKeyword(value);
+                                            setIsSearching(false); // Kết thúc debounce
+                                        },
+                                        500,
+                                    ); // 500ms debounce
+                                }}
                                 onKeyUp={searchMoviesKey}
                                 type="text"
                                 placeholder="Nhập tên phim..."
                                 className={`w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-500 transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 ${
                                     (isLoading || isSearching) &&
-                                    searchKeyword.trim() !== ""
-                                        ? "pr-10"
-                                        : ""
+                                    searchKeyword.trim() !== "" &&
+                                    searchInputValue.trim() !== ""
+                                        ? "pr-20"
+                                        : (isLoading || isSearching) &&
+                                            searchKeyword.trim() !== ""
+                                          ? "pr-10"
+                                          : searchInputValue.trim() !== ""
+                                            ? "pr-10"
+                                            : ""
                                 }`}
                             />
                             {/* Loading indicator cho search */}
@@ -649,6 +1203,43 @@ export default function Vods() {
                                         <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500"></div>
                                     </div>
                                 )}
+                            {/* Clear button */}
+                            {searchInputValue.trim() !== "" && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSearchInputValue("");
+                                        setSearchKeyword("");
+                                        setIsSearching(false);
+                                        if (searchInputTimerRef.current) {
+                                            clearTimeout(
+                                                searchInputTimerRef.current,
+                                            );
+                                        }
+                                    }}
+                                    className={`absolute top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                        (isLoading || isSearching) &&
+                                        searchKeyword.trim() !== ""
+                                            ? "right-10"
+                                            : "right-3"
+                                    }`}
+                                    title="Xóa tìm kiếm"
+                                >
+                                    <svg
+                                        className="h-4 w-4"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M6 18L18 6M6 6l12 12"
+                                        />
+                                    </svg>
+                                </button>
+                            )}
                         </div>
                         <div className="flex-1 sm:w-48 sm:flex-none">
                             {countries.length === 0 ? (
@@ -750,6 +1341,66 @@ export default function Vods() {
                                 })()
                             )}
                         </div>
+                        {/* Nguon selector: chọn nguồn A, C, ALL */}
+                        <div className="w-44">
+                            {/** Sử dụng react-select để có giao diện đồng nhất với country select */}
+                            <Select
+                                options={[
+                                    { value: SOURCES.OPHIM, label: "Ophim" },
+                                    { value: SOURCES.KKPHIM, label: "KKPhim" },
+                                    { value: SOURCES.NGUONC, label: "Nguonc" },
+                                ]}
+                                value={
+                                    [
+                                        {
+                                            value: SOURCES.OPHIM,
+                                            label: "Ophim",
+                                        },
+                                        {
+                                            value: SOURCES.KKPHIM,
+                                            label: "KKPhim",
+                                        },
+                                        {
+                                            value: SOURCES.NGUONC,
+                                            label: "Nguonc",
+                                        },
+                                    ].find((o) => o.value === source) || null
+                                }
+                                onChange={(opt) => {
+                                    if (!opt) return;
+                                    setSource(opt.value);
+                                }}
+                                placeholder="Nguồn"
+                                isClearable={false}
+                                styles={{
+                                    control: (provided, state) => ({
+                                        ...provided,
+                                        minHeight: "42px",
+                                        borderColor: state.isFocused
+                                            ? "#3b82f6"
+                                            : "#d1d5db",
+                                        borderRadius: "0.5rem",
+                                        boxShadow: state.isFocused
+                                            ? "0 0 0 2px rgba(59, 130, 246, 0.08)"
+                                            : "none",
+                                    }),
+                                    valueContainer: (provided) => ({
+                                        ...provided,
+                                        padding: "0 12px",
+                                        minHeight: "38px",
+                                    }),
+                                    input: (provided) => ({
+                                        ...provided,
+                                        margin: 0,
+                                        padding: 0,
+                                    }),
+                                    placeholder: (provided) => ({
+                                        ...provided,
+                                        color: "#6b7280",
+                                    }),
+                                }}
+                            />
+                        </div>
                         <button
                             onClick={toggleHistory}
                             className="flex transform items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-medium text-white transition-all duration-300 ease-in-out hover:bg-blue-700 active:scale-95"
@@ -842,7 +1493,7 @@ export default function Vods() {
                                                     const serverSlug =
                                                         item.server;
 
-                                                    let url = `vods/play?slug=${item.slug}`;
+                                                    let url = `vods/play/${item.slug}`;
                                                     if (episodeKey) {
                                                         // Nếu episodeKey là slug đầy đủ (vd: "tap-4-vietsub"), extract số tập
                                                         const episodeNumber =
@@ -850,10 +1501,10 @@ export default function Vods() {
                                                                 /\d+/,
                                                             )?.[0] ||
                                                             episodeKey;
-                                                        url += `&episode=${episodeNumber}`;
+                                                        url += `?episode=${episodeNumber}`;
                                                     }
                                                     if (serverSlug) {
-                                                        url += `&server=${serverSlug}`;
+                                                        url += `${episodeKey ? "&" : "?"}server=${serverSlug}`;
                                                     }
                                                     return url;
                                                 })()}
@@ -1012,7 +1663,7 @@ export default function Vods() {
                             movies.map((movie) => (
                                 <MovieTooltip key={movie.slug} movie={movie}>
                                     <a
-                                        href={`vods/play?slug=${movie.slug}`}
+                                        href={`vods/play/${movie.slug}`}
                                         className="group relative flex transform cursor-pointer flex-col overflow-hidden rounded-lg bg-white text-inherit no-underline shadow transition-transform hover:scale-105 hover:shadow-lg"
                                     >
                                         <div className="relative bg-gray-200">
@@ -1088,7 +1739,7 @@ export default function Vods() {
                         {/* Skeleton Pagination buttons */}
                         <div className="flex h-11 animate-pulse items-center rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
                             <ul className="flex items-center">
-                                {Array.from({ length: 5 }).map((_, index) => (
+                                {Array.from({ length: 7 }).map((_, index) => (
                                     <li key={`pagination-skeleton-${index}`}>
                                         <div className="mx-0.5 h-9 w-9 rounded-md bg-gray-300"></div>
                                     </li>
