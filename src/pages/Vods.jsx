@@ -511,6 +511,18 @@ export default function Vods() {
         window.history.replaceState({}, "", `?${params.toString()}`);
     }, [currentPage, searchKeyword, country, source]);
 
+    // Reset page index to 1 whenever user changes search or filters (but not on initial mount)
+    const _didMountResetPageRef = useRef(false);
+    useEffect(() => {
+        if (!_didMountResetPageRef.current) {
+            _didMountResetPageRef.current = true;
+            return;
+        }
+
+        // When searchKeyword, country or source change we want to go back to page 1
+        if (currentPage !== 1) setCurrentPage(1);
+    }, [searchKeyword, country, source]);
+
     // Sync searchInputValue with searchKeyword
     useEffect(() => {
         setSearchInputValue(searchKeyword);
@@ -1344,7 +1356,7 @@ export default function Vods() {
                             )}
                         </div>
                         {/* Nguon selector: chọn nguồn A, C, ALL */}
-                        <div className="w-44">
+                        <div className="flex-1 sm:w-48 sm:flex-none">
                             {/** Sử dụng react-select để có giao diện đồng nhất với country select */}
                             <Select
                                 options={[
