@@ -551,9 +551,9 @@ export default function Vods() {
                 } else if (source === SOURCES.KKPHIM) {
                     fetchKKPhimData({ ...params, type: "search" });
                 } else if (source === SOURCES.OPHIM) {
-                    const ophimParams = { ...params };
-                    delete ophimParams.sort_field;
-                    delete ophimParams.sort_type;
+                    let ophimParams = { ...params };
+                    ophimParams.sort_field = "modified.time";
+                    ophimParams.sort_type = "desc";
                     fetchOphimData({ ...ophimParams, type: "search" });
                 }
             } else {
@@ -708,6 +708,8 @@ export default function Vods() {
             const qsParts = [];
             if (params.page) qsParts.push(`page=${params.page}`);
             if (params.limit) qsParts.push(`limit=${params.limit}`);
+            qsParts.push(`sort_field=modified.time`);
+            qsParts.push(`sort_type=desc`);
             const qs = qsParts.join("&");
             const isSearch = params.type === "search";
             const basePath = isSearch
@@ -1494,13 +1496,19 @@ export default function Vods() {
                                                         item.server;
 
                                                     let url = `vods/play/${item.slug}`;
-                                                    if (episodeKey) {
+                                                    if (
+                                                        episodeKey ||
+                                                        episodeKey === 0
+                                                    ) {
+                                                        // Coerce to string first so numeric keys won't throw
+                                                        const episodeKeyStr =
+                                                            String(episodeKey);
                                                         // Nếu episodeKey là slug đầy đủ (vd: "tap-4-vietsub"), extract số tập
                                                         const episodeNumber =
-                                                            episodeKey.match(
+                                                            episodeKeyStr.match(
                                                                 /\d+/,
                                                             )?.[0] ||
-                                                            episodeKey;
+                                                            episodeKeyStr;
                                                         url += `?episode=${episodeNumber}`;
                                                     }
                                                     if (serverSlug) {

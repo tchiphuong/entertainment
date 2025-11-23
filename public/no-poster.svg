@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="900" viewBox="0 0 600 900">
+  <rect width="100%" height="100%" fill="#f3f4f6"/>
+  <g fill="#9ca3af">
+    <rect x="60" y="60" width="480" height="300" rx="12" />
+    <rect x="60" y="390" width="480" height="420" rx="12" />
+  </g>
+  <text x="50%" y="80%" dominant-baseline="middle" text-anchor="middle" fill="#6b7280" font-family="Inter, Arial, sans-serif" font-size="28">No poster available</text>
+</svg>
