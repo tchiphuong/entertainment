@@ -321,7 +321,7 @@ export default function VodPlay() {
     const [tmdbImages, setTmdbImages] = useState(null); // Store TMDb images
     const [tmdbVideos, setTmdbVideos] = useState(null); // Store TMDb videos
     const [viewHistory, setViewHistory] = useLocalStorage("viewHistory", []);
-    const [bookmarks, setBookmarks] = useLocalStorage("bookmarks", []);
+    const [favorites, setFavorites] = useLocalStorage("favorites", []);
     const [showImageModal, setShowImageModal] = useState(false);
     const [modalImages, setModalImages] = useState([]);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -2358,24 +2358,24 @@ export default function VodPlay() {
         setErrorMessage("No servers available for this episode.");
     }
 
-    // Bookmark functions
-    function isBookmarked(slug) {
-        return bookmarks.some((bookmark) => bookmark.slug === slug);
+    // Favorite functions
+    function isFavorited(slug) {
+        return favorites.some((favorite) => favorite.slug === slug);
     }
 
-    function toggleBookmark(movie) {
-        const isCurrentlyBookmarked = isBookmarked(movie.slug);
+    function toggleFavorite(movie) {
+        const isCurrentlyFavorited = isFavorited(movie.slug);
 
-        if (isCurrentlyBookmarked) {
-            // Remove bookmark
-            const newBookmarks = bookmarks.filter(
-                (bookmark) => bookmark.slug !== movie.slug,
+        if (isCurrentlyFavorited) {
+            // Remove favorite
+            const newFavorites = favorites.filter(
+                (favorite) => favorite.slug !== movie.slug,
             );
-            setBookmarks(newBookmarks);
+            setFavorites(newFavorites);
             setErrorMessage("Đã bỏ thích phim này!");
         } else {
-            // Add bookmark
-            const bookmark = {
+            // Add favorite
+            const favorite = {
                 slug: movie.slug,
                 name: movie.name,
                 poster: movie.poster_url || movie.thumb_url || "",
@@ -2383,7 +2383,7 @@ export default function VodPlay() {
                 quality: movie.quality,
                 time: new Date().toISOString(),
             };
-            setBookmarks([bookmark, ...bookmarks]);
+            setFavorites([favorite, ...favorites]);
             setErrorMessage("Đã thêm vào danh sách yêu thích!");
         }
 
@@ -2814,11 +2814,11 @@ export default function VodPlay() {
 
                             {/* Quick Actions */}
                             <div className="flex items-center justify-end gap-2">
-                                {/* Bookmark Button */}
+                                {/* Favorite Button */}
                                 <button
-                                    onClick={() => toggleBookmark(movie)}
+                                    onClick={() => toggleFavorite(movie)}
                                     className={`flex cursor-pointer items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
-                                        isBookmarked(movie.slug)
+                                        isFavorited(movie.slug)
                                             ? "bg-red-100 text-red-700 hover:bg-red-200"
                                             : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                                     }`}
@@ -2826,7 +2826,7 @@ export default function VodPlay() {
                                     <svg
                                         className="h-4 w-4"
                                         fill={
-                                            isBookmarked(movie.slug)
+                                            isFavorited(movie.slug)
                                                 ? "currentColor"
                                                 : "none"
                                         }
@@ -2840,7 +2840,7 @@ export default function VodPlay() {
                                             d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
                                         />
                                     </svg>
-                                    {isBookmarked(movie.slug)
+                                    {isFavorited(movie.slug)
                                         ? "Đã thích"
                                         : "Thích"}
                                 </button>

@@ -423,6 +423,11 @@ export default function Vods() {
         return params.get("country") || "viet-nam";
     };
 
+    const getInitialCategory = () => {
+        const params = new URLSearchParams(window.location.search);
+        return params.get("category") || "";
+    };
+
     const [movies, setMovies] = useState([]);
     const [currentPage, setCurrentPage] = useState(getInitialPage);
     const [totalPages, setTotalPages] = useState(1);
@@ -430,11 +435,16 @@ export default function Vods() {
     const [searchKeyword, setSearchKeyword] = useState(getInitialKeyword);
     const [searchInputValue, setSearchInputValue] = useState(getInitialKeyword);
     const [country, setCountry] = useState(getInitialCountry);
+    const [category, setCategory] = useState(getInitialCategory);
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [history, setHistory] = useLocalStorage("viewHistory", []);
     const [countries, setCountries] = useState([]);
+    const [categories, setCategories] = useState([]);
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const [confirmDeleteFavorites, setConfirmDeleteFavorites] = useState(false);
     const [isSearching, setIsSearching] = useState(false); // Track khi đang search/debounce
+    const [isFavoritesOpen, setIsFavoritesOpen] = useState(false); // Track khi mở modal yêu thích
+    const [favorites, setFavorites] = useLocalStorage("favorites", []); // Danh sách yêu thích
     const navigate = useNavigate();
 
     // Thêm state cho source: nguonc, kkphim, all
@@ -454,6 +464,7 @@ export default function Vods() {
     }, [source]);
 
     const countriesFetchedRef = useRef(false);
+    const categoriesFetchedRef = useRef(false);
     const pageInputTimerRef = useRef(null); // Debounce cho page input
     const searchInputTimerRef = useRef(null); // Debounce cho search input
 
@@ -483,6 +494,12 @@ export default function Vods() {
             fetchCountries();
         }
 
+        // Fetch categories
+        if (!categoriesFetchedRef.current) {
+            categoriesFetchedRef.current = true;
+            fetchCategories();
+        }
+
         const onKey = (e) => {
             // Skip if user is typing in input/textarea
             if (
@@ -507,9 +524,10 @@ export default function Vods() {
         params.set("page", currentPage);
         if (searchKeyword.trim() !== "") params.set("keyword", searchKeyword);
         if (country.trim() !== "") params.set("country", country);
+        if (category.trim() !== "") params.set("category", category);
         if (source !== SOURCES.NGUONC) params.set("source", source);
         window.history.replaceState({}, "", `?${params.toString()}`);
-    }, [currentPage, searchKeyword, country, source]);
+    }, [currentPage, searchKeyword, country, category, source]);
 
     // Reset page index to 1 whenever user changes search or filters (but not on initial mount)
     const _didMountResetPageRef = useRef(false);
@@ -519,9 +537,9 @@ export default function Vods() {
             return;
         }
 
-        // When searchKeyword, country or source change we want to go back to page 1
+        // When searchKeyword, country, category or source change we want to go back to page 1
         if (currentPage !== 1) setCurrentPage(1);
-    }, [searchKeyword, country, source]);
+    }, [searchKeyword, country, category, source]);
 
     // Sync searchInputValue with searchKeyword
     useEffect(() => {
@@ -537,6 +555,7 @@ export default function Vods() {
             !prev ||
             searchKeyword !== prev.keyword ||
             country !== prev.country ||
+            category !== prev.category ||
             currentPage !== prev.page ||
             source !== prev.source;
 
@@ -544,6 +563,7 @@ export default function Vods() {
             prevStateRef.current = {
                 keyword: searchKeyword,
                 country,
+                category,
                 page: currentPage,
                 source,
             };
@@ -561,28 +581,56 @@ export default function Vods() {
                 if (source === SOURCES.NGUONC) {
                     fetchNguoncData({ ...params, type: "search" });
                 } else if (source === SOURCES.KKPHIM) {
-                    fetchKKPhimData({ ...params, type: "search" });
+                    let kkphimParams = { ...params };
+                    kkphimParams.sort_field = "modified.time";
+                    kkphimParams.sort_type = "desc";
+                    fetchKKPhimData({ ...kkphimParams, type: "search" });
                 } else if (source === SOURCES.OPHIM) {
                     let ophimParams = { ...params };
                     ophimParams.sort_field = "modified.time";
                     ophimParams.sort_type = "desc";
                     fetchOphimData({ ...ophimParams, type: "search" });
                 }
+            } else if (category.trim() !== "") {
+                // Ưu tiên category nếu có
+                params.category = category;
+                if (source === SOURCES.NGUONC) {
+                    fetchNguoncData({ ...params, type: "category" });
+                } else if (source === SOURCES.KKPHIM) {
+                    let kkphimParams = { ...params };
+                    kkphimParams.sort_field = "modified.time";
+                    kkphimParams.sort_type = "desc";
+                    fetchKKPhimData({ ...kkphimParams, type: "category" });
+                } else if (source === SOURCES.OPHIM) {
+                    let ophimParams = { ...params };
+                    ophimParams.sort_field = "modified.time";
+                    ophimParams.sort_type = "desc";
+                    fetchOphimData({ ...ophimParams, type: "category" });
+                }
             } else {
+                // Nếu country rỗng, fetch danh sách phim mới
+                const effectiveCountry = country || "viet-nam";
+
                 if (source === SOURCES.NGUONC) {
                     const paramsNguonc = {
                         page: params.page || 1,
                         limit: 12,
                     };
-                    fetchNguoncData({ ...paramsNguonc, country });
+                    fetchNguoncData({
+                        ...paramsNguonc,
+                        country: effectiveCountry,
+                    });
                 } else if (source === SOURCES.KKPHIM) {
-                    fetchKKPhimData({ ...params, country });
+                    fetchKKPhimData({ ...params, country: effectiveCountry });
                 } else if (source === SOURCES.OPHIM) {
                     const paramsOphim = {
                         page: params.page || 1,
                         limit: 12,
                     };
-                    fetchOphimData({ ...paramsOphim, country });
+                    fetchOphimData({
+                        ...paramsOphim,
+                        country: effectiveCountry,
+                    });
                 }
             }
         }
@@ -593,7 +641,7 @@ export default function Vods() {
                 clearTimeout(pageInputTimerRef.current);
             }
         };
-    }, [searchKeyword, country, currentPage, source]);
+    }, [searchKeyword, country, category, currentPage, source]);
 
     // Khi người dùng đổi `source` (A / C / ALL) — reset page và refetch ngay
     // Removed: now handled by the main useEffect above
@@ -724,9 +772,15 @@ export default function Vods() {
             qsParts.push(`sort_type=desc`);
             const qs = qsParts.join("&");
             const isSearch = params.type === "search";
-            const basePath = isSearch
-                ? `tim-kiem?keyword=${encodeURIComponent(params.keyword || "")}`
-                : `quoc-gia/${params.country || "viet-nam"}`;
+            const isCategory = params.type === "category";
+            let basePath;
+            if (isSearch) {
+                basePath = `tim-kiem?keyword=${encodeURIComponent(params.keyword || "")}`;
+            } else if (isCategory) {
+                basePath = `danh-sach/${params.category || ""}`;
+            } else {
+                basePath = `quoc-gia/${params.country || "viet-nam"}`;
+            }
             const fullUrl = `${CONFIG.APP_DOMAIN_OPHIM}/v1/api/${basePath}${qs ? `${isSearch ? "&" : "?"}${qs}` : ""}`;
             const res = await fetch(fullUrl);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -755,8 +809,25 @@ export default function Vods() {
         setIsLoading(true);
         setIsSearching(false);
         try {
-            const qs = buildQuery(params);
-            const fullUrl = `${CONFIG.APP_DOMAIN_KKPHIM}/v1/api/${params.type === "search" ? "tim-kiem" : `quoc-gia/${params.country || "viet-nam"}`}?${qs}`;
+            // Build query string - loại bỏ type và category khỏi params
+            const queryParams = { ...params };
+            delete queryParams.type;
+            delete queryParams.category;
+            delete queryParams.country;
+
+            queryParams.sort_field = "modified.time";
+            queryParams.sort_type = "desc";
+
+            const qs = buildQuery(queryParams);
+            let endpoint;
+            if (params.type === "search") {
+                endpoint = "tim-kiem";
+            } else if (params.type === "category") {
+                endpoint = `danh-sach/${params.category || ""}`;
+            } else {
+                endpoint = `quoc-gia/${params.country || "viet-nam"}`;
+            }
+            const fullUrl = `${CONFIG.APP_DOMAIN_KKPHIM}/v1/api/${endpoint}?${qs}`;
             const res = await fetch(fullUrl);
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -788,7 +859,15 @@ export default function Vods() {
         setIsSearching(false);
         try {
             const qs = buildQuery(params);
-            const fullUrl = `${CONFIG.APP_DOMAIN_NGUONC}/api/films/${params.type === "search" ? "search" : `quoc-gia/${params.country || "viet-nam"}`}?${qs}`;
+            let endpoint;
+            if (params.type === "search") {
+                endpoint = "search";
+            } else if (params.type === "category") {
+                endpoint = `danh-sach/${params.category || ""}`;
+            } else {
+                endpoint = `quoc-gia/${params.country || "viet-nam"}`;
+            }
+            const fullUrl = `${CONFIG.APP_DOMAIN_NGUONC}/api/films/${endpoint}?${qs}`;
             const result = await fetchFromUrl(fullUrl);
             const { items, totalPages, cat } = result;
             let normalizedItems = items.map((it) =>
@@ -1116,6 +1195,19 @@ export default function Vods() {
         setIsHistoryOpen(false);
     }
 
+    function toggleFavorites(e) {
+        if (e) e.stopPropagation();
+        const favs = JSON.parse(localStorage.getItem("favorites")) || [];
+        setFavorites(
+            favs.sort((a, b) => new Date(b.time || 0) - new Date(a.time || 0)),
+        );
+        setIsFavoritesOpen(!isFavoritesOpen);
+    }
+
+    function closeFavorites() {
+        setIsFavoritesOpen(false);
+    }
+
     function deleteHistoryItem(slug, e) {
         if (e) e.stopPropagation();
         const newHistory = history.filter((item) => item.slug !== slug);
@@ -1127,6 +1219,60 @@ export default function Vods() {
         localStorage.setItem("viewHistory", JSON.stringify([]));
         setHistory([]);
         setConfirmDelete(false);
+    }
+
+    function deleteFavoriteItem(slug, e) {
+        if (e) e.stopPropagation();
+        const newFavorites = favorites.filter((item) => item.slug !== slug);
+        localStorage.setItem("favorites", JSON.stringify(newFavorites));
+        setFavorites(newFavorites);
+    }
+
+    function clearFavorites() {
+        localStorage.setItem("favorites", JSON.stringify([]));
+        setFavorites([]);
+        setConfirmDeleteFavorites(false);
+    }
+
+    function toggleMovieFavorite(movie, e) {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        const cleanSlug = movie.slug.split("?")[0];
+        const currentFavorites =
+            JSON.parse(localStorage.getItem("favorites")) || [];
+        const isFavorited = currentFavorites.some(
+            (fav) => fav.slug === cleanSlug,
+        );
+
+        if (isFavorited) {
+            // Xóa khỏi yêu thích
+            const newFavorites = currentFavorites.filter(
+                (fav) => fav.slug !== cleanSlug,
+            );
+            localStorage.setItem("favorites", JSON.stringify(newFavorites));
+            setFavorites(newFavorites);
+        } else {
+            // Thêm vào yêu thích
+            const favorite = {
+                slug: cleanSlug,
+                name: movie.name,
+                poster: movie.poster_url || movie.thumb_url || "",
+                year: movie.year,
+                quality: movie.quality,
+                time: new Date().toISOString(),
+            };
+            const newFavorites = [favorite, ...currentFavorites];
+            localStorage.setItem("favorites", JSON.stringify(newFavorites));
+            setFavorites(newFavorites);
+        }
+    }
+
+    function isMovieFavorited(slug) {
+        const cleanSlug = slug.split("?")[0];
+        return favorites.some((fav) => fav.slug === cleanSlug);
     }
 
     function generateVisiblePages(totalPages, currentPage) {
@@ -1153,6 +1299,27 @@ export default function Vods() {
             // Error fetching countries
         }
     }
+
+    async function fetchCategories() {
+        // Danh sách thể loại cố định, không fetch từ API
+        const categories = [
+            { slug: "hoat-hinh", name: "Hoạt Hình" },
+            { slug: "phim-bo", name: "Phim Bộ" },
+            { slug: "phim-bo-dang-chieu", name: "Phim Bộ Đang Chiếu" },
+            { slug: "phim-bo-hoan-thanh", name: "Phim Bộ Đã Hoàn Thành" },
+            { slug: "phim-chieu-rap", name: "Phim Chiếu Rạp" },
+            { slug: "phim-le", name: "Phim Lẻ" },
+            { slug: "phim-long-tieng", name: "Phim Lồng Tiếng" },
+            { slug: "phim-moi", name: "Phim Mới" },
+            { slug: "phim-sap-chieu", name: "Phim Sắp Chiếu" },
+            { slug: "phim-thuyet-minh", name: "Phim Thuyết Minh" },
+            { slug: "phim-vietsub", name: "Phim Vietsub" },
+            { slug: "tv-shows", name: "Shows" },
+            { slug: "subteam", name: "Subteam" },
+        ];
+
+        setCategories(categories);
+    }
     // Using `react-select` package for the country dropdown (replaces the previous custom ReactSelect).
 
     // helper to compute badge classes like original Angular ng-class
@@ -1173,203 +1340,328 @@ export default function Vods() {
 
             <main className="container mx-auto flex flex-1 flex-col px-4 py-6 lg:px-32">
                 <div className="mb-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
-                        <div className="relative flex-1">
-                            <input
-                                value={searchInputValue}
-                                onChange={(e) => {
-                                    const value = e.target.value;
-                                    setSearchInputValue(value); // Update input value immediately
-                                    setIsSearching(true); // Bắt đầu debounce
-                                    if (searchInputTimerRef.current) {
-                                        clearTimeout(
-                                            searchInputTimerRef.current,
-                                        );
-                                    }
-                                    searchInputTimerRef.current = setTimeout(
-                                        () => {
-                                            setSearchKeyword(value);
-                                            setIsSearching(false); // Kết thúc debounce
-                                        },
-                                        500,
-                                    ); // 500ms debounce
-                                }}
-                                onKeyUp={searchMoviesKey}
-                                type="text"
-                                placeholder="Nhập tên phim..."
-                                className={`w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-500 transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 ${
-                                    (isLoading || isSearching) &&
-                                    searchKeyword.trim() !== "" &&
-                                    searchInputValue.trim() !== ""
-                                        ? "pr-20"
-                                        : (isLoading || isSearching) &&
-                                            searchKeyword.trim() !== ""
-                                          ? "pr-10"
-                                          : searchInputValue.trim() !== ""
-                                            ? "pr-10"
-                                            : ""
-                                }`}
-                            />
-                            {/* Loading indicator cho search */}
-                            {(isLoading || isSearching) &&
-                                searchKeyword.trim() !== "" && (
-                                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500"></div>
-                                    </div>
-                                )}
-                            {/* Clear button */}
-                            {searchInputValue.trim() !== "" && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setSearchInputValue("");
-                                        setSearchKeyword("");
-                                        setIsSearching(false);
+                    <div className="flex w-full flex-col gap-3 md:flex-row md:gap-4">
+                        <div className="grid w-full flex-1 grid-cols-1 gap-3 md:flex md:w-auto md:flex-row md:gap-4">
+                            <div className="relative flex-1">
+                                <input
+                                    value={searchInputValue}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        setSearchInputValue(value); // Update input value immediately
+                                        setIsSearching(true); // Bắt đầu debounce
                                         if (searchInputTimerRef.current) {
                                             clearTimeout(
                                                 searchInputTimerRef.current,
                                             );
                                         }
+                                        searchInputTimerRef.current =
+                                            setTimeout(() => {
+                                                setSearchKeyword(value);
+                                                setIsSearching(false); // Kết thúc debounce
+                                            }, 500); // 500ms debounce
+                                        setCurrentPage(1);
+                                        setCategory("");
+                                        setCountry("");
                                     }}
-                                    className={`absolute top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    onKeyUp={searchMoviesKey}
+                                    type="text"
+                                    placeholder="Nhập tên phim..."
+                                    className={`w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-500 transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 ${
                                         (isLoading || isSearching) &&
-                                        searchKeyword.trim() !== ""
-                                            ? "right-10"
-                                            : "right-3"
+                                        searchKeyword.trim() !== "" &&
+                                        searchInputValue.trim() !== ""
+                                            ? "pr-20"
+                                            : (isLoading || isSearching) &&
+                                                searchKeyword.trim() !== ""
+                                              ? "pr-10"
+                                              : searchInputValue.trim() !== ""
+                                                ? "pr-10"
+                                                : ""
                                     }`}
-                                    title="Xóa tìm kiếm"
-                                >
-                                    <svg
-                                        className="h-4 w-4"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M6 18L18 6M6 6l12 12"
-                                        />
-                                    </svg>
-                                </button>
-                            )}
-                        </div>
-                        <div className="flex-1 sm:w-48 sm:flex-none">
-                            {countries.length === 0 ? (
-                                // Skeleton cho Country Select khi đang load
-                                <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-300"></div>
-                            ) : (
-                                (() => {
-                                    const countryOptions = countries.map(
-                                        (c) => ({
-                                            value: c.slug,
-                                            label: c.name,
-                                        }),
-                                    );
-                                    return (
-                                        <Select
-                                            options={countryOptions}
-                                            value={
-                                                countryOptions.find(
-                                                    (o) => o.value === country,
-                                                ) || null
+                                />
+                                {/* Loading indicator cho search */}
+                                {(isLoading || isSearching) &&
+                                    searchKeyword.trim() !== "" && (
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500"></div>
+                                        </div>
+                                    )}
+                                {/* Clear button */}
+                                {searchInputValue.trim() !== "" && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setSearchInputValue("");
+                                            setSearchKeyword("");
+                                            setIsSearching(false);
+                                            if (searchInputTimerRef.current) {
+                                                clearTimeout(
+                                                    searchInputTimerRef.current,
+                                                );
                                             }
-                                            onChange={(opt) => {
-                                                const val = opt
-                                                    ? opt.value
-                                                    : "";
-                                                const newCountry =
-                                                    val || "viet-nam";
-                                                setCountry(newCountry);
-                                                setCurrentPage(1);
-                                                setSearchKeyword("");
-                                            }}
-                                            placeholder="Chọn quốc gia"
-                                            isClearable
-                                            styles={{
-                                                control: (provided, state) => ({
-                                                    ...provided,
-                                                    minHeight: "42px", // Match với input py-2.5
-                                                    borderColor: state.isFocused
-                                                        ? "#3b82f6"
-                                                        : "#d1d5db", // border-gray-300 & focus:border-blue-500
-                                                    borderRadius: "0.5rem", // rounded-lg
-                                                    boxShadow: state.isFocused
-                                                        ? "0 0 0 2px rgba(59, 130, 246, 0.2)" // focus:ring-2 focus:ring-blue-200
-                                                        : "none", // Không có shadow
-                                                    "&:hover": {
+                                        }}
+                                        className={`absolute top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                            (isLoading || isSearching) &&
+                                            searchKeyword.trim() !== ""
+                                                ? "right-10"
+                                                : "right-3"
+                                        }`}
+                                        title="Xóa tìm kiếm"
+                                    >
+                                        <svg
+                                            className="h-4 w-4"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M6 18L18 6M6 6l12 12"
+                                            />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex-1">
+                                {countries.length === 0 ? (
+                                    // Skeleton cho Country Select khi đang load
+                                    <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-300"></div>
+                                ) : (
+                                    (() => {
+                                        const countryOptions = countries.map(
+                                            (c) => ({
+                                                value: c.slug,
+                                                label: c.name,
+                                            }),
+                                        );
+                                        return (
+                                            <Select
+                                                options={countryOptions}
+                                                value={
+                                                    countryOptions.find(
+                                                        (o) =>
+                                                            o.value === country,
+                                                    ) || null
+                                                }
+                                                onChange={(opt) => {
+                                                    const val = opt
+                                                        ? opt.value
+                                                        : "";
+                                                    setCountry(val);
+                                                    setCurrentPage(1);
+                                                    setSearchKeyword("");
+                                                    setCategory("");
+                                                }}
+                                                placeholder="Chọn quốc gia"
+                                                isClearable
+                                                styles={{
+                                                    control: (
+                                                        provided,
+                                                        state,
+                                                    ) => ({
+                                                        ...provided,
+                                                        minHeight: "42px", // Match với input py-2.5
+                                                        borderColor:
+                                                            state.isFocused
+                                                                ? "#3b82f6"
+                                                                : "#d1d5db", // border-gray-300 & focus:border-blue-500
+                                                        borderRadius: "0.5rem", // rounded-lg
+                                                        boxShadow:
+                                                            state.isFocused
+                                                                ? "0 0 0 2px rgba(59, 130, 246, 0.2)" // focus:ring-2 focus:ring-blue-200
+                                                                : "none", // Không có shadow
+                                                        "&:hover": {
+                                                            borderColor:
+                                                                state.isFocused
+                                                                    ? "#3b82f6"
+                                                                    : "#d1d5db",
+                                                        },
+                                                        fontSize: "0.875rem", // text-sm
+                                                        transition:
+                                                            "all 0.15s ease-in-out",
+                                                    }),
+                                                    valueContainer: (
+                                                        provided,
+                                                    ) => ({
+                                                        ...provided,
+                                                        padding: "0 12px", // px-3
+                                                        minHeight: "38px",
+                                                    }),
+                                                    input: (provided) => ({
+                                                        ...provided,
+                                                        margin: 0,
+                                                        padding: 0,
+                                                        color: "#111827", // text-gray-900
+                                                        fontSize: "0.875rem", // text-sm
+                                                    }),
+                                                    placeholder: (
+                                                        provided,
+                                                    ) => ({
+                                                        ...provided,
+                                                        color: "#6b7280", // placeholder-gray-500
+                                                        fontSize: "0.875rem", // text-sm
+                                                    }),
+                                                    singleValue: (
+                                                        provided,
+                                                    ) => ({
+                                                        ...provided,
+                                                        color: "#111827", // text-gray-900
+                                                        fontSize: "0.875rem", // text-sm
+                                                    }),
+                                                    indicatorSeparator: () => ({
+                                                        display: "none",
+                                                    }),
+                                                    dropdownIndicator: (
+                                                        provided,
+                                                    ) => ({
+                                                        ...provided,
+                                                        color: "#6b7280", // text-gray-500
+                                                        "&:hover": {
+                                                            color: "#6b7280",
+                                                        },
+                                                    }),
+                                                    clearIndicator: (
+                                                        provided,
+                                                    ) => ({
+                                                        ...provided,
+                                                        color: "#6b7280", // text-gray-500
+                                                        "&:hover": {
+                                                            color: "#ef4444", // text-red-500
+                                                        },
+                                                    }),
+                                                }}
+                                            />
+                                        );
+                                    })()
+                                )}
+                            </div>
+                            {/* Category selector: chọn thể loại */}
+                            <div className="flex-1">
+                                {categories.length === 0 ? (
+                                    <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-300"></div>
+                                ) : (
+                                    (() => {
+                                        const categoryOptions = categories.map(
+                                            (c) => ({
+                                                value: c.slug,
+                                                label: c.name,
+                                            }),
+                                        );
+                                        return (
+                                            <Select
+                                                options={categoryOptions}
+                                                value={
+                                                    categoryOptions.find(
+                                                        (o) =>
+                                                            o.value ===
+                                                            category,
+                                                    ) || null
+                                                }
+                                                onChange={(opt) => {
+                                                    const val = opt
+                                                        ? opt.value
+                                                        : "";
+                                                    setCategory(val);
+                                                    setCurrentPage(1);
+                                                    setCountry("");
+                                                    setSearchKeyword("");
+                                                }}
+                                                placeholder="Chọn thể loại"
+                                                isClearable
+                                                getOptionValue={(option) =>
+                                                    option.value
+                                                }
+                                                getOptionLabel={(option) =>
+                                                    option.label
+                                                }
+                                                styles={{
+                                                    control: (
+                                                        provided,
+                                                        state,
+                                                    ) => ({
+                                                        ...provided,
+                                                        minHeight: "42px",
                                                         borderColor:
                                                             state.isFocused
                                                                 ? "#3b82f6"
                                                                 : "#d1d5db",
-                                                    },
-                                                    fontSize: "0.875rem", // text-sm
-                                                    transition:
-                                                        "all 0.15s ease-in-out",
-                                                }),
-                                                valueContainer: (provided) => ({
-                                                    ...provided,
-                                                    padding: "0 12px", // px-3
-                                                    minHeight: "38px",
-                                                }),
-                                                input: (provided) => ({
-                                                    ...provided,
-                                                    margin: 0,
-                                                    padding: 0,
-                                                    color: "#111827", // text-gray-900
-                                                    fontSize: "0.875rem", // text-sm
-                                                }),
-                                                placeholder: (provided) => ({
-                                                    ...provided,
-                                                    color: "#6b7280", // placeholder-gray-500
-                                                    fontSize: "0.875rem", // text-sm
-                                                }),
-                                                singleValue: (provided) => ({
-                                                    ...provided,
-                                                    color: "#111827", // text-gray-900
-                                                    fontSize: "0.875rem", // text-sm
-                                                }),
-                                                indicatorSeparator: () => ({
-                                                    display: "none",
-                                                }),
-                                                dropdownIndicator: (
-                                                    provided,
-                                                ) => ({
-                                                    ...provided,
-                                                    color: "#6b7280", // text-gray-500
-                                                    "&:hover": {
+                                                        borderRadius: "0.5rem",
+                                                        boxShadow:
+                                                            state.isFocused
+                                                                ? "0 0 0 2px rgba(59, 130, 246, 0.2)"
+                                                                : "none",
+                                                        "&:hover": {
+                                                            borderColor:
+                                                                state.isFocused
+                                                                    ? "#3b82f6"
+                                                                    : "#d1d5db",
+                                                        },
+                                                        fontSize: "0.875rem",
+                                                        transition:
+                                                            "all 0.15s ease-in-out",
+                                                    }),
+                                                    valueContainer: (
+                                                        provided,
+                                                    ) => ({
+                                                        ...provided,
+                                                        padding: "0 12px",
+                                                        minHeight: "38px",
+                                                    }),
+                                                    input: (provided) => ({
+                                                        ...provided,
+                                                        margin: 0,
+                                                        padding: 0,
+                                                        color: "#111827",
+                                                        fontSize: "0.875rem",
+                                                    }),
+                                                    placeholder: (
+                                                        provided,
+                                                    ) => ({
+                                                        ...provided,
                                                         color: "#6b7280",
-                                                    },
-                                                }),
-                                                clearIndicator: (provided) => ({
-                                                    ...provided,
-                                                    color: "#6b7280", // text-gray-500
-                                                    "&:hover": {
-                                                        color: "#ef4444", // text-red-500
-                                                    },
-                                                }),
-                                            }}
-                                        />
-                                    );
-                                })()
-                            )}
-                        </div>
-                        {/* Nguon selector: chọn nguồn A, C, ALL */}
-                        <div className="flex-1 sm:w-48 sm:flex-none">
-                            {/** Sử dụng react-select để có giao diện đồng nhất với country select */}
-                            <Select
-                                options={[
-                                    { value: SOURCES.OPHIM, label: "Ophim" },
-                                    { value: SOURCES.KKPHIM, label: "KKPhim" },
-                                    { value: SOURCES.NGUONC, label: "Nguonc" },
-                                ]}
-                                value={
-                                    [
-                                        {
-                                            value: SOURCES.OPHIM,
-                                            label: "Ophim",
-                                        },
+                                                        fontSize: "0.875rem",
+                                                    }),
+                                                    singleValue: (
+                                                        provided,
+                                                    ) => ({
+                                                        ...provided,
+                                                        color: "#111827",
+                                                        fontSize: "0.875rem",
+                                                    }),
+                                                    indicatorSeparator: () => ({
+                                                        display: "none",
+                                                    }),
+                                                    dropdownIndicator: (
+                                                        provided,
+                                                    ) => ({
+                                                        ...provided,
+                                                        color: "#6b7280",
+                                                        "&:hover": {
+                                                            color: "#6b7280",
+                                                        },
+                                                    }),
+                                                    clearIndicator: (
+                                                        provided,
+                                                    ) => ({
+                                                        ...provided,
+                                                        color: "#6b7280",
+                                                        "&:hover": {
+                                                            color: "#ef4444",
+                                                        },
+                                                    }),
+                                                }}
+                                            />
+                                        );
+                                    })()
+                                )}
+                            </div>
+                            {/* Nguon selector: chọn nguồn A, C, ALL */}
+                            <div className="flex-1">
+                                {/** Sử dụng react-select để có giao diện đồng nhất với country select */}
+                                <Select
+                                    options={[
                                         {
                                             value: SOURCES.KKPHIM,
                                             label: "KKPhim",
@@ -1378,63 +1670,106 @@ export default function Vods() {
                                             value: SOURCES.NGUONC,
                                             label: "Nguonc",
                                         },
-                                    ].find((o) => o.value === source) || null
-                                }
-                                onChange={(opt) => {
-                                    if (!opt) return;
-                                    setSource(opt.value);
-                                }}
-                                placeholder="Nguồn"
-                                isClearable={false}
-                                styles={{
-                                    control: (provided, state) => ({
-                                        ...provided,
-                                        minHeight: "42px",
-                                        borderColor: state.isFocused
-                                            ? "#3b82f6"
-                                            : "#d1d5db",
-                                        borderRadius: "0.5rem",
-                                        boxShadow: state.isFocused
-                                            ? "0 0 0 2px rgba(59, 130, 246, 0.08)"
-                                            : "none",
-                                    }),
-                                    valueContainer: (provided) => ({
-                                        ...provided,
-                                        padding: "0 12px",
-                                        minHeight: "38px",
-                                    }),
-                                    input: (provided) => ({
-                                        ...provided,
-                                        margin: 0,
-                                        padding: 0,
-                                    }),
-                                    placeholder: (provided) => ({
-                                        ...provided,
-                                        color: "#6b7280",
-                                    }),
-                                }}
-                            />
-                        </div>
-                        <button
-                            onClick={toggleHistory}
-                            className="flex transform items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-medium text-white transition-all duration-300 ease-in-out hover:bg-blue-700 active:scale-95"
-                        >
-                            <svg
-                                className="h-4 w-4"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                                xmlns="http://www.w3.org/2000/svg"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M12 8v4l3 2m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                        {
+                                            value: SOURCES.OPHIM,
+                                            label: "Ophim",
+                                        },
+                                    ]}
+                                    value={
+                                        [
+                                            {
+                                                value: SOURCES.OPHIM,
+                                                label: "Ophim",
+                                            },
+                                            {
+                                                value: SOURCES.KKPHIM,
+                                                label: "KKPhim",
+                                            },
+                                            {
+                                                value: SOURCES.NGUONC,
+                                                label: "Nguonc",
+                                            },
+                                        ].find((o) => o.value === source) ||
+                                        null
+                                    }
+                                    onChange={(opt) => {
+                                        if (!opt) return;
+                                        setSource(opt.value);
+                                    }}
+                                    placeholder="Nguồn"
+                                    isClearable={false}
+                                    styles={{
+                                        control: (provided, state) => ({
+                                            ...provided,
+                                            minHeight: "42px",
+                                            borderColor: state.isFocused
+                                                ? "#3b82f6"
+                                                : "#d1d5db",
+                                            borderRadius: "0.5rem",
+                                            boxShadow: state.isFocused
+                                                ? "0 0 0 2px rgba(59, 130, 246, 0.08)"
+                                                : "none",
+                                        }),
+                                        valueContainer: (provided) => ({
+                                            ...provided,
+                                            padding: "0 12px",
+                                            minHeight: "38px",
+                                        }),
+                                        input: (provided) => ({
+                                            ...provided,
+                                            margin: 0,
+                                            padding: 0,
+                                        }),
+                                        placeholder: (provided) => ({
+                                            ...provided,
+                                            color: "#6b7280",
+                                        }),
+                                    }}
                                 />
-                            </svg>
-                            <span>Lịch sử</span>
-                        </button>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button
+                                onClick={toggleFavorites}
+                                className="flex transform items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-red-600 px-3 py-2.5 text-sm font-medium text-white transition-all duration-300 ease-in-out hover:bg-red-700 active:scale-95"
+                            >
+                                <svg
+                                    className="h-4 w-4"
+                                    fill="currentColor"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                                    />
+                                </svg>
+                                <span>Yêu thích</span>
+                            </button>
+                            <button
+                                onClick={toggleHistory}
+                                className="flex transform items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-medium text-white transition-all duration-300 ease-in-out hover:bg-blue-700 active:scale-95"
+                            >
+                                <svg
+                                    className="h-4 w-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M12 8v4l3 2m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                    />
+                                </svg>
+                                <span>Lịch sử</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -1641,6 +1976,120 @@ export default function Vods() {
                     onCancel={() => setConfirmDelete(false)}
                 />
 
+                {isFavoritesOpen && (
+                    <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+                        onClick={closeFavorites}
+                    >
+                        <div
+                            className="flex max-h-96 w-11/12 max-w-2xl flex-col rounded-lg bg-white shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-gray-200 from-red-50 to-rose-50 px-6 py-4">
+                                <h2 className="text-lg font-bold text-gray-900">
+                                    Phim yêu thích
+                                </h2>
+                                <button
+                                    onClick={closeFavorites}
+                                    className="text-2xl leading-none text-gray-400 transition-colors hover:text-gray-600"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            <ul className="flex-1 divide-y divide-gray-100 overflow-y-auto">
+                                {favorites.length === 0 && !isLoading && (
+                                    <li className="flex items-center justify-center py-12 text-gray-400">
+                                        Oops~ Bạn chưa có phim yêu thích nào! 💔
+                                    </li>
+                                )}
+
+                                {!isLoading &&
+                                    favorites.map((item, idx) => (
+                                        <li
+                                            key={idx}
+                                            className="group relative"
+                                        >
+                                            <a
+                                                href={`vods/play/${item.slug}`}
+                                                className="flex cursor-pointer items-center gap-4 px-6 py-3 text-inherit no-underline transition-colors hover:bg-red-50"
+                                            >
+                                                <img
+                                                    src={getMovieImage(
+                                                        item.poster,
+                                                    )}
+                                                    alt={item.name}
+                                                    loading="lazy"
+                                                    className="h-16 w-12 shrink-0 rounded-md object-cover shadow-md"
+                                                />
+                                                <div className="min-w-0 flex-1">
+                                                    <h3 className="truncate text-sm font-semibold text-gray-900">
+                                                        {item.name}
+                                                    </h3>
+                                                    <div className="mt-1 flex gap-2 text-xs text-gray-500">
+                                                        {item.year && (
+                                                            <>
+                                                                <span>
+                                                                    {item.year}
+                                                                </span>
+                                                                <span>•</span>
+                                                            </>
+                                                        )}
+                                                        {item.quality && (
+                                                            <span className="font-medium text-red-600">
+                                                                {item.quality}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </a>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    deleteFavoriteItem(
+                                                        item.slug,
+                                                        e,
+                                                    );
+                                                }}
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+                                            >
+                                                <svg
+                                                    className="h-5 w-5"
+                                                    fill="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z" />
+                                                </svg>
+                                            </button>
+                                        </li>
+                                    ))}
+                            </ul>
+                            {favorites.length > 0 && (
+                                <div className="rounded-b-lg border-t border-gray-200 bg-gray-50 px-6 py-3 text-right">
+                                    <button
+                                        onClick={() =>
+                                            setConfirmDeleteFavorites(true)
+                                        }
+                                        className="rounded-md bg-red-500 px-4 py-2 text-white shadow transition hover:bg-red-600"
+                                    >
+                                        Xóa tất cả yêu thích
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                <ConfirmDialog
+                    isOpen={confirmDeleteFavorites}
+                    title="Xác nhận xoá"
+                    message="Bạn chắc chắn muốn xoá toàn bộ danh sách yêu thích? Hành động này không thể hoàn tác."
+                    confirmText="Xoá"
+                    cancelText="Huỷ"
+                    isDangerous={true}
+                    onConfirm={clearFavorites}
+                    onCancel={() => setConfirmDeleteFavorites(false)}
+                />
+
                 <div className="flex-1">
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
                         {/* Skeleton Loading */}
@@ -1704,6 +2153,45 @@ export default function Vods() {
                                             <div className="bg-linear-to-b aspect-2/3 absolute inset-0 flex items-center justify-center from-gray-200 to-gray-300">
                                                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500"></div>
                                             </div>
+                                            {/* Nút yêu thích nhanh */}
+                                            <button
+                                                onClick={(e) =>
+                                                    toggleMovieFavorite(
+                                                        movie,
+                                                        e,
+                                                    )
+                                                }
+                                                className={`absolute left-2 top-2 rounded-full bg-red-200 p-1.5 shadow-md transition-all duration-200 ${
+                                                    isMovieFavorited(movie.slug)
+                                                        ? "opacity-100"
+                                                        : "opacity-0 group-hover:opacity-100"
+                                                } hover:scale-110`}
+                                                title={
+                                                    isMovieFavorited(movie.slug)
+                                                        ? "Đã thích"
+                                                        : "Thêm vào yêu thích"
+                                                }
+                                            >
+                                                <svg
+                                                    className="h-5 w-5 text-red-700"
+                                                    fill={
+                                                        isMovieFavorited(
+                                                            movie.slug,
+                                                        )
+                                                            ? "currentColor"
+                                                            : "none"
+                                                    }
+                                                    stroke="currentColor"
+                                                    strokeWidth={2}
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                                                    />
+                                                </svg>
+                                            </button>
                                             <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
                                                 {movie.lang
                                                     ?.split("+")
