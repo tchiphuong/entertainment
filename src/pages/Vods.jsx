@@ -3,6 +3,115 @@ import { useNavigate } from "react-router-dom";
 import Select from "react-select";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { useAuth } from "../contexts/AuthContext";
+import { auth, googleProvider } from "../services/firebase";
+import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+
+function UserProfile() {
+    const { currentUser } = useAuth();
+    const [authError, setAuthError] = useState(null);
+
+    const handleLogin = async () => {
+        const provider = new GoogleAuthProvider();
+        // Thêm custom parameters để cải thiện trải nghiệm
+        provider.setCustomParameters({
+            prompt: "select_account",
+        });
+
+        try {
+            const result = await signInWithPopup(auth, provider);
+            console.log("Đăng nhập thành công:", result.user);
+            setAuthError(null); // Xóa lỗi nếu có
+        } catch (error) {
+            // Xử lý các loại lỗi khác nhau
+            if (error.code === "auth/popup-closed-by-user") {
+                console.log("Người dùng đã đóng cửa sổ đăng nhập");
+            } else if (error.code === "auth/popup-blocked") {
+                console.error("Popup bị chặn bởi trình duyệt");
+                setAuthError({
+                    message: "Vui lòng cho phép popup trong trình duyệt",
+                });
+            } else if (error.code === "auth/cancelled-popup-request") {
+                console.log("Yêu cầu popup bị hủy");
+            } else {
+                console.error("Lỗi khi đăng nhập:", error);
+                setAuthError(error);
+            }
+        }
+    };
+
+    const handleLogout = async (e) => {
+        e.preventDefault(); // Ngăn hành vi mặc định của thẻ <a>
+        try {
+            await signOut(auth);
+            console.log("Đăng xuất thành công");
+        } catch (error) {
+            console.error("Lỗi đăng xuất:", error);
+            setAuthError(error);
+        }
+    };
+
+    return (
+        <div className="relative">
+            {currentUser ? (
+                <div className="group relative">
+                    <img
+                        src={currentUser.photoURL}
+                        alt={currentUser.displayName}
+                        className="h-10 w-10 cursor-pointer rounded-full"
+                    />
+                    <div className="absolute right-0 top-full mt-2 w-48 origin-top-right scale-95 transform rounded-md bg-white opacity-0 shadow-lg transition-all duration-200 ease-in-out group-hover:scale-100 group-hover:opacity-100">
+                        <div className="py-1">
+                            <div className="border-b border-gray-200 px-4 py-2">
+                                <p className="text-sm font-semibold text-gray-900">
+                                    {currentUser.displayName}
+                                </p>
+                                <p className="truncate text-xs text-gray-500">
+                                    {currentUser.email}
+                                </p>
+                            </div>
+                            <a
+                                href="#"
+                                onClick={handleLogout}
+                                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                            >
+                                Đăng xuất
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <button
+                    onClick={handleLogin}
+                    className="flex items-center gap-2 rounded-full bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-600"
+                >
+                    <svg
+                        className="h-5 w-5"
+                        aria-hidden="true"
+                        focusable="false"
+                        data-prefix="fab"
+                        data-icon="google"
+                        role="img"
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 488 512"
+                    >
+                        <path
+                            fill="currentColor"
+                            d="M488 261.8C488 403.3 381.5 512 244 512 109.8 512 0 402.2 0 256S109.8 0 244 0c73.2 0 136.2 29.3 182.4 75.4l-62.4 60.3C337.2 114.6 295.6 96 244 96c-88.6 0-160.1 71.1-160.1 160s71.5 160 160.1 160c97.4 0 134-60.5 138.5-93.2H244v-74.4h239.9c2.4 12.6 3.6 25.8 3.6 40.2z"
+                        ></path>
+                    </svg>
+                    <span>Đăng nhập</span>
+                </button>
+            )}
+            {authError && (
+                <div className="absolute right-0 top-full mt-2 w-64 rounded-md bg-red-100 p-3 text-sm text-red-800 shadow-lg">
+                    <p className="font-bold">Lỗi xác thực</p>
+                    <p className="mt-1 text-xs">{authError.message}</p>
+                </div>
+            )}
+        </div>
+    );
+}
 
 // Global config for domains
 const CONFIG = {
@@ -407,6 +516,13 @@ function useLocalStorage(key, initial) {
 }
 
 export default function Vods() {
+    // Define tabs
+    const TABS = [
+        { id: SOURCES.OPHIM, label: "OPhim" },
+        { id: SOURCES.KKPHIM, label: "KKPhim" },
+        { id: SOURCES.NGUONC, label: "NguonC" },
+    ];
+
     // Initialize state directly from URL params
     const getInitialPage = () => {
         const params = new URLSearchParams(window.location.search);
@@ -445,7 +561,9 @@ export default function Vods() {
     const [isSearching, setIsSearching] = useState(false); // Track khi đang search/debounce
     const [isFavoritesOpen, setIsFavoritesOpen] = useState(false); // Track khi mở modal yêu thích
     const [favorites, setFavorites] = useLocalStorage("favorites", []); // Danh sách yêu thích
+    const [isFilterOpen, setIsFilterOpen] = useState(false); // Track khi mở modal filter
     const navigate = useNavigate();
+    const { currentUser } = useAuth();
 
     // Thêm state cho source: nguonc, kkphim, all
     const [source, setSource] = useState(() => {
@@ -1335,81 +1453,178 @@ export default function Vods() {
     }
 
     return (
-        <div>
-            <LoadingSpinner isLoading={isLoading} />
-
-            <main className="container mx-auto flex flex-1 flex-col px-4 py-6 lg:px-32">
-                <div className="mb-4">
-                    <div className="flex w-full flex-col gap-3 md:flex-row md:gap-4">
-                        <div className="grid w-full flex-1 grid-cols-1 gap-3 md:flex md:w-auto md:flex-row md:gap-4">
-                            <div className="relative flex-1">
-                                <input
-                                    value={searchInputValue}
-                                    onChange={(e) => {
-                                        const value = e.target.value;
-                                        setSearchInputValue(value); // Update input value immediately
-                                        setIsSearching(true); // Bắt đầu debounce
-                                        if (searchInputTimerRef.current) {
-                                            clearTimeout(
-                                                searchInputTimerRef.current,
-                                            );
-                                        }
-                                        searchInputTimerRef.current =
-                                            setTimeout(() => {
-                                                setSearchKeyword(value);
-                                                setIsSearching(false); // Kết thúc debounce
-                                            }, 500); // 500ms debounce
-                                        setCurrentPage(1);
-                                        setCategory("");
-                                        setCountry("");
+        <div className="min-h-screen bg-gray-100 font-sans text-gray-800">
+            {/* Header */}
+            <header className="sticky top-0 z-40 bg-white/80 shadow-md backdrop-blur-md">
+                <div className="container mx-auto p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-4">
+                        {/* Left: Title + Source Selector */}
+                        <div className="flex items-center gap-2 md:gap-4">
+                            <h1 className="text-xl font-bold text-gray-900 md:text-2xl">
+                                <a href="/entertainment/vods">VODs</a>
+                            </h1>
+                            {/* Source Selector */}
+                            <div className="relative flex items-center rounded-full bg-gray-200 p-1">
+                                {/* Animated indicator background */}
+                                <div
+                                    className="absolute bottom-1 top-1 rounded-full bg-white shadow transition-all duration-300 ease-in-out"
+                                    style={{
+                                        width: `${100 / TABS.length}%`,
+                                        left: `${TABS.findIndex((tab) => tab.id === source) * (100 / TABS.length)}%`,
                                     }}
-                                    onKeyUp={searchMoviesKey}
-                                    type="text"
-                                    placeholder="Nhập tên phim..."
-                                    className={`w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 placeholder-gray-500 transition-all focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200 ${
-                                        (isLoading || isSearching) &&
-                                        searchKeyword.trim() !== "" &&
-                                        searchInputValue.trim() !== ""
-                                            ? "pr-20"
-                                            : (isLoading || isSearching) &&
-                                                searchKeyword.trim() !== ""
-                                              ? "pr-10"
-                                              : searchInputValue.trim() !== ""
-                                                ? "pr-10"
-                                                : ""
-                                    }`}
                                 />
-                                {/* Loading indicator cho search */}
-                                {(isLoading || isSearching) &&
-                                    searchKeyword.trim() !== "" && (
-                                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500"></div>
-                                        </div>
-                                    )}
-                                {/* Clear button */}
-                                {searchInputValue.trim() !== "" && (
+                                {TABS.map((tab) => (
                                     <button
+                                        key={tab.id}
                                         type="button"
-                                        onClick={() => {
-                                            setSearchInputValue("");
-                                            setSearchKeyword("");
-                                            setIsSearching(false);
-                                            if (searchInputTimerRef.current) {
-                                                clearTimeout(
-                                                    searchInputTimerRef.current,
-                                                );
-                                            }
-                                        }}
-                                        className={`absolute top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                                            (isLoading || isSearching) &&
-                                            searchKeyword.trim() !== ""
-                                                ? "right-10"
-                                                : "right-3"
+                                        onClick={() => setSource(tab.id)}
+                                        className={`relative z-10 flex-1 rounded-full px-2 py-1 text-xs font-semibold transition-colors duration-200 md:px-3 md:text-sm ${
+                                            source === tab.id
+                                                ? "text-gray-900"
+                                                : "text-gray-600 hover:text-gray-800"
                                         }`}
-                                        title="Xóa tìm kiếm"
                                     >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Center: Search Bar */}
+                        <div className="relative w-full md:max-w-md">
+                            <input
+                                type="text"
+                                placeholder="Tìm kiếm phim..."
+                                value={searchInputValue}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    setSearchInputValue(value);
+                                    setIsSearching(true);
+                                    if (searchInputTimerRef.current) {
+                                        clearTimeout(
+                                            searchInputTimerRef.current,
+                                        );
+                                    }
+                                    searchInputTimerRef.current = setTimeout(
+                                        () => {
+                                            setSearchKeyword(value);
+                                            setIsSearching(false);
+                                        },
+                                        500,
+                                    );
+                                }}
+                                onKeyDown={searchMoviesKey}
+                                className="w-full rounded-full border border-gray-300 bg-gray-50 px-4 py-2 pr-10 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                            <svg
+                                className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                xmlns="http://www.w3.org/2000/svg"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth="2"
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                ></path>
+                            </svg>
+                        </div>
+
+                        {/* Right: User Actions */}
+                        <div className="flex items-center justify-end gap-2 md:gap-4">
+                            <button
+                                onClick={() => setIsFilterOpen(true)}
+                                className="relative rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
+                                aria-label="Bộ lọc"
+                            >
+                                <svg
+                                    className="h-5 w-5 md:h-6 md:w-6"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth="2"
+                                        d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                                    ></path>
+                                </svg>
+                                {/* Badge hiển thị số filter đang active */}
+                                {(country || category) && (
+                                    <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-xs font-semibold text-white">
+                                        {(country ? 1 : 0) + (category ? 1 : 0)}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                onClick={toggleFavorites}
+                                className="relative rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
+                                aria-label="Phim yêu thích"
+                            >
+                                <svg
+                                    className="h-5 w-5 md:h-6 md:w-6"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth="2"
+                                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                                    ></path>
+                                </svg>
+                                {favorites.length > 0 && (
+                                    <span className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+                                        {favorites.length}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                onClick={toggleHistory}
+                                className="relative rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
+                                aria-label="Lịch sử xem"
+                            >
+                                <svg
+                                    className="h-5 w-5 md:h-6 md:w-6"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth="2"
+                                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                    ></path>
+                                </svg>
+                            </button>
+                            <UserProfile />
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            {/* Main Content */}
+            <main className="container mx-auto flex flex-1 flex-col px-4 py-6 lg:px-32">
+                {/* Filter Modal */}
+                {isFilterOpen && (
+                    <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+                        onClick={() => setIsFilterOpen(false)}
+                    >
+                        <div
+                            className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl transition-all"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-br from-blue-500 to-indigo-600 px-6 py-5">
+                                <div className="flex items-center gap-3">
+                                    <div className="rounded-lg bg-white/20 p-2">
                                         <svg
-                                            className="h-4 w-4"
+                                            className="h-5 w-5 text-white"
                                             fill="none"
                                             stroke="currentColor"
                                             viewBox="0 0 24 24"
@@ -1417,361 +1632,334 @@ export default function Vods() {
                                             <path
                                                 strokeLinecap="round"
                                                 strokeLinejoin="round"
-                                                strokeWidth={2}
-                                                d="M6 18L18 6M6 6l12 12"
+                                                strokeWidth="2"
+                                                d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                                            ></path>
+                                        </svg>
+                                    </div>
+                                    <h2 className="text-xl font-bold text-white">
+                                        Bộ lọc phim
+                                    </h2>
+                                </div>
+                                <button
+                                    onClick={() => setIsFilterOpen(false)}
+                                    className="rounded-lg p-1.5 text-white/80 transition-all hover:bg-white/20 hover:text-white"
+                                >
+                                    <svg
+                                        className="h-6 w-6"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth="2"
+                                            d="M6 18L18 6M6 6l12 12"
+                                        />
+                                    </svg>
+                                </button>
+                            </div>
+                            <div className="flex flex-col gap-6 p-6">
+                                {/* Country Filter */}
+                                <div>
+                                    <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
+                                        <svg
+                                            className="h-4 w-4 text-blue-500"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth="2"
+                                                d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"
                                             />
                                         </svg>
-                                    </button>
-                                )}
-                            </div>
-                            <div className="flex-1">
-                                {countries.length === 0 ? (
-                                    // Skeleton cho Country Select khi đang load
-                                    <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-300"></div>
-                                ) : (
-                                    (() => {
-                                        const countryOptions = countries.map(
-                                            (c) => ({
-                                                value: c.slug,
-                                                label: c.name,
-                                            }),
-                                        );
-                                        return (
-                                            <Select
-                                                options={countryOptions}
-                                                value={
-                                                    countryOptions.find(
-                                                        (o) =>
-                                                            o.value === country,
-                                                    ) || null
-                                                }
-                                                onChange={(opt) => {
-                                                    const val = opt
-                                                        ? opt.value
-                                                        : "";
-                                                    setCountry(val);
-                                                    setCurrentPage(1);
-                                                    setSearchKeyword("");
-                                                    setCategory("");
-                                                }}
-                                                placeholder="Chọn quốc gia"
-                                                isClearable
-                                                styles={{
-                                                    control: (
-                                                        provided,
-                                                        state,
-                                                    ) => ({
-                                                        ...provided,
-                                                        minHeight: "42px", // Match với input py-2.5
-                                                        borderColor:
-                                                            state.isFocused
-                                                                ? "#3b82f6"
-                                                                : "#d1d5db", // border-gray-300 & focus:border-blue-500
-                                                        borderRadius: "0.5rem", // rounded-lg
-                                                        boxShadow:
-                                                            state.isFocused
-                                                                ? "0 0 0 2px rgba(59, 130, 246, 0.2)" // focus:ring-2 focus:ring-blue-200
-                                                                : "none", // Không có shadow
-                                                        "&:hover": {
+                                        Quốc gia
+                                    </label>
+                                    {countries.length === 0 ? (
+                                        // Skeleton cho Country Select khi đang load
+                                        <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-300"></div>
+                                    ) : (
+                                        (() => {
+                                            const countryOptions =
+                                                countries.map((c) => ({
+                                                    value: c.slug,
+                                                    label: c.name,
+                                                }));
+                                            return (
+                                                <Select
+                                                    options={countryOptions}
+                                                    value={
+                                                        countryOptions.find(
+                                                            (o) =>
+                                                                o.value ===
+                                                                country,
+                                                        ) || null
+                                                    }
+                                                    onChange={(opt) => {
+                                                        const val = opt
+                                                            ? opt.value
+                                                            : "";
+                                                        setCountry(val);
+                                                        setCurrentPage(1);
+                                                        setSearchKeyword("");
+                                                        setCategory("");
+                                                    }}
+                                                    placeholder="Chọn quốc gia"
+                                                    isClearable
+                                                    styles={{
+                                                        control: (
+                                                            provided,
+                                                            state,
+                                                        ) => ({
+                                                            ...provided,
+                                                            minHeight: "42px", // Match với input py-2.5
+                                                            borderColor:
+                                                                state.isFocused
+                                                                    ? "#3b82f6"
+                                                                    : "#d1d5db", // border-gray-300 & focus:border-blue-500
+                                                            borderRadius:
+                                                                "9999px", // rounded-full
+                                                            boxShadow:
+                                                                state.isFocused
+                                                                    ? "0 0 0 2px rgba(59, 130, 246, 0.2)" // focus:ring-2 focus:ring-blue-200
+                                                                    : "none", // Không có shadow
+                                                            "&:hover": {
+                                                                borderColor:
+                                                                    state.isFocused
+                                                                        ? "#3b82f6"
+                                                                        : "#d1d5db",
+                                                            },
+                                                            fontSize:
+                                                                "0.875rem", // text-sm
+                                                            transition:
+                                                                "all 0.15s ease-in-out",
+                                                        }),
+                                                        valueContainer: (
+                                                            provided,
+                                                        ) => ({
+                                                            ...provided,
+                                                            padding: "0 12px", // px-3
+                                                            minHeight: "38px",
+                                                        }),
+                                                        input: (provided) => ({
+                                                            ...provided,
+                                                            margin: 0,
+                                                            padding: 0,
+                                                            color: "#111827", // text-gray-900
+                                                            fontSize:
+                                                                "0.875rem", // text-sm
+                                                        }),
+                                                        placeholder: (
+                                                            provided,
+                                                        ) => ({
+                                                            ...provided,
+                                                            color: "#6b7280", // placeholder-gray-500
+                                                            fontSize:
+                                                                "0.875rem", // text-sm
+                                                        }),
+                                                        singleValue: (
+                                                            provided,
+                                                        ) => ({
+                                                            ...provided,
+                                                            color: "#111827", // text-gray-900
+                                                            fontSize:
+                                                                "0.875rem", // text-sm
+                                                        }),
+                                                        indicatorSeparator:
+                                                            () => ({
+                                                                display: "none",
+                                                            }),
+                                                        dropdownIndicator: (
+                                                            provided,
+                                                        ) => ({
+                                                            ...provided,
+                                                            color: "#6b7280", // text-gray-500
+                                                            "&:hover": {
+                                                                color: "#6b7280",
+                                                            },
+                                                        }),
+                                                        clearIndicator: (
+                                                            provided,
+                                                        ) => ({
+                                                            ...provided,
+                                                            color: "#6b7280", // text-gray-500
+                                                            "&:hover": {
+                                                                color: "#ef4444", // text-red-500
+                                                            },
+                                                        }),
+                                                    }}
+                                                />
+                                            );
+                                        })()
+                                    )}
+                                </div>
+                                {/* Category Filter */}
+                                <div>
+                                    <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
+                                        <svg
+                                            className="h-4 w-4 text-blue-500"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth="2"
+                                                d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                                            />
+                                        </svg>
+                                        Thể loại
+                                    </label>
+                                    {categories.length === 0 ? (
+                                        <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-300"></div>
+                                    ) : (
+                                        (() => {
+                                            const categoryOptions =
+                                                categories.map((c) => ({
+                                                    value: c.slug,
+                                                    label: c.name,
+                                                }));
+                                            return (
+                                                <Select
+                                                    options={categoryOptions}
+                                                    value={
+                                                        categoryOptions.find(
+                                                            (o) =>
+                                                                o.value ===
+                                                                category,
+                                                        ) || null
+                                                    }
+                                                    onChange={(opt) => {
+                                                        const val = opt
+                                                            ? opt.value
+                                                            : "";
+                                                        setCategory(val);
+                                                        setCurrentPage(1);
+                                                        setCountry("");
+                                                        setSearchKeyword("");
+                                                    }}
+                                                    placeholder="Chọn thể loại"
+                                                    isClearable
+                                                    getOptionValue={(option) =>
+                                                        option.value
+                                                    }
+                                                    getOptionLabel={(option) =>
+                                                        option.label
+                                                    }
+                                                    styles={{
+                                                        control: (
+                                                            provided,
+                                                            state,
+                                                        ) => ({
+                                                            ...provided,
+                                                            minHeight: "42px",
                                                             borderColor:
                                                                 state.isFocused
                                                                     ? "#3b82f6"
                                                                     : "#d1d5db",
-                                                        },
-                                                        fontSize: "0.875rem", // text-sm
-                                                        transition:
-                                                            "all 0.15s ease-in-out",
-                                                    }),
-                                                    valueContainer: (
-                                                        provided,
-                                                    ) => ({
-                                                        ...provided,
-                                                        padding: "0 12px", // px-3
-                                                        minHeight: "38px",
-                                                    }),
-                                                    input: (provided) => ({
-                                                        ...provided,
-                                                        margin: 0,
-                                                        padding: 0,
-                                                        color: "#111827", // text-gray-900
-                                                        fontSize: "0.875rem", // text-sm
-                                                    }),
-                                                    placeholder: (
-                                                        provided,
-                                                    ) => ({
-                                                        ...provided,
-                                                        color: "#6b7280", // placeholder-gray-500
-                                                        fontSize: "0.875rem", // text-sm
-                                                    }),
-                                                    singleValue: (
-                                                        provided,
-                                                    ) => ({
-                                                        ...provided,
-                                                        color: "#111827", // text-gray-900
-                                                        fontSize: "0.875rem", // text-sm
-                                                    }),
-                                                    indicatorSeparator: () => ({
-                                                        display: "none",
-                                                    }),
-                                                    dropdownIndicator: (
-                                                        provided,
-                                                    ) => ({
-                                                        ...provided,
-                                                        color: "#6b7280", // text-gray-500
-                                                        "&:hover": {
-                                                            color: "#6b7280",
-                                                        },
-                                                    }),
-                                                    clearIndicator: (
-                                                        provided,
-                                                    ) => ({
-                                                        ...provided,
-                                                        color: "#6b7280", // text-gray-500
-                                                        "&:hover": {
-                                                            color: "#ef4444", // text-red-500
-                                                        },
-                                                    }),
-                                                }}
-                                            />
-                                        );
-                                    })()
-                                )}
-                            </div>
-                            {/* Category selector: chọn thể loại */}
-                            <div className="flex-1">
-                                {categories.length === 0 ? (
-                                    <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-300"></div>
-                                ) : (
-                                    (() => {
-                                        const categoryOptions = categories.map(
-                                            (c) => ({
-                                                value: c.slug,
-                                                label: c.name,
-                                            }),
-                                        );
-                                        return (
-                                            <Select
-                                                options={categoryOptions}
-                                                value={
-                                                    categoryOptions.find(
-                                                        (o) =>
-                                                            o.value ===
-                                                            category,
-                                                    ) || null
-                                                }
-                                                onChange={(opt) => {
-                                                    const val = opt
-                                                        ? opt.value
-                                                        : "";
-                                                    setCategory(val);
-                                                    setCurrentPage(1);
-                                                    setCountry("");
-                                                    setSearchKeyword("");
-                                                }}
-                                                placeholder="Chọn thể loại"
-                                                isClearable
-                                                getOptionValue={(option) =>
-                                                    option.value
-                                                }
-                                                getOptionLabel={(option) =>
-                                                    option.label
-                                                }
-                                                styles={{
-                                                    control: (
-                                                        provided,
-                                                        state,
-                                                    ) => ({
-                                                        ...provided,
-                                                        minHeight: "42px",
-                                                        borderColor:
-                                                            state.isFocused
-                                                                ? "#3b82f6"
-                                                                : "#d1d5db",
-                                                        borderRadius: "0.5rem",
-                                                        boxShadow:
-                                                            state.isFocused
-                                                                ? "0 0 0 2px rgba(59, 130, 246, 0.2)"
-                                                                : "none",
-                                                        "&:hover": {
-                                                            borderColor:
+                                                            borderRadius:
+                                                                "0.5rem",
+                                                            boxShadow:
                                                                 state.isFocused
-                                                                    ? "#3b82f6"
-                                                                    : "#d1d5db",
-                                                        },
-                                                        fontSize: "0.875rem",
-                                                        transition:
-                                                            "all 0.15s ease-in-out",
-                                                    }),
-                                                    valueContainer: (
-                                                        provided,
-                                                    ) => ({
-                                                        ...provided,
-                                                        padding: "0 12px",
-                                                        minHeight: "38px",
-                                                    }),
-                                                    input: (provided) => ({
-                                                        ...provided,
-                                                        margin: 0,
-                                                        padding: 0,
-                                                        color: "#111827",
-                                                        fontSize: "0.875rem",
-                                                    }),
-                                                    placeholder: (
-                                                        provided,
-                                                    ) => ({
-                                                        ...provided,
-                                                        color: "#6b7280",
-                                                        fontSize: "0.875rem",
-                                                    }),
-                                                    singleValue: (
-                                                        provided,
-                                                    ) => ({
-                                                        ...provided,
-                                                        color: "#111827",
-                                                        fontSize: "0.875rem",
-                                                    }),
-                                                    indicatorSeparator: () => ({
-                                                        display: "none",
-                                                    }),
-                                                    dropdownIndicator: (
-                                                        provided,
-                                                    ) => ({
-                                                        ...provided,
-                                                        color: "#6b7280",
-                                                        "&:hover": {
+                                                                    ? "0 0 0 2px rgba(59, 130, 246, 0.2)"
+                                                                    : "none",
+                                                            "&:hover": {
+                                                                borderColor:
+                                                                    state.isFocused
+                                                                        ? "#3b82f6"
+                                                                        : "#d1d5db",
+                                                            },
+                                                            fontSize:
+                                                                "0.875rem",
+                                                            transition:
+                                                                "all 0.15s ease-in-out",
+                                                        }),
+                                                        valueContainer: (
+                                                            provided,
+                                                        ) => ({
+                                                            ...provided,
+                                                            padding: "0 12px",
+                                                            minHeight: "38px",
+                                                        }),
+                                                        input: (provided) => ({
+                                                            ...provided,
+                                                            margin: 0,
+                                                            padding: 0,
+                                                            color: "#111827",
+                                                            fontSize:
+                                                                "0.875rem",
+                                                        }),
+                                                        placeholder: (
+                                                            provided,
+                                                        ) => ({
+                                                            ...provided,
                                                             color: "#6b7280",
-                                                        },
-                                                    }),
-                                                    clearIndicator: (
-                                                        provided,
-                                                    ) => ({
-                                                        ...provided,
-                                                        color: "#6b7280",
-                                                        "&:hover": {
-                                                            color: "#ef4444",
-                                                        },
-                                                    }),
-                                                }}
-                                            />
-                                        );
-                                    })()
-                                )}
+                                                            fontSize:
+                                                                "0.875rem",
+                                                        }),
+                                                        singleValue: (
+                                                            provided,
+                                                        ) => ({
+                                                            ...provided,
+                                                            color: "#111827",
+                                                            fontSize:
+                                                                "0.875rem",
+                                                        }),
+                                                        indicatorSeparator:
+                                                            () => ({
+                                                                display: "none",
+                                                            }),
+                                                        dropdownIndicator: (
+                                                            provided,
+                                                        ) => ({
+                                                            ...provided,
+                                                            color: "#6b7280",
+                                                            "&:hover": {
+                                                                color: "#6b7280",
+                                                            },
+                                                        }),
+                                                        clearIndicator: (
+                                                            provided,
+                                                        ) => ({
+                                                            ...provided,
+                                                            color: "#6b7280",
+                                                            "&:hover": {
+                                                                color: "#ef4444",
+                                                            },
+                                                        }),
+                                                    }}
+                                                />
+                                            );
+                                        })()
+                                    )}
+                                </div>
                             </div>
-                            {/* Nguon selector: chọn nguồn A, C, ALL */}
-                            <div className="flex-1">
-                                {/** Sử dụng react-select để có giao diện đồng nhất với country select */}
-                                <Select
-                                    options={[
-                                        {
-                                            value: SOURCES.KKPHIM,
-                                            label: "KKPhim",
-                                        },
-                                        {
-                                            value: SOURCES.NGUONC,
-                                            label: "Nguonc",
-                                        },
-                                        {
-                                            value: SOURCES.OPHIM,
-                                            label: "Ophim",
-                                        },
-                                    ]}
-                                    value={
-                                        [
-                                            {
-                                                value: SOURCES.OPHIM,
-                                                label: "Ophim",
-                                            },
-                                            {
-                                                value: SOURCES.KKPHIM,
-                                                label: "KKPhim",
-                                            },
-                                            {
-                                                value: SOURCES.NGUONC,
-                                                label: "Nguonc",
-                                            },
-                                        ].find((o) => o.value === source) ||
-                                        null
-                                    }
-                                    onChange={(opt) => {
-                                        if (!opt) return;
-                                        setSource(opt.value);
+                            <div className="flex gap-3 border-t border-gray-200 bg-gray-50 px-6 py-3">
+                                <button
+                                    onClick={() => {
+                                        setCountry("");
+                                        setCategory("");
+                                        setCurrentPage(1);
                                     }}
-                                    placeholder="Nguồn"
-                                    isClearable={false}
-                                    styles={{
-                                        control: (provided, state) => ({
-                                            ...provided,
-                                            minHeight: "42px",
-                                            borderColor: state.isFocused
-                                                ? "#3b82f6"
-                                                : "#d1d5db",
-                                            borderRadius: "0.5rem",
-                                            boxShadow: state.isFocused
-                                                ? "0 0 0 2px rgba(59, 130, 246, 0.08)"
-                                                : "none",
-                                        }),
-                                        valueContainer: (provided) => ({
-                                            ...provided,
-                                            padding: "0 12px",
-                                            minHeight: "38px",
-                                        }),
-                                        input: (provided) => ({
-                                            ...provided,
-                                            margin: 0,
-                                            padding: 0,
-                                        }),
-                                        placeholder: (provided) => ({
-                                            ...provided,
-                                            color: "#6b7280",
-                                        }),
-                                    }}
-                                />
+                                    className="flex-1 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                                >
+                                    Xóa bộ lọc
+                                </button>
+                                <button
+                                    onClick={() => setIsFilterOpen(false)}
+                                    className="flex-1 rounded-md bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600"
+                                >
+                                    Áp dụng
+                                </button>
                             </div>
-                        </div>
-                        <div className="flex justify-end gap-2">
-                            <button
-                                onClick={toggleFavorites}
-                                className="flex transform items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-red-600 px-3 py-2.5 text-sm font-medium text-white transition-all duration-300 ease-in-out hover:bg-red-700 active:scale-95"
-                            >
-                                <svg
-                                    className="h-4 w-4"
-                                    fill="currentColor"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                                    />
-                                </svg>
-                                <span>Yêu thích</span>
-                            </button>
-                            <button
-                                onClick={toggleHistory}
-                                className="flex transform items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-medium text-white transition-all duration-300 ease-in-out hover:bg-blue-700 active:scale-95"
-                            >
-                                <svg
-                                    className="h-4 w-4"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                    xmlns="http://www.w3.org/2000/svg"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M12 8v4l3 2m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                                    />
-                                </svg>
-                                <span>Lịch sử</span>
-                            </button>
                         </div>
                     </div>
-                </div>
+                )}
 
                 {isHistoryOpen && (
                     <div

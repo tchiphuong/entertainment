@@ -25,6 +25,7 @@
 	},
 	"dependencies": {
 		"@fontsource/inter": "^5.2.8",
+		"firebase": "^12.7.0",
 		"moment": "^2.30.1",
 		"react": "^18.2.0",
 		"react-dom": "^18.2.0",

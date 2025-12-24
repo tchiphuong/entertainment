@@ -1,6 +1,8 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { BrowserRouter } from "react-router-dom";
+import { AuthProvider } from "./contexts/AuthContext";
 // Import Inter font từ npm
 import "@fontsource/inter/300.css";
 import "@fontsource/inter/400.css";
@@ -12,8 +14,13 @@ import "../css/tailwind.css";
 
 const container = document.getElementById("root");
 const root = createRoot(container);
+
 root.render(
     <React.StrictMode>
-        <App />
+        <BrowserRouter basename="/entertainment">
+            <AuthProvider>
+                <App />
+            </AuthProvider>
+        </BrowserRouter>
     </React.StrictMode>,
 );
