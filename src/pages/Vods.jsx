@@ -2212,7 +2212,7 @@ export default function Vods() {
                                                     const serverSlug =
                                                         item.server;
 
-                                                    let url = `vods/play/${item.slug}`;
+                                                    let url = `/vods/play/${item.slug}`;
                                                     if (
                                                         episodeKey ||
                                                         episodeKey === 0
@@ -2395,7 +2395,7 @@ export default function Vods() {
                                             className="group relative"
                                         >
                                             <a
-                                                href={`vods/play/${item.slug}`}
+                                                href={`/vods/play/${item.slug}`}
                                                 className="flex cursor-pointer items-center gap-4 px-6 py-3 text-inherit no-underline transition-colors hover:bg-red-50"
                                             >
                                                 <img
@@ -2515,7 +2515,7 @@ export default function Vods() {
                             movies.map((movie) => (
                                 <MovieTooltip key={movie.slug} movie={movie}>
                                     <a
-                                        href={`vods/play/${movie.slug}`}
+                                        href={`/vods/play/${movie.slug}`}
                                         className="group relative flex transform cursor-pointer flex-col overflow-hidden rounded-lg bg-white text-inherit no-underline shadow transition-transform hover:scale-105 hover:shadow-lg"
                                     >
                                         <div className="relative bg-gray-200">
