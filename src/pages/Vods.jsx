@@ -1,15 +1,28 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import Select from "react-select";
-import LoadingSpinner from "../components/LoadingSpinner";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useAuth } from "../contexts/AuthContext";
-import { auth, googleProvider } from "../services/firebase";
+import { auth } from "../services/firebase";
 import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import clsx from "clsx";
+import {
+    Combobox,
+    ComboboxButton,
+    ComboboxInput,
+    ComboboxOption,
+    ComboboxOptions,
+} from "@headlessui/react";
 
 function UserProfile() {
     const { currentUser } = useAuth();
     const [authError, setAuthError] = useState(null);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const menuRef = useRef(null);
+    const avatarRef = useRef(null);
+    const [avatarError, setAvatarError] = useState(false);
+
+    const avatarInitial =
+        currentUser?.displayName?.trim()?.charAt(0)?.toUpperCase() || "U";
 
     const handleLogin = async () => {
         const provider = new GoogleAuthProvider();
@@ -42,6 +55,7 @@ function UserProfile() {
 
     const handleLogout = async (e) => {
         e.preventDefault(); // Ngăn hành vi mặc định của thẻ <a>
+        setIsMenuOpen(false);
         try {
             await signOut(auth);
             console.log("Đăng xuất thành công");
@@ -51,16 +65,70 @@ function UserProfile() {
         }
     };
 
+    useEffect(() => {
+        // Reset lỗi avatar khi đổi account / đổi ảnh
+        setAvatarError(false);
+    }, [currentUser?.photoURL]);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (
+                menuRef.current &&
+                !menuRef.current.contains(event.target) &&
+                avatarRef.current &&
+                !avatarRef.current.contains(event.target)
+            ) {
+                setIsMenuOpen(false);
+            }
+        };
+
+        document.addEventListener("mousedown", handleClickOutside);
+        document.addEventListener("touchstart", handleClickOutside);
+
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+            document.removeEventListener("touchstart", handleClickOutside);
+        };
+    }, []);
+
     return (
         <div className="relative">
             {currentUser ? (
-                <div className="group relative">
-                    <img
-                        src={currentUser.photoURL}
-                        alt={currentUser.displayName}
-                        className="h-10 w-10 cursor-pointer rounded-full"
-                    />
-                    <div className="absolute right-0 top-full mt-2 w-48 origin-top-right scale-95 transform rounded-md bg-white opacity-0 shadow-lg transition-all duration-200 ease-in-out group-hover:scale-100 group-hover:opacity-100">
+                <div
+                    className="group relative"
+                    onMouseEnter={() => setIsMenuOpen(true)}
+                    onMouseLeave={() => setIsMenuOpen(false)}
+                >
+                    <button
+                        ref={avatarRef}
+                        onClick={() => setIsMenuOpen((prev) => !prev)}
+                        aria-label="Mở menu người dùng"
+                        className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-gradient-to-br from-blue-50 to-indigo-50 shadow-sm ring-2 ring-blue-200 transition hover:scale-105 hover:ring-blue-400"
+                        type="button"
+                    >
+                        {avatarError || !currentUser.photoURL ? (
+                            <span className="text-sm font-semibold text-blue-700">
+                                {avatarInitial}
+                            </span>
+                        ) : (
+                            <img
+                                src={currentUser.photoURL}
+                                alt={currentUser.displayName}
+                                onError={() => setAvatarError(true)}
+                                className="h-full w-full rounded-full object-cover"
+                            />
+                        )}
+                    </button>
+                    <div
+                        ref={menuRef}
+                        className={clsx(
+                            "absolute right-0 top-full mt-2 w-48 origin-top-right rounded-md bg-white shadow-lg transition-all duration-200 ease-in-out",
+                            isMenuOpen
+                                ? "pointer-events-auto scale-100 opacity-100"
+                                : "pointer-events-none scale-95 opacity-0",
+                            "group-hover:pointer-events-auto group-hover:scale-100 group-hover:opacity-100",
+                        )}
+                    >
                         <div className="py-1">
                             <div className="border-b border-gray-200 px-4 py-2">
                                 <p className="text-sm font-semibold text-gray-900">
@@ -70,20 +138,20 @@ function UserProfile() {
                                     {currentUser.email}
                                 </p>
                             </div>
-                            <a
-                                href="#"
+                            <button
+                                type="button"
                                 onClick={handleLogout}
-                                className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                className="block w-full cursor-pointer px-4 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100"
                             >
                                 Đăng xuất
-                            </a>
+                            </button>
                         </div>
                     </div>
                 </div>
             ) : (
                 <button
                     onClick={handleLogin}
-                    className="flex items-center gap-2 rounded-full bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-600"
+                    className="flex items-center gap-2 rounded-full bg-blue-500 p-2 text-sm font-semibold text-white transition-colors hover:bg-blue-600"
                 >
                     <svg
                         className="h-5 w-5"
@@ -508,9 +576,7 @@ function useLocalStorage(key, initial) {
         }
     });
     useEffect(() => {
-        try {
-            localStorage.setItem(key, JSON.stringify(state));
-        } catch (e) {}
+        window.localStorage.setItem(key, JSON.stringify(state));
     }, [key, state]);
     return [state, setState];
 }
@@ -552,6 +618,8 @@ export default function Vods() {
     const [searchInputValue, setSearchInputValue] = useState(getInitialKeyword);
     const [country, setCountry] = useState(getInitialCountry);
     const [category, setCategory] = useState(getInitialCategory);
+    const [countryQuery, setCountryQuery] = useState("");
+    const [categoryQuery, setCategoryQuery] = useState("");
     const [isHistoryOpen, setIsHistoryOpen] = useState(false);
     const [history, setHistory] = useLocalStorage("viewHistory", []);
     const [countries, setCountries] = useState([]);
@@ -1452,46 +1520,58 @@ export default function Vods() {
         return "bg-gray-50 text-gray-700";
     }
 
+    const activeIndex = TABS.findIndex((tab) => tab.id === source);
+    const tabWidthPercent = 100 / TABS.length;
+
     return (
         <div className="min-h-screen bg-gray-100 font-sans text-gray-800">
             {/* Header */}
             <header className="sticky top-0 z-40 bg-white/80 shadow-md backdrop-blur-md">
-                <div className="container mx-auto p-4">
+                <div className="container mx-auto p-4 lg:px-32">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-4">
                         {/* Left: Title + Source Selector */}
-                        <div className="flex items-center gap-2 md:gap-4">
-                            <h1 className="text-xl font-bold text-gray-900 md:text-2xl">
-                                <a href="/entertainment/vods">VODs</a>
-                            </h1>
+                        <div className="flex items-center justify-center gap-2 md:gap-4">
                             {/* Source Selector */}
-                            <div className="relative flex items-center rounded-full bg-gray-200 p-1">
+                            <div
+                                className="grid-items-center relative grid w-full grid-cols-3 rounded-full bg-gray-200 p-1"
+                                role="tablist"
+                            >
                                 {/* Animated indicator background */}
                                 <div
-                                    className="absolute bottom-1 top-1 rounded-full bg-white shadow transition-all duration-300 ease-in-out"
+                                    className="absolute bottom-1 top-1 cursor-pointer rounded-full bg-white shadow transition-transform duration-300 ease-in-out"
                                     style={{
-                                        width: `${100 / TABS.length}%`,
-                                        left: `${TABS.findIndex((tab) => tab.id === source) * (100 / TABS.length)}%`,
+                                        transform: `translateX(calc(${activeIndex * 100}% + 0.25rem))`,
+                                        left: 0,
+                                        width: `calc((100% - 0.5rem) / ${TABS.length})`,
                                     }}
+                                    aria-hidden="true"
                                 />
-                                {TABS.map((tab) => (
-                                    <button
-                                        key={tab.id}
-                                        type="button"
-                                        onClick={() => setSource(tab.id)}
-                                        className={`relative z-10 flex-1 rounded-full px-2 py-1 text-xs font-semibold transition-colors duration-200 md:px-3 md:text-sm ${
-                                            source === tab.id
-                                                ? "text-gray-900"
-                                                : "text-gray-600 hover:text-gray-800"
-                                        }`}
-                                    >
-                                        {tab.label}
-                                    </button>
-                                ))}
+
+                                {TABS.map((tab) => {
+                                    const isActive = source === tab.id;
+                                    return (
+                                        <button
+                                            key={tab.id}
+                                            type="button"
+                                            role="tab"
+                                            aria-selected={isActive}
+                                            tabIndex={isActive ? 0 : -1} // Chỉ tab active mới nhận focus (tuỳ logic điều hướng)
+                                            onClick={() => setSource(tab.id)}
+                                            className={`relative z-10 flex-1 cursor-pointer rounded-full px-2 py-1 text-xs font-semibold transition-colors duration-200 md:px-3 md:text-sm ${
+                                                isActive
+                                                    ? "text-gray-900"
+                                                    : "text-gray-600 hover:text-gray-800"
+                                            }`}
+                                        >
+                                            {tab.label}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
 
                         {/* Center: Search Bar */}
-                        <div className="relative w-full md:max-w-md">
+                        <div className="relative flex-1 md:max-w-md">
                             <input
                                 type="text"
                                 placeholder="Tìm kiếm phim..."
@@ -1554,8 +1634,13 @@ export default function Vods() {
                                 </svg>
                                 {/* Badge hiển thị số filter đang active */}
                                 {(country || category) && (
-                                    <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-xs font-semibold text-white">
-                                        {(country ? 1 : 0) + (category ? 1 : 0)}
+                                    <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-semibold leading-none text-white">
+                                        {(() => {
+                                            const count =
+                                                (country ? 1 : 0) +
+                                                (category ? 1 : 0);
+                                            return count > 9 ? "9+" : count;
+                                        })()}
                                     </span>
                                 )}
                             </button>
@@ -1578,8 +1663,10 @@ export default function Vods() {
                                     ></path>
                                 </svg>
                                 {favorites.length > 0 && (
-                                    <span className="absolute right-0 top-0 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
-                                        {favorites.length}
+                                    <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                                        {favorites.length > 9
+                                            ? "9+"
+                                            : favorites.length}
                                     </span>
                                 )}
                             </button>
@@ -1609,22 +1696,22 @@ export default function Vods() {
             </header>
 
             {/* Main Content */}
-            <main className="container mx-auto flex flex-1 flex-col px-4 py-6 lg:px-32">
+            <main className="container mx-auto flex flex-1 flex-col p-4 lg:px-32">
                 {/* Filter Modal */}
                 {isFilterOpen && (
                     <div
-                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
                         onClick={() => setIsFilterOpen(false)}
                     >
                         <div
-                            className="flex w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl transition-all"
+                            className="flex max-h-[90vh] w-11/12 max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-br from-blue-500 to-indigo-600 px-6 py-5">
+                            <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-gray-200 from-blue-50 to-indigo-50 px-6 py-4">
                                 <div className="flex items-center gap-3">
-                                    <div className="rounded-lg bg-white/20 p-2">
+                                    <div className="rounded-lg bg-white p-2 shadow-sm">
                                         <svg
-                                            className="h-5 w-5 text-white"
+                                            className="h-5 w-5 text-blue-600"
                                             fill="none"
                                             stroke="currentColor"
                                             viewBox="0 0 24 24"
@@ -1637,30 +1724,18 @@ export default function Vods() {
                                             ></path>
                                         </svg>
                                     </div>
-                                    <h2 className="text-xl font-bold text-white">
+                                    <h2 className="text-lg font-bold text-gray-900">
                                         Bộ lọc phim
                                     </h2>
                                 </div>
                                 <button
                                     onClick={() => setIsFilterOpen(false)}
-                                    className="rounded-lg p-1.5 text-white/80 transition-all hover:bg-white/20 hover:text-white"
+                                    className="text-2xl leading-none text-gray-400 transition-colors hover:text-gray-600"
                                 >
-                                    <svg
-                                        className="h-6 w-6"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth="2"
-                                            d="M6 18L18 6M6 6l12 12"
-                                        />
-                                    </svg>
+                                    ×
                                 </button>
                             </div>
-                            <div className="flex flex-col gap-6 p-6">
+                            <div className="flex-1 space-y-6 overflow-y-auto p-6">
                                 {/* Country Filter */}
                                 <div>
                                     <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
@@ -1689,110 +1764,132 @@ export default function Vods() {
                                                     value: c.slug,
                                                     label: c.name,
                                                 }));
+
+                                            const filteredCountries =
+                                                countryQuery === ""
+                                                    ? countryOptions
+                                                    : countryOptions.filter(
+                                                          (c) =>
+                                                              c.label
+                                                                  .toLowerCase()
+                                                                  .includes(
+                                                                      countryQuery.toLowerCase(),
+                                                                  ),
+                                                      );
+
+                                            const selectedCountry =
+                                                countryOptions.find(
+                                                    (o) => o.value === country,
+                                                ) || null;
+
                                             return (
-                                                <Select
-                                                    options={countryOptions}
-                                                    value={
-                                                        countryOptions.find(
-                                                            (o) =>
-                                                                o.value ===
-                                                                country,
-                                                        ) || null
-                                                    }
-                                                    onChange={(opt) => {
-                                                        const val = opt
-                                                            ? opt.value
-                                                            : "";
-                                                        setCountry(val);
+                                                <Combobox
+                                                    value={selectedCountry} // null fallback để tránh controlled -> uncontrolled
+                                                    onChange={(item) => {
+                                                        // item là object {label, value}, xử lý lấy value để lưu state
+                                                        setCountry(
+                                                            item?.value || "",
+                                                        );
                                                         setCurrentPage(1);
                                                         setSearchKeyword("");
                                                         setCategory("");
                                                     }}
-                                                    placeholder="Chọn quốc gia"
-                                                    isClearable
-                                                    styles={{
-                                                        control: (
-                                                            provided,
-                                                            state,
-                                                        ) => ({
-                                                            ...provided,
-                                                            minHeight: "42px", // Match với input py-2.5
-                                                            borderColor:
-                                                                state.isFocused
-                                                                    ? "#3b82f6"
-                                                                    : "#d1d5db", // border-gray-300 & focus:border-blue-500
-                                                            borderRadius:
-                                                                "9999px", // rounded-full
-                                                            boxShadow:
-                                                                state.isFocused
-                                                                    ? "0 0 0 2px rgba(59, 130, 246, 0.2)" // focus:ring-2 focus:ring-blue-200
-                                                                    : "none", // Không có shadow
-                                                            "&:hover": {
-                                                                borderColor:
-                                                                    state.isFocused
-                                                                        ? "#3b82f6"
-                                                                        : "#d1d5db",
-                                                            },
-                                                            fontSize:
-                                                                "0.875rem", // text-sm
-                                                            transition:
-                                                                "all 0.15s ease-in-out",
-                                                        }),
-                                                        valueContainer: (
-                                                            provided,
-                                                        ) => ({
-                                                            ...provided,
-                                                            padding: "0 12px", // px-3
-                                                            minHeight: "38px",
-                                                        }),
-                                                        input: (provided) => ({
-                                                            ...provided,
-                                                            margin: 0,
-                                                            padding: 0,
-                                                            color: "#111827", // text-gray-900
-                                                            fontSize:
-                                                                "0.875rem", // text-sm
-                                                        }),
-                                                        placeholder: (
-                                                            provided,
-                                                        ) => ({
-                                                            ...provided,
-                                                            color: "#6b7280", // placeholder-gray-500
-                                                            fontSize:
-                                                                "0.875rem", // text-sm
-                                                        }),
-                                                        singleValue: (
-                                                            provided,
-                                                        ) => ({
-                                                            ...provided,
-                                                            color: "#111827", // text-gray-900
-                                                            fontSize:
-                                                                "0.875rem", // text-sm
-                                                        }),
-                                                        indicatorSeparator:
-                                                            () => ({
-                                                                display: "none",
-                                                            }),
-                                                        dropdownIndicator: (
-                                                            provided,
-                                                        ) => ({
-                                                            ...provided,
-                                                            color: "#6b7280", // text-gray-500
-                                                            "&:hover": {
-                                                                color: "#6b7280",
-                                                            },
-                                                        }),
-                                                        clearIndicator: (
-                                                            provided,
-                                                        ) => ({
-                                                            ...provided,
-                                                            color: "#6b7280", // text-gray-500
-                                                            "&:hover": {
-                                                                color: "#ef4444", // text-red-500
-                                                            },
-                                                        }),
-                                                    }}
-                                                />
+                                                    onClose={() =>
+                                                        setCountryQuery("")
+                                                    }
+                                                >
+                                                    <div className="relative">
+                                                        <ComboboxInput
+                                                            className={clsx(
+                                                                "w-full rounded-full border border-gray-300 bg-white py-2.5 pl-3 pr-10 text-sm leading-5 text-gray-900",
+                                                                "focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200",
+                                                                "transition duration-150 ease-in-out",
+                                                            )}
+                                                            displayValue={(
+                                                                item,
+                                                            ) =>
+                                                                item?.label ||
+                                                                ""
+                                                            } // Sử dụng item trực tiếp
+                                                            onChange={(event) =>
+                                                                setCountryQuery(
+                                                                    event.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            placeholder="Chọn quốc gia"
+                                                        />
+
+                                                        <ComboboxButton className="group absolute inset-y-0 right-0 px-2.5">
+                                                            {/* SVG Mũi tên xuống (Thay thế cho ChevronDownIcon) */}
+                                                            <svg
+                                                                className="size-5 text-gray-400 group-hover:text-gray-500"
+                                                                viewBox="0 0 20 20"
+                                                                fill="currentColor"
+                                                                aria-hidden="true"
+                                                            >
+                                                                <path
+                                                                    fillRule="evenodd"
+                                                                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                                                                    clipRule="evenodd"
+                                                                />
+                                                            </svg>
+                                                        </ComboboxButton>
+                                                    </div>
+
+                                                    <ComboboxOptions
+                                                        anchor="bottom"
+                                                        transition
+                                                        className={clsx(
+                                                            // w-[var(--input-width)] giúp dropdown rộng bằng đúng input
+                                                            "max-h-60 w-[var(--input-width)] overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg",
+                                                            "transition duration-100 ease-in data-[leave]:data-[closed]:opacity-0",
+                                                            "z-50 mt-1 empty:invisible",
+                                                        )}
+                                                    >
+                                                        {filteredCountries.length ===
+                                                            0 &&
+                                                        countryQuery !== "" ? (
+                                                            <div className="relative cursor-default select-none px-4 py-2 text-gray-700">
+                                                                Không tìm thấy.
+                                                            </div>
+                                                        ) : (
+                                                            filteredCountries.map(
+                                                                (c) => (
+                                                                    <ComboboxOption
+                                                                        key={
+                                                                            c.value
+                                                                        }
+                                                                        value={
+                                                                            c
+                                                                        }
+                                                                        className="group flex cursor-default select-none items-center gap-2 rounded-lg px-3 py-1.5 data-[focus]:bg-blue-100"
+                                                                    >
+                                                                        {/* SVG Dấu tích (Thay thế cho CheckIcon) */}
+                                                                        <svg
+                                                                            className="invisible size-4 fill-blue-600 group-data-[selected]:visible"
+                                                                            viewBox="0 0 20 20"
+                                                                            fill="currentColor"
+                                                                            aria-hidden="true"
+                                                                        >
+                                                                            <path
+                                                                                fillRule="evenodd"
+                                                                                d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.052-.143z"
+                                                                                clipRule="evenodd"
+                                                                            />
+                                                                        </svg>
+
+                                                                        <div className="text-sm text-gray-700 group-data-[selected]:font-semibold">
+                                                                            {
+                                                                                c.label
+                                                                            }
+                                                                        </div>
+                                                                    </ComboboxOption>
+                                                                ),
+                                                            )
+                                                        )}
+                                                    </ComboboxOptions>
+                                                </Combobox>
                                             );
                                         })()
                                     )}
@@ -1824,116 +1921,129 @@ export default function Vods() {
                                                     value: c.slug,
                                                     label: c.name,
                                                 }));
+
+                                            const filteredCategories =
+                                                categoryQuery === ""
+                                                    ? categoryOptions
+                                                    : categoryOptions.filter(
+                                                          (c) =>
+                                                              c.label
+                                                                  .toLowerCase()
+                                                                  .includes(
+                                                                      categoryQuery.toLowerCase(),
+                                                                  ),
+                                                      );
+
+                                            const selectedCategory =
+                                                categoryOptions.find(
+                                                    (o) => o.value === category,
+                                                ) || null;
+
                                             return (
-                                                <Select
-                                                    options={categoryOptions}
-                                                    value={
-                                                        categoryOptions.find(
-                                                            (o) =>
-                                                                o.value ===
-                                                                category,
-                                                        ) || null
-                                                    }
-                                                    onChange={(opt) => {
-                                                        const val = opt
-                                                            ? opt.value
-                                                            : "";
-                                                        setCategory(val);
+                                                <Combobox
+                                                    value={selectedCategory}
+                                                    onChange={(option) => {
+                                                        setCategory(
+                                                            option?.value || "",
+                                                        );
                                                         setCurrentPage(1);
                                                         setCountry("");
                                                         setSearchKeyword("");
                                                     }}
-                                                    placeholder="Chọn thể loại"
-                                                    isClearable
-                                                    getOptionValue={(option) =>
-                                                        option.value
+                                                    onClose={() =>
+                                                        setCategoryQuery("")
                                                     }
-                                                    getOptionLabel={(option) =>
-                                                        option.label
-                                                    }
-                                                    styles={{
-                                                        control: (
-                                                            provided,
-                                                            state,
-                                                        ) => ({
-                                                            ...provided,
-                                                            minHeight: "42px",
-                                                            borderColor:
-                                                                state.isFocused
-                                                                    ? "#3b82f6"
-                                                                    : "#d1d5db",
-                                                            borderRadius:
-                                                                "0.5rem",
-                                                            boxShadow:
-                                                                state.isFocused
-                                                                    ? "0 0 0 2px rgba(59, 130, 246, 0.2)"
-                                                                    : "none",
-                                                            "&:hover": {
-                                                                borderColor:
-                                                                    state.isFocused
-                                                                        ? "#3b82f6"
-                                                                        : "#d1d5db",
-                                                            },
-                                                            fontSize:
-                                                                "0.875rem",
-                                                            transition:
-                                                                "all 0.15s ease-in-out",
-                                                        }),
-                                                        valueContainer: (
-                                                            provided,
-                                                        ) => ({
-                                                            ...provided,
-                                                            padding: "0 12px",
-                                                            minHeight: "38px",
-                                                        }),
-                                                        input: (provided) => ({
-                                                            ...provided,
-                                                            margin: 0,
-                                                            padding: 0,
-                                                            color: "#111827",
-                                                            fontSize:
-                                                                "0.875rem",
-                                                        }),
-                                                        placeholder: (
-                                                            provided,
-                                                        ) => ({
-                                                            ...provided,
-                                                            color: "#6b7280",
-                                                            fontSize:
-                                                                "0.875rem",
-                                                        }),
-                                                        singleValue: (
-                                                            provided,
-                                                        ) => ({
-                                                            ...provided,
-                                                            color: "#111827",
-                                                            fontSize:
-                                                                "0.875rem",
-                                                        }),
-                                                        indicatorSeparator:
-                                                            () => ({
-                                                                display: "none",
-                                                            }),
-                                                        dropdownIndicator: (
-                                                            provided,
-                                                        ) => ({
-                                                            ...provided,
-                                                            color: "#6b7280",
-                                                            "&:hover": {
-                                                                color: "#6b7280",
-                                                            },
-                                                        }),
-                                                        clearIndicator: (
-                                                            provided,
-                                                        ) => ({
-                                                            ...provided,
-                                                            color: "#6b7280",
-                                                            "&:hover": {
-                                                                color: "#ef4444",
-                                                            },
-                                                        }),
-                                                    }}
-                                                />
+                                                >
+                                                    <div className="relative">
+                                                        <ComboboxInput
+                                                            className={clsx(
+                                                                "w-full rounded-full border border-gray-300 bg-white py-2.5 pl-3 pr-10 text-sm leading-5 text-gray-900",
+                                                                "focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200",
+                                                                "transition duration-150 ease-in-out",
+                                                            )}
+                                                            displayValue={(
+                                                                item,
+                                                            ) =>
+                                                                item?.label ||
+                                                                ""
+                                                            }
+                                                            onChange={(event) =>
+                                                                setCategoryQuery(
+                                                                    event.target
+                                                                        .value,
+                                                                )
+                                                            }
+                                                            placeholder="Chọn thể loại"
+                                                        />
+
+                                                        <ComboboxButton className="group absolute inset-y-0 right-0 px-2.5">
+                                                            <svg
+                                                                className="size-5 text-gray-400 group-hover:text-gray-500"
+                                                                viewBox="0 0 20 20"
+                                                                fill="currentColor"
+                                                                aria-hidden="true"
+                                                            >
+                                                                <path
+                                                                    fillRule="evenodd"
+                                                                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                                                                    clipRule="evenodd"
+                                                                />
+                                                            </svg>
+                                                        </ComboboxButton>
+                                                    </div>
+
+                                                    <ComboboxOptions
+                                                        anchor="bottom"
+                                                        transition
+                                                        className={clsx(
+                                                            "w-[var(--input-width)] rounded-xl border border-gray-200 bg-white p-1 shadow-lg",
+                                                            "max-h-60 overflow-y-auto",
+                                                            "transition duration-100 ease-in data-[leave]:data-[closed]:opacity-0",
+                                                            "z-50 mt-1 empty:invisible",
+                                                        )}
+                                                    >
+                                                        {filteredCategories.length ===
+                                                            0 &&
+                                                        categoryQuery !== "" ? (
+                                                            <div className="relative cursor-default select-none px-4 py-2 text-gray-700">
+                                                                Không tìm thấy.
+                                                            </div>
+                                                        ) : (
+                                                            filteredCategories.map(
+                                                                (c) => (
+                                                                    <ComboboxOption
+                                                                        key={
+                                                                            c.value
+                                                                        }
+                                                                        value={
+                                                                            c
+                                                                        }
+                                                                        className="group flex cursor-default select-none items-center gap-2 rounded-lg px-3 py-1.5 data-[focus]:bg-blue-100"
+                                                                    >
+                                                                        <svg
+                                                                            className="invisible size-4 fill-blue-600 group-data-[selected]:visible"
+                                                                            viewBox="0 0 20 20"
+                                                                            fill="currentColor"
+                                                                            aria-hidden="true"
+                                                                        >
+                                                                            <path
+                                                                                fillRule="evenodd"
+                                                                                d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.052-.143z"
+                                                                                clipRule="evenodd"
+                                                                            />
+                                                                        </svg>
+
+                                                                        <div className="text-sm text-gray-700 group-data-[selected]:font-semibold">
+                                                                            {
+                                                                                c.label
+                                                                            }
+                                                                        </div>
+                                                                    </ComboboxOption>
+                                                                ),
+                                                            )
+                                                        )}
+                                                    </ComboboxOptions>
+                                                </Combobox>
                                             );
                                         })()
                                     )}
@@ -1946,13 +2056,13 @@ export default function Vods() {
                                         setCategory("");
                                         setCurrentPage(1);
                                     }}
-                                    className="flex-1 rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                                    className="flex-1 rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
                                 >
                                     Xóa bộ lọc
                                 </button>
                                 <button
                                     onClick={() => setIsFilterOpen(false)}
-                                    className="flex-1 rounded-md bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600"
+                                    className="flex-1 rounded-full bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600"
                                 >
                                     Áp dụng
                                 </button>
@@ -1971,9 +2081,26 @@ export default function Vods() {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-gray-200 from-blue-50 to-indigo-50 px-6 py-4">
-                                <h2 className="text-lg font-bold text-gray-900">
-                                    Lịch sử xem
-                                </h2>
+                                <div className="flex items-center gap-3">
+                                    <div className="rounded-lg bg-white p-2 shadow-sm">
+                                        <svg
+                                            className="h-5 w-5 text-blue-600"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth="2"
+                                                d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                                            />
+                                        </svg>
+                                    </div>
+                                    <h2 className="text-lg font-bold text-gray-900">
+                                        Lịch sử xem
+                                    </h2>
+                                </div>
                                 <button
                                     onClick={closeHistory}
                                     className="text-2xl leading-none text-gray-400 transition-colors hover:text-gray-600"
@@ -2143,7 +2270,7 @@ export default function Vods() {
                                 <div className="rounded-b-lg border-t border-gray-200 bg-gray-50 px-6 py-3 text-right">
                                     <button
                                         onClick={() => setConfirmDelete(true)}
-                                        className="rounded-md bg-red-500 px-4 py-2 text-white shadow transition hover:bg-red-600"
+                                        className="rounded-full bg-red-500 px-4 py-2 text-white shadow transition hover:bg-red-600"
                                     >
                                         Xóa lịch sử xem
                                     </button>
@@ -2174,9 +2301,26 @@ export default function Vods() {
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-gray-200 from-red-50 to-rose-50 px-6 py-4">
-                                <h2 className="text-lg font-bold text-gray-900">
-                                    Phim yêu thích
-                                </h2>
+                                <div className="flex items-center gap-3">
+                                    <div className="rounded-lg bg-white p-2 shadow-sm">
+                                        <svg
+                                            className="h-5 w-5 text-red-600"
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth="2"
+                                                d="M4.318 6.318a4.5 4.5 0 016.364 0L12 7.636l1.318-1.318a4.5 4.5 0 116.364 6.364L12 21.364l-7.682-7.682a4.5 4.5 0 010-6.364z"
+                                            />
+                                        </svg>
+                                    </div>
+                                    <h2 className="text-lg font-bold text-gray-900">
+                                        Phim yêu thích
+                                    </h2>
+                                </div>
                                 <button
                                     onClick={closeFavorites}
                                     className="text-2xl leading-none text-gray-400 transition-colors hover:text-gray-600"
@@ -2238,7 +2382,7 @@ export default function Vods() {
                                                         e,
                                                     );
                                                 }}
-                                                className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full p-2 text-gray-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
                                             >
                                                 <svg
                                                     className="h-5 w-5"
@@ -2257,7 +2401,7 @@ export default function Vods() {
                                         onClick={() =>
                                             setConfirmDeleteFavorites(true)
                                         }
-                                        className="rounded-md bg-red-500 px-4 py-2 text-white shadow transition hover:bg-red-600"
+                                        className="rounded-full bg-red-500 px-4 py-2 text-white shadow transition hover:bg-red-600"
                                     >
                                         Xóa tất cả yêu thích
                                     </button>
