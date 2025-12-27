@@ -3,6 +3,16 @@ import { useNavigate } from "react-router-dom";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useAuth } from "../contexts/AuthContext";
 import { auth } from "../services/firebase";
+import {
+    fetchHistoryFromFirestore,
+    fetchFavoritesFromFirestore,
+    addHistoryToFirestore,
+    removeHistoryFromFirestore,
+    clearHistoryFromFirestore,
+    addFavoriteToFirestore,
+    removeFavoriteFromFirestore,
+    clearFavoritesFromFirestore,
+} from "../services/firebaseHelpers";
 import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 import clsx from "clsx";
 import {
@@ -13,7 +23,7 @@ import {
     ComboboxOptions,
 } from "@headlessui/react";
 
-function UserProfile() {
+function UserProfile({ onLogout }) {
     const { currentUser } = useAuth();
     const [authError, setAuthError] = useState(null);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -58,6 +68,11 @@ function UserProfile() {
         setIsMenuOpen(false);
         try {
             await signOut(auth);
+            // Clear tất cả dữ liệu khi đăng xuất
+            localStorage.removeItem("viewHistory");
+            localStorage.removeItem("favorites");
+            // Gọi callback để reset state trong parent component
+            onLogout();
             console.log("Đăng xuất thành công");
         } catch (error) {
             console.error("Lỗi đăng xuất:", error);
@@ -94,16 +109,12 @@ function UserProfile() {
     return (
         <div className="relative">
             {currentUser ? (
-                <div
-                    className="group relative"
-                    onMouseEnter={() => setIsMenuOpen(true)}
-                    onMouseLeave={() => setIsMenuOpen(false)}
-                >
+                <div className="group relative">
                     <button
                         ref={avatarRef}
                         onClick={() => setIsMenuOpen((prev) => !prev)}
                         aria-label="Mở menu người dùng"
-                        className="flex h-9 w-9 items-center justify-center rounded-full border border-white/70 bg-gradient-to-br from-blue-50 to-indigo-50 shadow-sm ring-2 ring-blue-200 transition hover:scale-105 hover:ring-blue-400"
+                        className="bg-linear-to-br flex h-9 w-9 items-center justify-center rounded-full border border-white/70 from-blue-50 to-indigo-50 shadow-sm ring-2 ring-blue-200 transition hover:scale-105 hover:ring-blue-400"
                         type="button"
                     >
                         {avatarError || !currentUser.photoURL ? (
@@ -126,7 +137,6 @@ function UserProfile() {
                             isMenuOpen
                                 ? "pointer-events-auto scale-100 opacity-100"
                                 : "pointer-events-none scale-95 opacity-0",
-                            "group-hover:pointer-events-auto group-hover:scale-100 group-hover:opacity-100",
                         )}
                     >
                         <div className="py-1">
@@ -648,6 +658,23 @@ export default function Vods() {
             localStorage.setItem("selected_source", source);
         } catch (e) {}
     }, [source]);
+
+    // Load history và favorites từ Firestore khi user đăng nhập
+    useEffect(() => {
+        if (currentUser) {
+            const loadFirestoreData = async () => {
+                const firestoreHistory = await fetchHistoryFromFirestore(
+                    currentUser.uid,
+                );
+                const firestoreFavorites = await fetchFavoritesFromFirestore(
+                    currentUser.uid,
+                );
+                setHistory(firestoreHistory);
+                setFavorites(firestoreFavorites);
+            };
+            loadFirestoreData();
+        }
+    }, [currentUser]);
 
     const countriesFetchedRef = useRef(false);
     const categoriesFetchedRef = useRef(false);
@@ -1396,28 +1423,42 @@ export default function Vods() {
 
     function deleteHistoryItem(slug, e) {
         if (e) e.stopPropagation();
+        const itemToRemove = history.find((item) => item.slug === slug);
         const newHistory = history.filter((item) => item.slug !== slug);
         localStorage.setItem("viewHistory", JSON.stringify(newHistory));
         setHistory(newHistory);
+        if (currentUser && itemToRemove) {
+            removeHistoryFromFirestore(currentUser.uid, itemToRemove);
+        }
     }
 
     function clearHistory() {
         localStorage.setItem("viewHistory", JSON.stringify([]));
         setHistory([]);
         setConfirmDelete(false);
+        if (currentUser) {
+            clearHistoryFromFirestore(currentUser.uid);
+        }
     }
 
     function deleteFavoriteItem(slug, e) {
         if (e) e.stopPropagation();
+        const itemToRemove = favorites.find((item) => item.slug === slug);
         const newFavorites = favorites.filter((item) => item.slug !== slug);
         localStorage.setItem("favorites", JSON.stringify(newFavorites));
         setFavorites(newFavorites);
+        if (currentUser && itemToRemove) {
+            removeFavoriteFromFirestore(currentUser.uid, itemToRemove);
+        }
     }
 
     function clearFavorites() {
         localStorage.setItem("favorites", JSON.stringify([]));
         setFavorites([]);
         setConfirmDeleteFavorites(false);
+        if (currentUser) {
+            clearFavoritesFromFirestore(currentUser.uid);
+        }
     }
 
     function toggleMovieFavorite(movie, e) {
@@ -1435,17 +1476,23 @@ export default function Vods() {
 
         if (isFavorited) {
             // Xóa khỏi yêu thích
+            const favoriteToRemove = currentFavorites.find(
+                (fav) => fav.slug === cleanSlug,
+            );
             const newFavorites = currentFavorites.filter(
                 (fav) => fav.slug !== cleanSlug,
             );
             localStorage.setItem("favorites", JSON.stringify(newFavorites));
             setFavorites(newFavorites);
+            if (currentUser && favoriteToRemove) {
+                removeFavoriteFromFirestore(currentUser.uid, favoriteToRemove);
+            }
         } else {
             // Thêm vào yêu thích
             const favorite = {
                 slug: cleanSlug,
                 name: movie.name,
-                poster: movie.poster_url || movie.thumb_url || "",
+                poster: getMovieImage(movie.poster_url || movie.thumb_url),
                 year: movie.year,
                 quality: movie.quality,
                 time: new Date().toISOString(),
@@ -1453,6 +1500,9 @@ export default function Vods() {
             const newFavorites = [favorite, ...currentFavorites];
             localStorage.setItem("favorites", JSON.stringify(newFavorites));
             setFavorites(newFavorites);
+            if (currentUser) {
+                addFavoriteToFirestore(currentUser.uid, favorite);
+            }
         }
     }
 
@@ -1689,7 +1739,12 @@ export default function Vods() {
                                     ></path>
                                 </svg>
                             </button>
-                            <UserProfile />
+                            <UserProfile
+                                onLogout={() => {
+                                    setHistory([]);
+                                    setFavorites([]);
+                                }}
+                            />
                         </div>
                     </div>
                 </div>
@@ -1842,8 +1897,8 @@ export default function Vods() {
                                                         transition
                                                         className={clsx(
                                                             // w-[var(--input-width)] giúp dropdown rộng bằng đúng input
-                                                            "max-h-60 w-[var(--input-width)] overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg",
-                                                            "transition duration-100 ease-in data-[leave]:data-[closed]:opacity-0",
+                                                            "w-(--input-width) max-h-60 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg",
+                                                            "data-leave:data-closed:opacity-0 transition duration-100 ease-in",
                                                             "z-50 mt-1 empty:invisible",
                                                         )}
                                                     >
@@ -1863,11 +1918,11 @@ export default function Vods() {
                                                                         value={
                                                                             c
                                                                         }
-                                                                        className="group flex cursor-default select-none items-center gap-2 rounded-lg px-3 py-1.5 data-[focus]:bg-blue-100"
+                                                                        className="data-focus:bg-blue-100 group flex cursor-default select-none items-center gap-2 rounded-lg px-3 py-1.5"
                                                                     >
                                                                         {/* SVG Dấu tích (Thay thế cho CheckIcon) */}
                                                                         <svg
-                                                                            className="invisible size-4 fill-blue-600 group-data-[selected]:visible"
+                                                                            className="group-data-selected:visible invisible size-4 fill-blue-600"
                                                                             viewBox="0 0 20 20"
                                                                             fill="currentColor"
                                                                             aria-hidden="true"
@@ -1879,7 +1934,7 @@ export default function Vods() {
                                                                             />
                                                                         </svg>
 
-                                                                        <div className="text-sm text-gray-700 group-data-[selected]:font-semibold">
+                                                                        <div className="group-data-selected:font-semibold text-sm text-gray-700">
                                                                             {
                                                                                 c.label
                                                                             }
@@ -1996,9 +2051,9 @@ export default function Vods() {
                                                         anchor="bottom"
                                                         transition
                                                         className={clsx(
-                                                            "w-[var(--input-width)] rounded-xl border border-gray-200 bg-white p-1 shadow-lg",
+                                                            "w-(--input-width) rounded-xl border border-gray-200 bg-white p-1 shadow-lg",
                                                             "max-h-60 overflow-y-auto",
-                                                            "transition duration-100 ease-in data-[leave]:data-[closed]:opacity-0",
+                                                            "data-leave:data-closed:opacity-0 transition duration-100 ease-in",
                                                             "z-50 mt-1 empty:invisible",
                                                         )}
                                                     >
@@ -2018,10 +2073,10 @@ export default function Vods() {
                                                                         value={
                                                                             c
                                                                         }
-                                                                        className="group flex cursor-default select-none items-center gap-2 rounded-lg px-3 py-1.5 data-[focus]:bg-blue-100"
+                                                                        className="data-focus:bg-blue-100 group flex cursor-default select-none items-center gap-2 rounded-lg px-3 py-1.5"
                                                                     >
                                                                         <svg
-                                                                            className="invisible size-4 fill-blue-600 group-data-[selected]:visible"
+                                                                            className="group-data-selected:visible invisible size-4 fill-blue-600"
                                                                             viewBox="0 0 20 20"
                                                                             fill="currentColor"
                                                                             aria-hidden="true"
@@ -2033,7 +2088,7 @@ export default function Vods() {
                                                                             />
                                                                         </svg>
 
-                                                                        <div className="text-sm text-gray-700 group-data-[selected]:font-semibold">
+                                                                        <div className="group-data-selected:font-semibold text-sm text-gray-700">
                                                                             {
                                                                                 c.label
                                                                             }
@@ -2181,9 +2236,7 @@ export default function Vods() {
                                                 className="flex cursor-pointer items-center gap-4 px-6 py-3 text-inherit no-underline transition-colors hover:bg-blue-50"
                                             >
                                                 <img
-                                                    src={getMovieImage(
-                                                        item.poster,
-                                                    )}
+                                                    src={item.poster}
                                                     alt={item.name}
                                                     loading="lazy"
                                                     className="h-16 w-12 shrink-0 rounded-md object-cover shadow-md"
@@ -2346,9 +2399,7 @@ export default function Vods() {
                                                 className="flex cursor-pointer items-center gap-4 px-6 py-3 text-inherit no-underline transition-colors hover:bg-red-50"
                                             >
                                                 <img
-                                                    src={getMovieImage(
-                                                        item.poster,
-                                                    )}
+                                                    src={item.poster}
                                                     alt={item.name}
                                                     loading="lazy"
                                                     className="h-16 w-12 shrink-0 rounded-md object-cover shadow-md"

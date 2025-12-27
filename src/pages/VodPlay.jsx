@@ -7,6 +7,8 @@ import React, {
 } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { useAuth } from "../contexts/AuthContext";
+import { addHistoryToFirestore } from "../services/firebaseHelpers";
 // Dynamic import HLS.js khi cần
 let Hls = null;
 
@@ -306,6 +308,7 @@ export default function VodPlay() {
     const debugTmdb = query.get("debugTmdb") === "true"; // toggle to show raw TMDb JSON for debugging
     const debugMobile = query.get("debugMobile") === "true"; // Debug mode để test mobile behavior
     const navigate = useNavigate();
+    const { currentUser } = useAuth();
     const playerRef = useRef(null);
     const currentUrlRef = useRef(null); // Track URL hiện tại đang play để tránh duplicate init
     const hasInitializedRef = useRef(false); // Track xem đã initialize player hay chưa
@@ -1469,11 +1472,11 @@ export default function VodPlay() {
         const currentMovie = movie && movie.name ? movie : movie || {};
         // Đảm bảo luôn có name và poster
         const movieName = currentMovie.name || "Không rõ tên";
-        const moviePoster =
+        const moviePoster = getMovieImage(
             currentMovie.poster_url ||
-            currentMovie.poster ||
-            currentMovie.thumb_url ||
-            "https://placehold.co/200x300?text=No+Poster";
+                currentMovie.poster ||
+                currentMovie.thumb_url,
+        );
         const movieServer =
             currentMovie.server || episode?.server_name || serverParam || "";
 
@@ -1561,6 +1564,19 @@ export default function VodPlay() {
         }
 
         setViewHistory(history);
+
+        // Đồng bộ với Firestore nếu user đã đăng nhập
+        if (currentUser && history.length > 0) {
+            const latestHistoryItem = history[0]; // Lấy mục vừa thêm/cập nhật (ở đầu list)
+            addHistoryToFirestore(currentUser.uid, latestHistoryItem).catch(
+                (error) => {
+                    console.error(
+                        "Failed to sync history to Firestore:",
+                        error,
+                    );
+                },
+            );
+        }
     };
 
     // Add custom rewind/forward buttons to JWPlayer
@@ -2378,7 +2394,7 @@ export default function VodPlay() {
             const favorite = {
                 slug: movie.slug,
                 name: movie.name,
-                poster: movie.poster_url || movie.thumb_url || "",
+                poster: getMovieImage(movie.poster_url || movie.thumb_url),
                 year: movie.year,
                 quality: movie.quality,
                 time: new Date().toISOString(),
