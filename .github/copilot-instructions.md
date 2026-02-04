@@ -11,3 +11,9 @@
 -   Luôn sử dụng font "Inter" cho toàn bộ ứng dụng, import từ npm package "@fontsource/inter".
 -   Luôn đảm bảo ứng dụng responsive, hiển thị tốt trên cả desktop và mobile. Ủu tiên sử dụng Tailwind CSS utilities để đạt được điều này.
 -   Luôn dùng class css, không inline css khi đã có class tương ứng trong Tailwind CSS.
+-   Luôn ưu tiên tái sử dụng code đã có trong project, tránh viết code trùng lặp hoặc tương tự nếu đã có sẵn chức năng tương tự trong project. Nếu cần mở rộng chức năng, hãy kế thừa hoặc chỉnh sửa code hiện có thay vì viết mới hoàn toàn. Code lặp lại nhiều thì viết hàm hoặc component để tái sử dụng.
+-   Luôn sử dụng các hàm tiện ích đã có trong project (nếu có) thay vì viết hàm mới cho cùng một chức năng.
+-   Luôn tuân thủ các patterns và conventions đã có trong project để đảm bảo tính nhất quán.
+-   Không được dùng emoji trong code hoặc comments. Phải dùng svg nếu là icon.
+-   Luôn đặt tên biến, hàm, component rõ ràng, có ý nghĩa, theo camelCase cho biến và hàm, PascalCase cho component.
+-   Ưu tiên performance và tối ưu tài nguyên mạng khi viết code liên quan đến việc tải dữ liệu từ mạng hoặc xử lý media. Tránh call api không cần thiết, tái sử dụng kết quả đã có, và tối ưu hóa việc xử lý media để giảm tải cho client và server.

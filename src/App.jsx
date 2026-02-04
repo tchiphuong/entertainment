@@ -3,6 +3,7 @@ import { Routes, Route } from "react-router-dom";
 import Home from "./pages/Home";
 import Vods from "./pages/Vods";
 import VodPlay from "./pages/VodPlay";
+import TV from "./pages/TV";
 
 export default function App() {
     return (
@@ -11,6 +12,7 @@ export default function App() {
             <Route path="/vods" element={<Vods />} />
             <Route path="/vods/play/:slug" element={<VodPlay />} />
             <Route path="/vods/play" element={<VodPlay />} />
+            <Route path="/tv" element={<TV />} />
         </Routes>
     );
 }

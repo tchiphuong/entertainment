@@ -4,7 +4,8 @@ import Select from "react-select";
 import moment from "moment";
 import LoadingSpinner from "../components/LoadingSpinner";
 
-const API_ENDPOINT = "https://br.vebo.xyz/api/match/vb/featured";
+// Lấy API endpoint từ biến môi trường
+const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT;
 
 export default function Home() {
     const navigate = useNavigate();

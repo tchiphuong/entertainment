@@ -13,22 +13,22 @@ import { addHistoryToFirestore } from "../services/firebaseHelpers";
 let Hls = null;
 
 const CONFIG = {
-    API_ENDPOINT: "https://phimapi.com/phim",
-    APP_DOMAIN_KKPHIM: "https://phimapi.com",
-    APP_DOMAIN_KKPHIM_CDN_IMAGE: "https://phimimg.com",
-    APP_DOMAIN_NGUONC: "https://phim.nguonc.com",
-    APP_DOMAIN_OPHIM: "https://ophim1.com",
-    APP_DOMAIN_OPHIM_FRONTEND: "https://ophim17.cc",
-    APP_DOMAIN_OPHIM_CDN_IMAGE: "https://img.ophim.live",
-    TMDB_API_KEY: "3356865d41894a2fa9bfa84b2b5f59bb",
-    TMDB_BASE_URL: "https://api.themoviedb.org/3",
+    API_ENDPOINT: import.meta.env.VITE_SOURCE_K_API + "/phim",
+    APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
+    APP_DOMAIN_SOURCE_K_CDN_IMAGE: import.meta.env.VITE_SOURCE_K_CDN_IMAGE,
+    APP_DOMAIN_SOURCE_C: import.meta.env.VITE_SOURCE_C_API,
+    APP_DOMAIN_SOURCE_O: import.meta.env.VITE_SOURCE_O_API,
+    APP_DOMAIN_SOURCE_O_FRONTEND: import.meta.env.VITE_SOURCE_O_FRONTEND,
+    APP_DOMAIN_SOURCE_O_CDN_IMAGE: import.meta.env.VITE_SOURCE_O_CDN_IMAGE,
+    TMDB_API_KEY: import.meta.env.VITE_TMDB_API_KEY,
+    TMDB_BASE_URL: import.meta.env.VITE_TMDB_BASE_URL,
 };
 
 // Source constants
 const SOURCES = {
-    NGUONC: "nguonc",
-    KKPHIM: "kkphim",
-    OPHIM: "ophim",
+    SOURCE_C: "source_c",
+    SOURCE_K: "source_k",
+    SOURCE_O: "source_o",
 };
 
 // Detect mobile device - support debug mode via ?debugMobile=true
@@ -228,8 +228,8 @@ function getMovieImage(imagePath, source) {
 
     // Nếu là URL tuyệt đối
     if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
-        // Nếu source là kkphim hoặc ophim thì proxy những domain của CDN/primary
-        if (source === "kkphim" || source === "ophim") {
+        // Nếu source là source_k hoặc source_o thì proxy những domain của CDN/primary
+        if (source === "source_k" || source === "source_o") {
             const hostname = (() => {
                 try {
                     return new URL(imagePath).hostname || "";
@@ -244,33 +244,33 @@ function getMovieImage(imagePath, source) {
                 hostname.indexOf("img.ophim.live") !== -1
             ) {
                 const domain =
-                    source === "kkphim"
-                        ? CONFIG.APP_DOMAIN_KKPHIM
-                        : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
-                if (source === "ophim") {
+                    source === "source_k"
+                        ? CONFIG.APP_DOMAIN_SOURCE_K
+                        : CONFIG.APP_DOMAIN_SOURCE_O_FRONTEND;
+                if (source === "source_o") {
                     return `${domain}/_next/image?url=${encodeURIComponent(imagePath)}&w=1080&q=75`;
                 } else {
                     return `${domain}/image.php?url=${encodeURIComponent(imagePath)}`;
                 }
             }
 
-            // Domain khác (ví dụ nguonc) — vẫn trả nguyên URL
+            // Domain khác (ví dụ source_c) — vẫn trả nguyên URL
             return imagePath;
         }
 
-        // Nếu không phải kkphim hoặc ophim: giữ nguyên URL gốc
+        // Nếu không phải source_k hoặc source_o: giữ nguyên URL gốc
         return imagePath;
     }
 
     // Nếu là đường dẫn relative hoặc chỉ filename => gán CDN chính
-    const cdnUrl = `${source === "kkphim" ? CONFIG.APP_DOMAIN_KKPHIM_CDN_IMAGE : CONFIG.APP_DOMAIN_OPHIM_CDN_IMAGE}/${imagePath}`;
-    if (source === "kkphim" || source === "ophim") {
-        // Proxy khi source là kkphim hoặc ophim
+    const cdnUrl = `${source === "source_k" ? CONFIG.APP_DOMAIN_SOURCE_K_CDN_IMAGE : CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE}/${imagePath}`;
+    if (source === "source_k" || source === "source_o") {
+        // Proxy khi source là source_k hoặc source_o
         const domain =
-            source === "kkphim"
-                ? CONFIG.APP_DOMAIN_KKPHIM
-                : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
-        if (source === "ophim") {
+            source === "source_k"
+                ? CONFIG.APP_DOMAIN_SOURCE_K
+                : CONFIG.APP_DOMAIN_SOURCE_O_FRONTEND;
+        if (source === "source_o") {
             return `${domain}/_next/image?url=${encodeURIComponent(cdnUrl)}&w=1080&q=75`;
         } else {
             return `${domain}/image.php?url=${encodeURIComponent(cdnUrl)}`;
@@ -304,7 +304,7 @@ export default function VodPlay() {
     const slug = params.slug || query.get("slug") || "";
     const episodeParam = query.get("episode");
     const serverParam = query.get("server"); // Thêm server param
-    const source = SOURCES.OPHIM; // Không cần param source nữa vì fetch tất cả
+    const source = SOURCES.SOURCE_O; // Không cần param source nữa vì fetch tất cả
     const debugTmdb = query.get("debugTmdb") === "true"; // toggle to show raw TMDb JSON for debugging
     const debugMobile = query.get("debugMobile") === "true"; // Debug mode để test mobile behavior
     const navigate = useNavigate();
@@ -636,13 +636,13 @@ export default function VodPlay() {
         // Ensure we don't mutate unexpected prototypes
         const m = { ...item };
 
-        // nguonc: use thumb_url as poster_url for display
-        if (source === SOURCES.NGUONC) {
+        // source_c: use thumb_url as poster_url for display
+        if (source === SOURCES.SOURCE_C) {
             // Swap: poster_url <- thumb_url, thumbnail <- poster_url
             m.poster_url = getMovieImage(m.thumb_url || m.poster_url, source);
             m.thumb_url = getMovieImage(m.thumb_url || m.poster_url, source);
 
-            // Additional mappings for nguonc
+            // Additional mappings for source_c
             m.episode_current = m.current_episode;
             m.lang = m.language;
             m.content = m.description;
@@ -655,8 +655,8 @@ export default function VodPlay() {
                     (group) => group.list || [],
                 );
             }
-        } else if (source === SOURCES.OPHIM) {
-            // Ophim: use thumb_url as poster_url, thêm prefix uploads/movies/ nếu cần
+        } else if (source === SOURCES.SOURCE_O) {
+            // Source O: use thumb_url as poster_url, thêm prefix uploads/movies/ nếu cần
             let posterPath = m.thumb_url || m.poster_url;
             if (posterPath && !posterPath.startsWith("uploads/movies/")) {
                 posterPath = `uploads/movies/${posterPath}`;
@@ -664,7 +664,7 @@ export default function VodPlay() {
             m.poster_url = getMovieImage(posterPath, source);
             m.thumb_url = getMovieImage(posterPath, source);
 
-            // Additional mappings for ophim
+            // Additional mappings for source_o
             m.episode_current = m.episode_current;
             m.lang = m.lang;
             m.content = m.content;
@@ -780,22 +780,22 @@ export default function VodPlay() {
         }
     }
 
-    // Fetch movie data from nguonc source (returns data instead of setting state)
-    async function fetchNguoncMovieData() {
+    // Fetch movie data from source_c (returns data instead of setting state)
+    async function fetchSourceCMovieData() {
         try {
             const res = await fetch(
-                `${CONFIG.APP_DOMAIN_NGUONC}/api/film/${slug}`,
+                `${CONFIG.APP_DOMAIN_SOURCE_C}/api/film/${slug}`,
             );
             const json = await res.json();
             const data = json || {};
-            console.log("Nguonc API response:", data); // Thêm log để debug
+            console.log("Source C API response:", data); // Thêm log để debug
             if (data.status === "success" && data.movie) {
                 const normalizedMovie = normalizeMovieForSource(
                     data.movie,
-                    "nguonc",
+                    "source_c",
                 );
 
-                // Normalize episodes for nguonc
+                // Normalize episodes for source_c
                 let episodesData = [];
                 if (data.movie.episodes && Array.isArray(data.movie.episodes)) {
                     console.log("Episodes array:", data.movie.episodes); // Log episodes
@@ -848,21 +848,21 @@ export default function VodPlay() {
                 return { movie: normalizedMovie, episodes: filteredEpisodes };
             }
         } catch (err) {
-            console.error("Error fetching nguonc movie data:", err);
+            console.error("Error fetching source_c movie data:", err);
         }
         return null;
     }
 
-    // Fetch movie details for nguonc source
-    async function fetchNguoncMovieDetails() {
+    // Fetch movie details for source_c
+    async function fetchSourceCMovieDetails() {
         setIsLoading(true);
         try {
-            const data = await fetchNguoncMovieData();
+            const data = await fetchSourceCMovieData();
             if (data) {
                 setMovie(data.movie);
                 setEpisodes(data.episodes);
 
-                // Nguonc không có TMDb data, skip
+                // Source C không có TMDb data, skip
 
                 if (data.episodes.length > 0) {
                     setActiveEpisode(data.episodes[0]);
@@ -870,45 +870,45 @@ export default function VodPlay() {
                 }
             } else {
                 setErrorMessage(
-                    "Failed to load movie details from nguonc source.",
+                    "Failed to load movie details from source_c.",
                 );
             }
         } catch (err) {
-            console.error("Error fetching nguonc movie details:", err);
-            setErrorMessage("Failed to load movie details from nguonc source.");
+            console.error("Error fetching source_c movie details:", err);
+            setErrorMessage("Failed to load movie details from source_c.");
         } finally {
             setIsLoading(false);
         }
     }
 
-    // Fetch movie data from ophim source (returns data instead of setting state)
-    async function fetchOphimMovieData() {
+    // Fetch movie data from source_o (returns data instead of setting state)
+    async function fetchSourceOMovieData() {
         try {
             const response = await fetch(
-                `${CONFIG.APP_DOMAIN_OPHIM}/v1/api/phim/${slug || ""}`,
+                `${CONFIG.APP_DOMAIN_SOURCE_O}/v1/api/phim/${slug || ""}`,
             );
             if (response.ok) {
                 const data = await response.json();
                 if (data && data.data && data.data.item) {
                     const movieData = normalizeMovieForSource(
                         data.data.item,
-                        "ophim",
+                        "source_o",
                     );
                     const episodesData = data.data.item.episodes || [];
                     return { movie: movieData, episodes: episodesData };
                 }
             }
         } catch (err) {
-            console.error("Error fetching ophim movie data:", err);
+            console.error("Error fetching source_o movie data:", err);
         }
         return null;
     }
 
-    // Fetch movie details for ophim source
-    async function fetchOphimMovieDetails() {
+    // Fetch movie details for source_o
+    async function fetchSourceOMovieDetails() {
         setIsLoading(true);
         try {
-            const data = await fetchOphimMovieData();
+            const data = await fetchSourceOMovieData();
             if (data) {
                 setMovie(data.movie);
                 setEpisodes(data.episodes);
@@ -926,12 +926,12 @@ export default function VodPlay() {
                 }
             } else {
                 setErrorMessage(
-                    "Failed to load movie details from ophim source.",
+                    "Failed to load movie details from source_o.",
                 );
             }
         } catch (err) {
-            console.error("Error fetching ophim movie details:", err);
-            setErrorMessage("Failed to load movie details from ophim source.");
+            console.error("Error fetching source_o movie details:", err);
+            setErrorMessage("Failed to load movie details from source_o.");
         } finally {
             setIsLoading(false);
         }
@@ -952,14 +952,14 @@ export default function VodPlay() {
         setActiveEpisode(null); // Reset active episode
         setCurrentEpisodeId(null); // Reset current episode ID
         try {
-            const sources = [SOURCES.OPHIM, SOURCES.KKPHIM, SOURCES.NGUONC];
+            const sources = [SOURCES.SOURCE_O, SOURCES.SOURCE_K, SOURCES.SOURCE_C];
             const results = await Promise.allSettled(
                 sources.map(async (src) => {
                     try {
-                        if (src === SOURCES.NGUONC) {
-                            return await fetchNguoncMovieData();
-                        } else if (src === SOURCES.OPHIM) {
-                            return await fetchOphimMovieData();
+                        if (src === SOURCES.SOURCE_C) {
+                            return await fetchSourceCMovieData();
+                        } else if (src === SOURCES.SOURCE_O) {
+                            return await fetchSourceOMovieData();
                         } else {
                             return await fetchPrimaryMovieData();
                         }
@@ -1702,7 +1702,7 @@ export default function VodPlay() {
         // Clear previous errors
         setErrorMessage(null);
 
-        // Ưu tiên m3u8 cho Ophim để autoplay
+        // Ưu tiên m3u8 cho Source O để autoplay
         let masterUrl = server.link_m3u8 || server.link_embed;
 
         console.log(

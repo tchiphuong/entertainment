@@ -191,21 +191,21 @@ function UserProfile({ onLogout }) {
     );
 }
 
-// Global config for domains
+// Lấy config từ biến môi trường
 const CONFIG = {
-    APP_DOMAIN_KKPHIM: "https://phimapi.com",
-    APP_DOMAIN_KKPHIM_CDN_IMAGE: "https://phimimg.com",
-    APP_DOMAIN_NGUONC: "https://phim.nguonc.com",
-    APP_DOMAIN_OPHIM: "https://ophim1.com",
-    APP_DOMAIN_OPHIM_FRONTEND: "https://ophim17.cc",
-    APP_DOMAIN_OPHIM_CDN_IMAGE: "https://img.ophim.live",
+    APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
+    APP_DOMAIN_SOURCE_K_CDN_IMAGE: import.meta.env.VITE_SOURCE_K_CDN_IMAGE,
+    APP_DOMAIN_SOURCE_C: import.meta.env.VITE_SOURCE_C_API,
+    APP_DOMAIN_SOURCE_O: import.meta.env.VITE_SOURCE_O_API,
+    APP_DOMAIN_SOURCE_O_FRONTEND: import.meta.env.VITE_SOURCE_O_FRONTEND,
+    APP_DOMAIN_SOURCE_O_CDN_IMAGE: import.meta.env.VITE_SOURCE_O_CDN_IMAGE,
 };
 
 // Source constants
 const SOURCES = {
-    NGUONC: "nguonc",
-    KKPHIM: "kkphim",
-    OPHIM: "ophim",
+    SOURCE_C: "source_c",
+    SOURCE_K: "source_k",
+    SOURCE_O: "source_o",
 };
 
 // Helper để tính URL ảnh phù hợp theo nguồn đã lưu
@@ -213,13 +213,13 @@ function getMovieImage(imagePath) {
     function getSelectedSource() {
         try {
             const v = localStorage.getItem("selected_source");
-            if (!v) return "kkphim"; // default to kkphim
-            if (v === SOURCES.KKPHIM) return "kkphim";
-            if (v === SOURCES.OPHIM) return "ophim";
-            if (v === SOURCES.NGUONC) return "nguonc";
-            return "kkphim";
+            if (!v) return "source_k"; // default to source_k
+            if (v === SOURCES.SOURCE_K) return "source_k";
+            if (v === SOURCES.SOURCE_O) return "source_o";
+            if (v === SOURCES.SOURCE_C) return "source_c";
+            return "source_k";
         } catch (e) {
-            return "kkphim";
+            return "source_k";
         }
     }
 
@@ -229,7 +229,7 @@ function getMovieImage(imagePath) {
     const source = getSelectedSource();
 
     if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
-        if (source === "kkphim" || source === "ophim") {
+        if (source === "source_k" || source === "source_o") {
             const hostname = (() => {
                 try {
                     return new URL(imagePath).hostname || "";
@@ -244,10 +244,10 @@ function getMovieImage(imagePath) {
                 hostname.indexOf("img.ophim.live") !== -1
             ) {
                 const domain =
-                    source === "kkphim"
-                        ? CONFIG.APP_DOMAIN_KKPHIM
-                        : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
-                if (source === "ophim") {
+                    source === "source_k"
+                        ? CONFIG.APP_DOMAIN_SOURCE_K
+                        : CONFIG.APP_DOMAIN_SOURCE_O_FRONTEND;
+                if (source === "source_o") {
                     return `${domain}/_next/image?url=${encodeURIComponent(imagePath)}&w=1080&q=75`;
                 } else {
                     return `${domain}/image.php?url=${encodeURIComponent(imagePath)}`;
@@ -260,13 +260,13 @@ function getMovieImage(imagePath) {
         return imagePath;
     }
 
-    const cdnUrl = `${source === "kkphim" ? CONFIG.APP_DOMAIN_KKPHIM_CDN_IMAGE : CONFIG.APP_DOMAIN_OPHIM_CDN_IMAGE}/${imagePath}`;
-    if (source === "kkphim" || source === "ophim") {
+    const cdnUrl = `${source === "source_k" ? CONFIG.APP_DOMAIN_SOURCE_K_CDN_IMAGE : CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE}/${imagePath}`;
+    if (source === "source_k" || source === "source_o") {
         const domain =
-            source === "kkphim"
-                ? CONFIG.APP_DOMAIN_KKPHIM
-                : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
-        if (source === "ophim") {
+            source === "source_k"
+                ? CONFIG.APP_DOMAIN_SOURCE_K
+                : CONFIG.APP_DOMAIN_SOURCE_O_FRONTEND;
+        if (source === "source_o") {
             return `${domain}/_next/image?url=${encodeURIComponent(cdnUrl)}&w=1080&q=75`;
         } else {
             return `${domain}/image.php?url=${encodeURIComponent(cdnUrl)}`;
@@ -592,11 +592,68 @@ function useLocalStorage(key, initial) {
 }
 
 export default function Vods() {
-    // Define tabs
+    // Define tabs với SVG icons
     const TABS = [
-        { id: SOURCES.OPHIM, label: "OPhim" },
-        { id: SOURCES.KKPHIM, label: "KKPhim" },
-        { id: SOURCES.NGUONC, label: "NguonC" },
+        {
+            id: SOURCES.SOURCE_O,
+            label: "Nguồn A",
+            // Icon: Server
+            icon: (
+                <svg
+                    className="h-4 w-4 md:h-5 md:w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                >
+                    <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01"
+                    />
+                </svg>
+            ),
+        },
+        {
+            id: SOURCES.SOURCE_K,
+            label: "Nguồn B",
+            // Icon: Database
+            icon: (
+                <svg
+                    className="h-4 w-4 md:h-5 md:w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                >
+                    <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
+                    />
+                </svg>
+            ),
+        },
+        {
+            id: SOURCES.SOURCE_C,
+            label: "Nguồn C",
+            // Icon: Cloud
+            icon: (
+                <svg
+                    className="h-4 w-4 md:h-5 md:w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                >
+                    <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"
+                    />
+                </svg>
+            ),
+        },
     ];
 
     // Initialize state directly from URL params
@@ -643,12 +700,12 @@ export default function Vods() {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
 
-    // Thêm state cho source: nguonc, kkphim, all
+    // Thêm state cho source: source_c, source_k, all
     const [source, setSource] = useState(() => {
         try {
-            return localStorage.getItem("selected_source") || SOURCES.OPHIM;
+            return localStorage.getItem("selected_source") || SOURCES.SOURCE_O;
         } catch (e) {
-            return SOURCES.OPHIM;
+            return SOURCES.SOURCE_O;
         }
     });
 
@@ -738,7 +795,7 @@ export default function Vods() {
         if (searchKeyword.trim() !== "") params.set("keyword", searchKeyword);
         if (country.trim() !== "") params.set("country", country);
         if (category.trim() !== "") params.set("category", category);
-        if (source !== SOURCES.NGUONC) params.set("source", source);
+        if (source !== SOURCES.SOURCE_C) params.set("source", source);
         window.history.replaceState({}, "", `?${params.toString()}`);
     }, [currentPage, searchKeyword, country, category, source]);
 
@@ -791,57 +848,57 @@ export default function Vods() {
 
             if (searchKeyword.trim() !== "") {
                 params.keyword = searchKeyword;
-                if (source === SOURCES.NGUONC) {
-                    fetchNguoncData({ ...params, type: "search" });
-                } else if (source === SOURCES.KKPHIM) {
-                    let kkphimParams = { ...params };
-                    kkphimParams.sort_field = "modified.time";
-                    kkphimParams.sort_type = "desc";
-                    fetchKKPhimData({ ...kkphimParams, type: "search" });
-                } else if (source === SOURCES.OPHIM) {
-                    let ophimParams = { ...params };
-                    ophimParams.sort_field = "modified.time";
-                    ophimParams.sort_type = "desc";
-                    fetchOphimData({ ...ophimParams, type: "search" });
+                if (source === SOURCES.SOURCE_C) {
+                    fetchSourceCData({ ...params, type: "search" });
+                } else if (source === SOURCES.SOURCE_K) {
+                    let sourceKParams = { ...params };
+                    sourceKParams.sort_field = "modified.time";
+                    sourceKParams.sort_type = "desc";
+                    fetchSourceKData({ ...sourceKParams, type: "search" });
+                } else if (source === SOURCES.SOURCE_O) {
+                    let sourceOParams = { ...params };
+                    sourceOParams.sort_field = "modified.time";
+                    sourceOParams.sort_type = "desc";
+                    fetchSourceOData({ ...sourceOParams, type: "search" });
                 }
             } else if (category.trim() !== "") {
                 // Ưu tiên category nếu có
                 params.category = category;
-                if (source === SOURCES.NGUONC) {
-                    fetchNguoncData({ ...params, type: "category" });
-                } else if (source === SOURCES.KKPHIM) {
-                    let kkphimParams = { ...params };
-                    kkphimParams.sort_field = "modified.time";
-                    kkphimParams.sort_type = "desc";
-                    fetchKKPhimData({ ...kkphimParams, type: "category" });
-                } else if (source === SOURCES.OPHIM) {
-                    let ophimParams = { ...params };
-                    ophimParams.sort_field = "modified.time";
-                    ophimParams.sort_type = "desc";
-                    fetchOphimData({ ...ophimParams, type: "category" });
+                if (source === SOURCES.SOURCE_C) {
+                    fetchSourceCData({ ...params, type: "category" });
+                } else if (source === SOURCES.SOURCE_K) {
+                    let sourceKParams = { ...params };
+                    sourceKParams.sort_field = "modified.time";
+                    sourceKParams.sort_type = "desc";
+                    fetchSourceKData({ ...sourceKParams, type: "category" });
+                } else if (source === SOURCES.SOURCE_O) {
+                    let sourceOParams = { ...params };
+                    sourceOParams.sort_field = "modified.time";
+                    sourceOParams.sort_type = "desc";
+                    fetchSourceOData({ ...sourceOParams, type: "category" });
                 }
             } else {
                 // Nếu country rỗng, fetch danh sách phim mới
                 const effectiveCountry = country || "viet-nam";
 
-                if (source === SOURCES.NGUONC) {
-                    const paramsNguonc = {
+                if (source === SOURCES.SOURCE_C) {
+                    const paramsSourceC = {
                         page: params.page || 1,
                         limit: 12,
                     };
-                    fetchNguoncData({
-                        ...paramsNguonc,
+                    fetchSourceCData({
+                        ...paramsSourceC,
                         country: effectiveCountry,
                     });
-                } else if (source === SOURCES.KKPHIM) {
-                    fetchKKPhimData({ ...params, country: effectiveCountry });
-                } else if (source === SOURCES.OPHIM) {
-                    const paramsOphim = {
+                } else if (source === SOURCES.SOURCE_K) {
+                    fetchSourceKData({ ...params, country: effectiveCountry });
+                } else if (source === SOURCES.SOURCE_O) {
+                    const paramsSourceO = {
                         page: params.page || 1,
                         limit: 12,
                     };
-                    fetchOphimData({
-                        ...paramsOphim,
+                    fetchSourceOData({
+                        ...paramsSourceO,
                         country: effectiveCountry,
                     });
                 }
@@ -896,19 +953,19 @@ export default function Vods() {
         return parts.join("&");
     }
 
-    async function fetchData(url, params = {}, source = SOURCES.NGUONC) {
+    async function fetchData(url, params = {}, source = SOURCES.SOURCE_C) {
         setIsLoading(true);
         setIsSearching(false); // Clear searching state khi bắt đầu fetch thực sự
         try {
             const qs = buildQuery(params);
             const fullUrl = `${url}?${qs}`;
 
-            // Nếu gọi tới nguonc, dùng fetchFromUrl + parseApiJson để chấp nhận nhiều kiểu response
-            if (fullUrl.indexOf(CONFIG.APP_DOMAIN_NGUONC) !== -1) {
+            // Nếu gọi tới source_c, dùng fetchFromUrl + parseApiJson để chấp nhận nhiều kiểu response
+            if (fullUrl.indexOf(CONFIG.APP_DOMAIN_SOURCE_C) !== -1) {
                 const result = await fetchFromUrl(fullUrl);
                 const { items, totalPages, cat } = result;
                 let normalizedItems = items.map((it) =>
-                    normalizeMovieForSource(it, "nguonc"),
+                    normalizeMovieForSource(it, "source_c"),
                 );
                 if (cat) {
                     normalizedItems = normalizedItems.map((m) => ({
@@ -921,12 +978,12 @@ export default function Vods() {
                 return;
             }
 
-            // Nếu gọi tới ophim, dùng fetchFromUrl + parseApiJson
-            if (fullUrl.indexOf(CONFIG.APP_DOMAIN_OPHIM) !== -1) {
+            // Nếu gọi tới source_o, dùng fetchFromUrl + parseApiJson
+            if (fullUrl.indexOf(CONFIG.APP_DOMAIN_SOURCE_O) !== -1) {
                 const result = await fetchFromUrl(fullUrl);
                 const { items, totalPages } = result;
                 const normalizedItems = items.map((it) =>
-                    normalizeMovieForSource(it, SOURCES.OPHIM),
+                    normalizeMovieForSource(it, SOURCES.SOURCE_O),
                 );
                 setMovies(normalizedItems);
                 setTotalPages(totalPages);
@@ -973,8 +1030,8 @@ export default function Vods() {
         }
     }
 
-    // Hàm fetch riêng cho Ophim
-    async function fetchOphimData(params = {}) {
+    // Hàm fetch riêng cho Source O
+    async function fetchSourceOData(params = {}) {
         setIsLoading(true);
         setIsSearching(false);
         try {
@@ -994,7 +1051,7 @@ export default function Vods() {
             } else {
                 basePath = `quoc-gia/${params.country || "viet-nam"}`;
             }
-            const fullUrl = `${CONFIG.APP_DOMAIN_OPHIM}/v1/api/${basePath}${qs ? `${isSearch ? "&" : "?"}${qs}` : ""}`;
+            const fullUrl = `${CONFIG.APP_DOMAIN_SOURCE_O}/v1/api/${basePath}${qs ? `${isSearch ? "&" : "?"}${qs}` : ""}`;
             const res = await fetch(fullUrl);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const json = await res.json();
@@ -1004,12 +1061,12 @@ export default function Vods() {
                 json.data?.params?.pagination?.totalItemsPerPage || 10;
             const totalPages = Math.ceil(totalItems / totalItemsPerPage);
             const normalizedItems = items.map((it) =>
-                normalizeMovieForSource(it, SOURCES.OPHIM),
+                normalizeMovieForSource(it, SOURCES.SOURCE_O),
             );
             setMovies(normalizedItems);
             setTotalPages(totalPages);
         } catch (err) {
-            console.error("fetchOphimData error:", err);
+            console.error("fetchSourceOData error:", err);
             setMovies([]);
             setTotalPages(1);
         } finally {
@@ -1017,8 +1074,8 @@ export default function Vods() {
         }
     }
 
-    // Hàm fetch riêng cho KKPhim
-    async function fetchKKPhimData(params = {}) {
+    // Hàm fetch riêng cho Source K
+    async function fetchSourceKData(params = {}) {
         setIsLoading(true);
         setIsSearching(false);
         try {
@@ -1040,7 +1097,7 @@ export default function Vods() {
             } else {
                 endpoint = `quoc-gia/${params.country || "viet-nam"}`;
             }
-            const fullUrl = `${CONFIG.APP_DOMAIN_KKPHIM}/v1/api/${endpoint}?${qs}`;
+            const fullUrl = `${CONFIG.APP_DOMAIN_SOURCE_K}/v1/api/${endpoint}?${qs}`;
             const res = await fetch(fullUrl);
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -1052,13 +1109,13 @@ export default function Vods() {
             } else {
                 const itemsRaw = json.data.items || [];
                 const items = itemsRaw.map((it) =>
-                    normalizeMovieForSource(it, SOURCES.KKPHIM),
+                    normalizeMovieForSource(it, SOURCES.SOURCE_K),
                 );
                 setMovies(items);
                 setTotalPages(json.data.params?.pagination?.totalPages || 1);
             }
         } catch (err) {
-            console.error("fetchKKPhimData error:", err);
+            console.error("fetchSourceKData error:", err);
             setMovies([]);
             setTotalPages(1);
         } finally {
@@ -1066,8 +1123,8 @@ export default function Vods() {
         }
     }
 
-    // Hàm fetch riêng cho Nguonc
-    async function fetchNguoncData(params = {}) {
+    // Hàm fetch riêng cho Source C
+    async function fetchSourceCData(params = {}) {
         setIsLoading(true);
         setIsSearching(false);
         try {
@@ -1080,11 +1137,11 @@ export default function Vods() {
             } else {
                 endpoint = `quoc-gia/${params.country || "viet-nam"}`;
             }
-            const fullUrl = `${CONFIG.APP_DOMAIN_NGUONC}/api/films/${endpoint}?${qs}`;
+            const fullUrl = `${CONFIG.APP_DOMAIN_SOURCE_C}/api/films/${endpoint}?${qs}`;
             const result = await fetchFromUrl(fullUrl);
             const { items, totalPages, cat } = result;
             let normalizedItems = items.map((it) =>
-                normalizeMovieForSource(it, SOURCES.NGUONC),
+                normalizeMovieForSource(it, SOURCES.SOURCE_C),
             );
             if (cat) {
                 normalizedItems = normalizedItems.map((m) => ({
@@ -1095,7 +1152,7 @@ export default function Vods() {
             setMovies(normalizedItems);
             setTotalPages(totalPages);
         } catch (err) {
-            console.error("fetchNguoncData error:", err);
+            console.error("fetchSourceCData error:", err);
             setMovies([]);
             setTotalPages(1);
         } finally {
@@ -1112,7 +1169,7 @@ export default function Vods() {
         if (!json) return { items, totalPages, cat };
 
         if (json.paginate && Array.isArray(json.items)) {
-            // nguonc response
+            // source_c response
             items = json.items;
             totalPages = json.paginate.total_page || totalPages;
             cat = json.cat || null;
@@ -1126,7 +1183,7 @@ export default function Vods() {
             json.data.params &&
             json.data.params.pagination
         ) {
-            // Ophim response
+            // Source O response
             items = json.data.items;
             totalPages = Math.ceil(
                 json.data.params.pagination.totalItems /
@@ -1163,18 +1220,18 @@ export default function Vods() {
         // Ensure we don't mutate unexpected prototypes
         const m = { ...item };
 
-        // nguonc: use thumb_url as poster_url for display
-        if (source === SOURCES.NGUONC) {
+        // source_c: use thumb_url as poster_url for display
+        if (source === SOURCES.SOURCE_C) {
             // Swap: poster_url <- thumb_url, thumbnail <- poster_url
             m.poster_url = m.thumb_url || m.poster_url;
             m.thumbnail = m.poster_url || m.thumb_url;
 
-            // Additional mappings for nguonc
+            // Additional mappings for source_c
             m.episode_current = m.current_episode;
             m.lang = m.language;
             // Keep other fields like director, casts if needed
-        } else if (source === SOURCES.OPHIM) {
-            // Ophim: use thumb_url as poster_url, thêm prefix uploads/movies/ nếu cần
+        } else if (source === SOURCES.SOURCE_O) {
+            // Source O: use thumb_url as poster_url, thêm prefix uploads/movies/ nếu cần
             let posterPath = m.thumb_url || m.poster_url;
             if (posterPath && !posterPath.startsWith("uploads/movies/")) {
                 posterPath = `uploads/movies/${posterPath}`;
@@ -1182,7 +1239,7 @@ export default function Vods() {
             m.poster_url = posterPath;
             m.thumbnail = m.poster_url || m.thumb_url;
 
-            // Additional mappings for ophim
+            // Additional mappings for source_o
             m.episode_current = m.episode_current;
             m.lang = m.lang;
         } else {
@@ -1224,35 +1281,39 @@ export default function Vods() {
             const urls = [];
 
             if (type === "search") {
-                // nguồn chính (phimapi)
-                urls.push(`${CONFIG.APP_DOMAIN_KKPHIM}/v1/api/tim-kiem?${qs}`);
+                // nguồn chính (source_k)
+                urls.push(
+                    `${CONFIG.APP_DOMAIN_SOURCE_K}/v1/api/tim-kiem?${qs}`,
+                );
 
-                // nguồn phụ (nguonc) - chỉ gửi các param hiện có: keyword, page, limit, sort_field, sort_type
-                const paramsNguonc = {
+                // nguồn phụ (source_c) - chỉ gửi các param hiện có: keyword, page, limit, sort_field, sort_type
+                const paramsSourceC = {
                     keyword: params.keyword || "",
                     page,
                     limit,
                     sort_field: params.sort_field || params.sortField || "",
                     sort_type: params.sort_type || params.sortType || "",
                 };
-                const q2 = buildQuery(paramsNguonc);
-                urls.push(`${CONFIG.APP_DOMAIN_NGUONC}/api/films/search?${q2}`);
+                const q2 = buildQuery(paramsSourceC);
+                urls.push(
+                    `${CONFIG.APP_DOMAIN_SOURCE_C}/api/films/search?${q2}`,
+                );
             } else {
                 // type === 'country'
                 const countrySlug = params.country || "viet-nam";
                 urls.push(
-                    `${CONFIG.APP_DOMAIN_KKPHIM}/v1/api/quoc-gia/${countrySlug}?${qs}`,
+                    `${CONFIG.APP_DOMAIN_SOURCE_K}/v1/api/quoc-gia/${countrySlug}?${qs}`,
                 );
 
-                // nguonc country endpoint: chỉ page (và nếu có sort_field/sort_type gửi thêm)
-                const paramsNguonc = {
+                // source_c country endpoint: chỉ page (và nếu có sort_field/sort_type gửi thêm)
+                const paramsSourceC = {
                     page,
                     sort_field: params.sort_field || params.sortField || "",
                     sort_type: params.sort_type || params.sortType || "",
                 };
-                const q3 = buildQuery(paramsNguonc);
+                const q3 = buildQuery(paramsSourceC);
                 urls.push(
-                    `${CONFIG.APP_DOMAIN_NGUONC}/api/films/quoc-gia/${countrySlug}?${q3}`,
+                    `${CONFIG.APP_DOMAIN_SOURCE_C}/api/films/quoc-gia/${countrySlug}?${q3}`,
                 );
             }
 
@@ -1268,13 +1329,13 @@ export default function Vods() {
                     // Determine source by URL order
                     const url = urls[idx] || "";
                     const src =
-                        url.indexOf(CONFIG.APP_DOMAIN_NGUONC) !== -1
-                            ? "nguonc"
+                        url.indexOf(CONFIG.APP_DOMAIN_SOURCE_C) !== -1
+                            ? "source_c"
                             : "primary";
                     const { items, totalPages, cat } = r.value;
                     const normalized = items.map((it) => {
                         const m = normalizeMovieForSource(it, src);
-                        if (src === "nguonc" && cat) {
+                        if (src === "source_c" && cat) {
                             m.country = [{ name: cat.title, slug: cat.slug }];
                         }
                         return m;
@@ -1307,8 +1368,8 @@ export default function Vods() {
         }
     }
 
-    // Gọi riêng nguồn Nguonc và đặt kết quả
-    // fetchNguonc removed — primary-only source
+    // Gọi riêng nguồn source_c và đặt kết quả
+    // fetchSourceC removed — primary-only source
 
     function searchMoviesKey(e) {
         if (e.key === "Enter") {
@@ -1323,13 +1384,13 @@ export default function Vods() {
         function getSelectedSource() {
             try {
                 const v = localStorage.getItem("selected_source");
-                if (!v) return "kkphim"; // default to kkphim
-                if (v === SOURCES.KKPHIM) return "kkphim";
-                if (v === SOURCES.OPHIM) return "ophim";
-                if (v === SOURCES.NGUONC) return "nguonc";
-                return "kkphim";
+                if (!v) return "source_k"; // default to source_k
+                if (v === SOURCES.SOURCE_K) return "source_k";
+                if (v === SOURCES.SOURCE_O) return "source_o";
+                if (v === SOURCES.SOURCE_C) return "source_c";
+                return "source_k";
             } catch (e) {
-                return "kkphim";
+                return "source_k";
             }
         }
 
@@ -1344,8 +1405,8 @@ export default function Vods() {
             imagePath.startsWith("http://") ||
             imagePath.startsWith("https://")
         ) {
-            // Nếu source là kkphim hoặc ophim thì proxy những domain của CDN/primary
-            if (source === "kkphim" || source === "ophim") {
+            // Nếu source là source_k hoặc source_o thì proxy những domain của CDN/primary
+            if (source === "source_k" || source === "source_o") {
                 const hostname = (() => {
                     try {
                         return new URL(imagePath).hostname || "";
@@ -1360,33 +1421,33 @@ export default function Vods() {
                     hostname.indexOf("img.ophim.live") !== -1
                 ) {
                     const domain =
-                        source === "kkphim"
-                            ? CONFIG.APP_DOMAIN_KKPHIM
-                            : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
-                    if (source === "ophim") {
+                        source === "source_k"
+                            ? CONFIG.APP_DOMAIN_SOURCE_K
+                            : CONFIG.APP_DOMAIN_SOURCE_O_FRONTEND;
+                    if (source === "source_o") {
                         return `${domain}/_next/image?url=${encodeURIComponent(imagePath)}&w=1080&q=75`;
                     } else {
                         return `${domain}/image.php?url=${encodeURIComponent(imagePath)}`;
                     }
                 }
 
-                // Domain khác (ví dụ nguonc) — vẫn trả nguyên URL
+                // Domain khác (ví dụ source_c) — vẫn trả nguyên URL
                 return imagePath;
             }
 
-            // Nếu không phải kkphim hoặc ophim: giữ nguyên URL gốc
+            // Nếu không phải source_k hoặc source_o: giữ nguyên URL gốc
             return imagePath;
         }
 
         // Nếu là đường dẫn relative hoặc chỉ filename => gán CDN chính
-        const cdnUrl = `${source === "kkphim" ? CONFIG.APP_DOMAIN_KKPHIM_CDN_IMAGE : CONFIG.APP_DOMAIN_OPHIM_CDN_IMAGE}/${imagePath}`;
-        if (source === "kkphim" || source === "ophim") {
-            // Proxy khi source là kkphim hoặc ophim
+        const cdnUrl = `${source === "source_k" ? CONFIG.APP_DOMAIN_SOURCE_K_CDN_IMAGE : CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE}/${imagePath}`;
+        if (source === "source_k" || source === "source_o") {
+            // Proxy khi source là source_k hoặc source_o
             const domain =
-                source === "kkphim"
-                    ? CONFIG.APP_DOMAIN_KKPHIM
-                    : CONFIG.APP_DOMAIN_OPHIM_FRONTEND;
-            if (source === "ophim") {
+                source === "source_k"
+                    ? CONFIG.APP_DOMAIN_SOURCE_K
+                    : CONFIG.APP_DOMAIN_SOURCE_O_FRONTEND;
+            if (source === "source_o") {
                 return `${domain}/_next/image?url=${encodeURIComponent(cdnUrl)}&w=1080&q=75`;
             } else {
                 return `${domain}/image.php?url=${encodeURIComponent(cdnUrl)}`;
@@ -1522,7 +1583,7 @@ export default function Vods() {
 
     async function fetchCountries() {
         try {
-            const res = await fetch(`${CONFIG.APP_DOMAIN_KKPHIM}/quoc-gia`);
+            const res = await fetch(`${CONFIG.APP_DOMAIN_SOURCE_K}/quoc-gia`);
             const data = await res.json();
             // sort countries by localized name (if available)
             const sorted = (data || [])
@@ -1605,15 +1666,17 @@ export default function Vods() {
                                             type="button"
                                             role="tab"
                                             aria-selected={isActive}
-                                            tabIndex={isActive ? 0 : -1} // Chỉ tab active mới nhận focus (tuỳ logic điều hướng)
+                                            aria-label={tab.label}
+                                            title={tab.label}
+                                            tabIndex={isActive ? 0 : -1}
                                             onClick={() => setSource(tab.id)}
-                                            className={`relative z-10 flex-1 cursor-pointer rounded-full px-2 py-1 text-xs font-semibold transition-colors duration-200 md:px-3 md:text-sm ${
+                                            className={`relative z-10 flex flex-1 cursor-pointer items-center justify-center rounded-full p-2 transition-colors duration-200 ${
                                                 isActive
                                                     ? "text-gray-900"
-                                                    : "text-gray-600 hover:text-gray-800"
+                                                    : "text-gray-500 hover:text-gray-700"
                                             }`}
                                         >
-                                            {tab.label}
+                                            {tab.icon}
                                         </button>
                                     );
                                 })}
@@ -2606,11 +2669,16 @@ export default function Vods() {
                                                 {movie.name}
                                             </h3>
                                             <div className="flex justify-between">
+                                                {movie.episode_current?.toLowerCase() === "trailer" ? (
+                                                    <span className="mt-2 text-xs font-medium text-red-500">
+                                                        {movie.episode_current}
+                                                    </span>
+                                                ) : (
+                                                    <span className="mt-2 text-xs text-gray-500">
+                                                        {movie.episode_current || "N/A"}
+                                                    </span>
+                                                )}
                                                 <span className="mt-2 text-xs text-gray-500">
-                                                    {movie.episode_current ||
-                                                        "N/A"}
-                                                </span>
-                                                <span className="mt-2 text-xs  text-gray-500">
                                                     {movie.year}
                                                 </span>
                                             </div>
