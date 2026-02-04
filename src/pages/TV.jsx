@@ -223,6 +223,127 @@ const fetchChannels = async () => {
     return groupsArray;
 };
 
+// Component ChannelScroller với nút scroll ẩn/hiện khi cần
+function ChannelScroller({ channels, selectedChannel, onSelectChannel }) {
+    const scrollRef = useRef(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
+
+    // Kiểm tra trạng thái scroll
+    const checkScroll = () => {
+        const el = scrollRef.current;
+        if (!el) return;
+        setCanScrollLeft(el.scrollLeft > 0);
+        setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+    };
+
+    useEffect(() => {
+        checkScroll();
+        const el = scrollRef.current;
+        if (el) {
+            el.addEventListener("scroll", checkScroll);
+            window.addEventListener("resize", checkScroll);
+        }
+        return () => {
+            if (el) el.removeEventListener("scroll", checkScroll);
+            window.removeEventListener("resize", checkScroll);
+        };
+    }, [channels]);
+
+    const scrollLeft = () => {
+        scrollRef.current?.scrollBy({ left: -300, behavior: "smooth" });
+    };
+
+    const scrollRight = () => {
+        scrollRef.current?.scrollBy({ left: 300, behavior: "smooth" });
+    };
+
+    return (
+        <div className="relative">
+            {/* Nút scroll trái - ẩn khi đã scroll hết */}
+            {canScrollLeft && (
+                <button
+                    onClick={scrollLeft}
+                    className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-zinc-800/90 p-2 text-white/80 shadow-lg backdrop-blur-sm transition-all hover:bg-zinc-700 hover:text-white"
+                >
+                    <svg
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15 19l-7-7 7-7"
+                        />
+                    </svg>
+                </button>
+            )}
+
+            <div
+                ref={scrollRef}
+                className="custom-scrollbar horizontal mx-8 overflow-x-auto py-2"
+            >
+                <div className="flex gap-3 px-1">
+                    {channels.map((channel) => (
+                        <button
+                            key={channel.id}
+                            onClick={() => onSelectChannel(channel)}
+                            className={
+                                "bg-white/6 border-white/8 flex w-36 shrink-0 transform-gpu cursor-pointer flex-col items-center text-balance rounded-lg border p-3 text-center transition-transform duration-150 hover:scale-105" +
+                                (selectedChannel?.id === channel.id
+                                    ? " ring-2 ring-cyan-400/30"
+                                    : "")
+                            }
+                        >
+                            {channel.logo ? (
+                                <img
+                                    src={channel.logo}
+                                    alt={channel.name}
+                                    className="mb-2 h-12 w-12 object-contain"
+                                    loading="lazy"
+                                />
+                            ) : (
+                                <div className="mb-2 h-12 w-12 rounded-full bg-zinc-600/40"></div>
+                            )}
+                            <div
+                                className="line-clamp-3 text-balance text-xs text-white"
+                                title={channel.name}
+                            >
+                                {channel.name}
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Nút scroll phải - ẩn khi đã scroll hết */}
+            {canScrollRight && (
+                <button
+                    onClick={scrollRight}
+                    className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-zinc-800/90 p-2 text-white/80 shadow-lg backdrop-blur-sm transition-all hover:bg-zinc-700 hover:text-white"
+                >
+                    <svg
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                    >
+                        <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 5l7 7-7 7"
+                        />
+                    </svg>
+                </button>
+            )}
+        </div>
+    );
+}
+
 export default function TV() {
     // Simple toast helper (DOM-based) using Tailwind classes (no inline CSS)
     const showToast = (message, opts = {}) => {
@@ -249,7 +370,7 @@ export default function TV() {
             const hidden = "opacity-0 -translate-y-1";
             const visible = "opacity-100 translate-y-0";
 
-            let colorClass = "bg-gradient-to-r from-cyan-400 to-blue-500";
+            let colorClass = "bg-cyan-500";
             if (type === "error")
                 colorClass = "bg-gradient-to-r from-red-500 to-pink-500";
             else if (type === "warn")
@@ -299,14 +420,60 @@ export default function TV() {
     const [scheduleLoading, setScheduleLoading] = useState(false);
     const [scheduleError, setScheduleError] = useState(null);
     const [expandedGroups, setExpandedGroups] = useState(new Set()); // Track các group đang mở
+    const [epgChannels, setEpgChannels] = useState(new Map()); // Map tvgId -> channel info từ EPG API
     // Refs for video element and JWPlayer instance
     const videoRef = useRef(null);
     const playerRef = useRef(null);
     const scheduleContainerRef = useRef(null);
     const currentChannelRef = useRef(null); // Track channel đang phát để tránh duplicate init
     const hasLoadedChannelsRef = useRef(false); // Track đã load channels chưa để tránh duplicate fetch
+    const hasLoadedEpgChannelsRef = useRef(false); // Track đã load EPG channels chưa
+    const scheduleCacheRef = useRef(new Map()); // Cache schedule theo channelId, tránh spam API
     const errorCountRef = useRef(0); // Track số lần lỗi liên tiếp
     const triedSourcesRef = useRef(new Set()); // Track các source đã thử
+
+    // --- LOAD EPG SUPPORTED CHANNELS ON MOUNT ---
+    useEffect(() => {
+        const loadEpgChannels = async () => {
+            if (hasLoadedEpgChannelsRef.current) return;
+            hasLoadedEpgChannelsRef.current = true;
+
+            try {
+                const epgBaseUrl =
+                    import.meta.env.VITE_EPG_API_URL ||
+                    "https://vnepg.site/api/schedule";
+                // Lấy base URL từ schedule API (bỏ phần /schedule)
+                const channelsUrl = epgBaseUrl.replace(
+                    "/schedule",
+                    "/channels",
+                );
+
+                const resp = await fetch(channelsUrl, {
+                    signal: AbortSignal.timeout(10000),
+                });
+                if (!resp.ok) {
+                    console.warn("Failed to fetch EPG channels list");
+                    return;
+                }
+                const json = await resp.json();
+                const channels = json.channels || [];
+
+                // Tạo Map để lookup nhanh theo id
+                const channelMap = new Map();
+                channels.forEach((ch) => {
+                    if (ch.id && ch.hasEpg) {
+                        channelMap.set(ch.id.toLowerCase(), ch);
+                    }
+                });
+                setEpgChannels(channelMap);
+                console.log(`Loaded ${channelMap.size} EPG-supported channels`);
+            } catch (e) {
+                console.warn("Error loading EPG channels:", e.message);
+            }
+        };
+
+        loadEpgChannels();
+    }, []);
 
     // --- LOAD CHANNELS ON MOUNT ---
     useEffect(() => {
@@ -640,66 +807,81 @@ export default function TV() {
         return () => clearInterval(id);
     }, [schedule]);
 
-    // Fetch EPG schedule for selected channel via API
+    // Fetch EPG schedule for selected channel via API (có cache 5 phút)
     useEffect(() => {
+        const CACHE_TTL = 5 * 60 * 1000; // 5 phút
+
         const fetchSchedule = async (channel) => {
             setSchedule([]);
             setScheduleError(null);
             if (!channel) return;
+
+            const channelId = channel.tvgId || channel.tvg_id || channel.id;
+            if (!channelId) {
+                setScheduleError("Kênh không có tvg-id");
+                return;
+            }
+
+            // Kiểm tra xem channel có được hỗ trợ EPG không
+            const normalizedId = String(channelId).toLowerCase();
+            const epgInfo = epgChannels.get(normalizedId);
+
+            if (!epgInfo) {
+                // Không có trong danh sách EPG - không gọi API
+                setScheduleError("Không có lịch phát sóng");
+                return;
+            }
+
+            // Kiểm tra cache trước khi fetch
+            const cached = scheduleCacheRef.current.get(normalizedId);
+            if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+                // Dùng cache nếu còn hạn
+                setSchedule(cached.data);
+                if (cached.updatedAt) setLastUpdated(cached.updatedAt);
+                return;
+            }
+
             setScheduleLoading(true);
             try {
-                const channelId = channel.tvgId || channel.tvg_id || channel.id;
-                if (!channelId) throw new Error("Không có tvg-id cho kênh");
-
                 // Fetch schedule từ EPG API (lấy từ env)
-                const epgBaseUrl = import.meta.env.VITE_EPG_API_URL;
-                const endpoints = [
-                    `${epgBaseUrl}/${encodeURIComponent(channelId)}`,
-                ];
+                const epgBaseUrl =
+                    import.meta.env.VITE_EPG_API_URL ||
+                    "https://vnepg.site/api/schedule";
+                const endpoint = `${epgBaseUrl}/${encodeURIComponent(channelId)}`;
 
-                let data = null;
-                for (const ep of endpoints) {
-                    try {
-                        const resp = await fetch(ep, {
-                            signal: AbortSignal.timeout(7000),
-                        });
-                        if (!resp.ok) continue;
-                        const json = await resp.json();
-                        data = json;
-                        // If this was from vnepg, capture updatedAt if present
-                        try {
-                            if (ep.includes("vnepg.site") && json) {
-                                const candidate =
-                                    json.updatedAt ||
-                                    json.updated_at ||
-                                    json.updated ||
-                                    null;
-                                if (candidate) setLastUpdated(candidate);
-                            } else if (json && json.updatedAt) {
-                                // some providers include updatedAt at top level
-                                setLastUpdated(json.updatedAt);
-                            }
-                        } catch (e) {
-                            // ignore
-                        }
-                        if (data) break;
-                    } catch (e) {
-                        console.warn(
-                            "Failed to fetch schedule endpoint (continuing). JWPlayer init error or schedule fetch error:",
-                            e,
-                        );
-                        // Note: previously attempted to call initHls(...) here as a fallback; removed.
-                    }
+                const resp = await fetch(endpoint, {
+                    signal: AbortSignal.timeout(7000),
+                });
+
+                if (!resp.ok) {
+                    throw new Error(`HTTP ${resp.status}`);
                 }
 
-                if (!data) throw new Error("Không thể tải lịch phát sóng");
+                const json = await resp.json();
 
-                const list = Array.isArray(data)
-                    ? data
-                    : data.schedule || data.items || [];
+                // Capture updatedAt nếu có
+                const updatedAt =
+                    json.updatedAt ||
+                    json.updated_at ||
+                    json.updated ||
+                    (epgInfo ? epgInfo.updatedAt : null);
+                if (updatedAt) setLastUpdated(updatedAt);
+
+                const list = Array.isArray(json)
+                    ? json
+                    : json.schedule || json.items || [];
+
+                // Lưu vào cache
+                scheduleCacheRef.current.set(normalizedId, {
+                    data: list,
+                    updatedAt: updatedAt,
+                    timestamp: Date.now(),
+                });
+
                 setSchedule(list);
             } catch (e) {
-                setScheduleError(e.message);
+                console.warn("Failed to fetch schedule:", e.message);
+                setScheduleError("Không thể tải lịch phát sóng");
             } finally {
                 setScheduleLoading(false);
             }
@@ -710,7 +892,7 @@ export default function TV() {
         } else {
             setSchedule([]);
         }
-    }, [selectedChannel]);
+    }, [selectedChannel, epgChannels]);
 
     // Inject custom modern scrollbar styles and ensure player controls receive pointer events
     useEffect(() => {
@@ -719,10 +901,10 @@ export default function TV() {
             const s = document.createElement("style");
             s.id = styleId;
             s.innerHTML = `
-                /* Modern rounded gradient scrollbar */
+                /* Modern rounded scrollbar */
                 .custom-scrollbar {
                     scrollbar-width: thin;
-                    scrollbar-color: rgba(59,130,246,0.9) rgba(255,255,255,0.03);
+                    scrollbar-color: rgba(6,182,212,0.9) rgba(255,255,255,0.03);
                 }
                 .custom-scrollbar::-webkit-scrollbar { width: 10px; height: 10px; }
                 .custom-scrollbar::-webkit-scrollbar-track {
@@ -730,7 +912,7 @@ export default function TV() {
                     border-radius: 9999px;
                 }
                 .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: linear-gradient(180deg, #06b6d4 0%, #3b82f6 100%);
+                    background: #06b6d4;
                     border-radius: 9999px;
                     border: 2px solid rgba(0,0,0,0.12);
                     box-shadow: inset 0 0 6px rgba(0,0,0,0.12);
@@ -880,6 +1062,34 @@ export default function TV() {
         setSelectedChannel(channel);
     };
 
+    // Helper: lấy danh sách tất cả channels (flatten từ groups)
+    const getAllChannels = () => {
+        return groups.flatMap((g) => g.channels);
+    };
+
+    // Chuyển kênh trước/sau
+    const handlePrevChannel = () => {
+        const allChannels = getAllChannels();
+        if (!selectedChannel || allChannels.length === 0) return;
+        const currentIndex = allChannels.findIndex(
+            (c) => c.id === selectedChannel.id,
+        );
+        const prevIndex =
+            currentIndex <= 0 ? allChannels.length - 1 : currentIndex - 1;
+        setSelectedChannel(allChannels[prevIndex]);
+    };
+
+    const handleNextChannel = () => {
+        const allChannels = getAllChannels();
+        if (!selectedChannel || allChannels.length === 0) return;
+        const currentIndex = allChannels.findIndex(
+            (c) => c.id === selectedChannel.id,
+        );
+        const nextIndex =
+            currentIndex >= allChannels.length - 1 ? 0 : currentIndex + 1;
+        setSelectedChannel(allChannels[nextIndex]);
+    };
+
     const toggleGroup = (groupName) => {
         setExpandedGroups((prev) => {
             const newSet = new Set(prev);
@@ -895,8 +1105,8 @@ export default function TV() {
     if (loading) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-zinc-900 text-white">
-                <div className="text-center">
-                    <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-blue-500"></div>
+                <div className="text-balance text-center">
+                    <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-cyan-500"></div>
                     <p>Đang tải danh sách kênh...</p>
                 </div>
             </div>
@@ -906,7 +1116,7 @@ export default function TV() {
     if (error) {
         return (
             <div className="flex min-h-screen items-center justify-center bg-zinc-900 text-white">
-                <div className="text-center">
+                <div className="text-balance text-center">
                     <p className="mb-4 text-red-500">404 - Page Not Found</p>
                 </div>
             </div>
@@ -956,6 +1166,47 @@ export default function TV() {
                                             )}
                                     </div>
                                 </div>
+                                {/* Nút chuyển kênh trước/sau */}
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={handlePrevChannel}
+                                        className="rounded-full bg-white/10 p-2 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+                                        title="Kênh trước"
+                                    >
+                                        <svg
+                                            className="h-5 w-5"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M15 19l-7-7 7-7"
+                                            />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        onClick={handleNextChannel}
+                                        className="rounded-full bg-white/10 p-2 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+                                        title="Kênh sau"
+                                    >
+                                        <svg
+                                            className="h-5 w-5"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M9 5l7 7-7 7"
+                                            />
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -976,8 +1227,21 @@ export default function TV() {
                     <div className="border-white/12 custom-scrollbar flex h-full flex-col space-y-4 overflow-auto rounded-xl border lg:col-span-2">
                         <div className="bg-white/6 flex h-full flex-col p-4 shadow-sm backdrop-blur-sm">
                             <div className="flex items-center justify-between">
-                                <h3 className="text-sm font-semibold text-white/90">
-                                    📺 Lịch Phát Sóng
+                                <h3 className="flex items-center gap-2 text-sm font-semibold text-white/90">
+                                    <svg
+                                        className="h-4 w-4 text-cyan-400"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                                        />
+                                    </svg>
+                                    Lịch Phát Sóng
                                 </h3>
                                 <div className="text-xs text-white/70">
                                     {lastUpdated
@@ -996,8 +1260,8 @@ export default function TV() {
                                         <div>Đang tải lịch phát sóng...</div>
                                     </div>
                                 ) : scheduleError ? (
-                                    <div className="text-red-400">
-                                        Lỗi tải lịch: {scheduleError}
+                                    <div className="text-white/60">
+                                        {scheduleError}
                                     </div>
                                 ) : !schedule || schedule.length === 0 ? (
                                     <div>
@@ -1141,44 +1405,11 @@ export default function TV() {
                                     </div>
                                 </button>
                                 {isExpanded && (
-                                    <div className="custom-scrollbar horizontal overflow-x-auto py-2">
-                                        <div className="flex gap-3 px-1">
-                                            {group.channels.map((channel) => (
-                                                <button
-                                                    key={channel.id}
-                                                    onClick={() =>
-                                                        handleSelectChannel(
-                                                            channel,
-                                                        )
-                                                    }
-                                                    className={
-                                                        "bg-white/6 border-white/8 flex w-36 shrink-0 transform-gpu cursor-pointer flex-col items-center rounded-lg border p-3 text-center transition-transform duration-150 hover:scale-105" +
-                                                        (selectedChannel?.id ===
-                                                        channel.id
-                                                            ? " ring-2 ring-cyan-400/30"
-                                                            : "")
-                                                    }
-                                                >
-                                                    {channel.logo ? (
-                                                        <img
-                                                            src={channel.logo}
-                                                            alt={channel.name}
-                                                            className="mb-2 h-12 w-12 object-contain"
-                                                            loading="lazy"
-                                                        />
-                                                    ) : (
-                                                        <div className="mb-2 h-12 w-12 rounded-full bg-zinc-600/40"></div>
-                                                    )}
-                                                    <div
-                                                        className="line-clamp-3 text-xs text-white"
-                                                        title={channel.name}
-                                                    >
-                                                        {channel.name}
-                                                    </div>
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
+                                    <ChannelScroller
+                                        channels={group.channels}
+                                        selectedChannel={selectedChannel}
+                                        onSelectChannel={handleSelectChannel}
+                                    />
                                 )}
                             </div>
                         );
