@@ -339,6 +339,117 @@ export default function TV() {
         loadChannels();
     }, []);
 
+    // Ref để lưu danh sách sources đã filter cho channel hiện tại
+    const currentSourcesRef = useRef([]);
+    const currentSourceIndexRef = useRef(0);
+
+    // Hàm helper để setup player với source cụ thể
+    const setupPlayerWithSource = (sourceIndex) => {
+        const sources = currentSourcesRef.current;
+        if (sourceIndex >= sources.length) {
+            // Đã thử hết tất cả sources
+            showToast(
+                `Không thể phát kênh ${selectedChannel.name}. Đã thử ${sources.length} nguồn nhưng tất cả đều lỗi.`,
+                { type: "error", duration: 8000 },
+            );
+            return;
+        }
+
+        const source = sources[sourceIndex];
+        currentSourceIndexRef.current = sourceIndex;
+        triedSourcesRef.current.add(sourceIndex);
+
+        // Destroy old player
+        if (playerRef.current) {
+            try {
+                playerRef.current.remove();
+                playerRef.current = null;
+            } catch (e) {
+                console.warn("Error removing old player:", e);
+            }
+        }
+
+        const playerDiv = document.getElementById("tv-player");
+        if (!playerDiv) return;
+        playerDiv.innerHTML = "";
+
+        const playlistItem = {
+            title: selectedChannel.name,
+            file: source.file,
+            type: source.file.includes(".mpd") ? "dash" : "hls",
+        };
+
+        const playerConfig = {
+            playlist: [playlistItem],
+            width: "100%",
+            aspectratio: "16:9",
+            controls: true,
+            autostart: true,
+            mute: false,
+            playsinline: true,
+            primary: "html5",
+        };
+
+        const player = window.jwplayer("tv-player").setup(playerConfig);
+        playerRef.current = player;
+
+        player.on("ready", () => {
+            try {
+                addCustomControls(player);
+                if (sourceIndex > 0) {
+                    showToast(
+                        `Đang phát từ nguồn ${sourceIndex + 1}/${sources.length}: ${source.label}`,
+                        { type: "info", duration: 3000 },
+                    );
+                }
+            } catch (e) {
+                console.warn("Error adding custom controls:", e);
+            }
+        });
+
+        player.on("setupError", (err) => {
+            console.error(
+                `JWPlayer setup error (source ${sourceIndex + 1}):`,
+                err,
+            );
+            // Thử source tiếp theo
+            const nextIndex = sourceIndex + 1;
+            if (nextIndex < sources.length) {
+                showToast(
+                    `Nguồn ${sourceIndex + 1} lỗi, đang thử nguồn ${nextIndex + 1}...`,
+                    { type: "warn", duration: 2000 },
+                );
+                setTimeout(() => setupPlayerWithSource(nextIndex), 500);
+            } else {
+                showToast(
+                    `Không thể phát kênh ${selectedChannel.name}. Đã thử ${sources.length} nguồn.`,
+                    { type: "error", duration: 8000 },
+                );
+            }
+        });
+
+        player.on("error", (err) => {
+            console.error(
+                `JWPlayer playback error (source ${sourceIndex + 1}):`,
+                err,
+            );
+            // Thử source tiếp theo
+            const nextIndex = sourceIndex + 1;
+            if (nextIndex < sources.length) {
+                showToast(
+                    `Nguồn ${sourceIndex + 1} lỗi, đang thử nguồn ${nextIndex + 1}...`,
+                    { type: "warn", duration: 2000 },
+                );
+                setTimeout(() => setupPlayerWithSource(nextIndex), 500);
+            } else {
+                showToast(
+                    `Không thể phát kênh ${selectedChannel.name}. Đã thử ${sources.length} nguồn.`,
+                    { type: "error", duration: 8000 },
+                );
+            }
+        });
+    };
+
     // --- LOAD CHANNEL KHI selectedChannel THAY ĐỔI ---
     useEffect(() => {
         const loadChannel = async () => {
@@ -357,9 +468,10 @@ export default function TV() {
             // Reset error tracking khi chuyển kênh mới
             errorCountRef.current = 0;
             triedSourcesRef.current = new Set();
+            currentSourceIndexRef.current = 0;
 
             try {
-                // Destroy old player instance completely (như VodPlay.jsx)
+                // Destroy old player instance
                 if (playerRef.current) {
                     try {
                         playerRef.current.remove();
@@ -378,12 +490,7 @@ export default function TV() {
                 // Clear container
                 playerDiv.innerHTML = "";
 
-                // Xây dựng playlist item với multiple sources cho JWPlayer
-                let playlistItem = {
-                    title: selectedChannel.name,
-                };
-
-                // Nếu có configSources, build sources array
+                // Nếu có configSources, build sources array và dùng logic retry
                 if (
                     selectedChannel.configSources &&
                     selectedChannel.configSources.length > 0
@@ -427,148 +534,25 @@ export default function TV() {
                         return getQuality(b.label) - getQuality(a.label);
                     });
 
-                    // Build JWPlayer sources
-                    const sources = [];
-                    for (const sourceConfig of filteredSources) {
-                        sources.push({
-                            file: sourceConfig.file,
-                            label: sourceConfig.label || "Default",
-                            type: sourceConfig.file.includes(".mpd")
-                                ? "dash"
-                                : "hls",
-                        });
-                    }
-
-                    // Set default cho source đầu tiên
-                    if (sources.length > 0) {
-                        sources[0].default = true;
-                    }
-
-                    if (sources.length === 0) {
+                    if (filteredSources.length === 0) {
                         throw new Error(
                             "Tất cả nguồn đều là FLV (Flash Video) - không được hỗ trợ",
                         );
                     }
 
-                    playlistItem.sources = sources;
-
-                    // Thêm DRM config nếu source đầu tiên có
-                    const firstSource = selectedChannel.configSources[0];
-                    if (firstSource?.drm?.clearkey) {
-                        const clearkey = firstSource.drm.clearkey;
-                        playlistItem.drm = {
-                            clearkey: {
-                                key: clearkey.key,
-                                keyId: clearkey.keyId,
-                            },
-                        };
-                    }
+                    // Lưu danh sách sources và bắt đầu với source đầu tiên
+                    currentSourcesRef.current = filteredSources;
+                    setupPlayerWithSource(0);
                 } else {
-                    // Fallback: single source
-                    playlistItem.file = selectedChannel.url;
-                    playlistItem.type = selectedChannel.url.includes(".m3u8")
-                        ? "hls"
-                        : "dash";
+                    // Fallback: single source - setup trực tiếp
+                    currentSourcesRef.current = [
+                        {
+                            file: selectedChannel.url,
+                            label: "Default",
+                        },
+                    ];
+                    setupPlayerWithSource(0);
                 }
-
-                // Setup JWPlayer config
-                const playerConfig = {
-                    playlist: [playlistItem],
-                    width: "100%",
-                    aspectratio: "16:9",
-                    controls: true,
-                    autostart: true,
-                    mute: false,
-                    playsinline: true,
-                    primary: "html5",
-                };
-
-                const player = window.jwplayer("tv-player").setup(playerConfig);
-
-                // Lưu player reference
-                playerRef.current = player;
-
-                // Add custom controls sau khi ready
-                player.on("ready", () => {
-                    try {
-                        addCustomControls(player);
-
-                        // Scroll player vào view
-                        const playerDiv = document.getElementById("tv-player");
-                        if (playerDiv) {
-                            playerDiv.scrollIntoView({
-                                behavior: "smooth",
-                                block: "start",
-                            });
-                        }
-                    } catch (e) {
-                        console.warn("Error adding custom controls:", e);
-                    }
-                });
-
-                // Error handling
-                player.on("setupError", (err) => {
-                    console.error("JWPlayer setup error:", err);
-                    showToast(`Lỗi setup player: ${err.message}`, {
-                        type: "error",
-                    });
-                });
-
-                player.on("error", (err) => {
-                    console.error("JWPlayer playback error:", err);
-
-                    errorCountRef.current += 1;
-
-                    // Nếu có nhiều sources, thử switch sang source khác
-                    if (
-                        selectedChannel.configSources &&
-                        selectedChannel.configSources.length > 1
-                    ) {
-                        const currentQuality = player.getCurrentQuality();
-                        const qualities = player.getQualityLevels();
-
-                        // Đánh dấu source hiện tại đã thử
-                        triedSourcesRef.current.add(currentQuality);
-
-                        // Tìm source tiếp theo chưa thử
-                        const nextQualityIndex = qualities.findIndex(
-                            (q, idx) =>
-                                idx !== currentQuality &&
-                                !triedSourcesRef.current.has(idx),
-                        );
-
-                        if (nextQualityIndex !== -1) {
-                            showToast(
-                                `Tự động chuyển sang: ${qualities[nextQualityIndex].label}`,
-                                { type: "warn", duration: 2000 },
-                            );
-
-                            // Switch sang source khác
-                            setTimeout(() => {
-                                try {
-                                    player.setCurrentQuality(nextQualityIndex);
-                                } catch (e) {
-                                    console.error(
-                                        "Failed to switch quality:",
-                                        e,
-                                    );
-                                }
-                            }, 500);
-                        } else {
-                            // Đã thử hết tất cả sources
-                            showToast(
-                                `Không thể phát kênh ${selectedChannel.name}. Đã thử ${qualities.length} nguồn nhưng tất cả đều lỗi.`,
-                                { type: "error", duration: 8000 },
-                            );
-                        }
-                    } else {
-                        // Single source, báo lỗi luôn
-                        showToast(
-                            `Lỗi phát: ${err.message || "Không rõ nguyên nhân"}`,
-                            { type: "error", duration: 8000 },
-                        );
-                    }
-                });
             } catch (error) {
                 console.error("Failed to setup JWPlayer:", error);
                 showToast(
@@ -668,7 +652,7 @@ export default function TV() {
                 if (!channelId) throw new Error("Không có tvg-id cho kênh");
 
                 // Fetch schedule từ EPG API (lấy từ env)
-                const epgBaseUrl = import.meta.env.VITE_EPG_API_URL || "https://vnepg.site/api/schedule";
+                const epgBaseUrl = import.meta.env.VITE_EPG_API_URL;
                 const endpoints = [
                     `${epgBaseUrl}/${encodeURIComponent(channelId)}`,
                 ];
