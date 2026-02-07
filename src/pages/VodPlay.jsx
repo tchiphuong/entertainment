@@ -8,7 +8,10 @@ import React, {
 import { useNavigate, useParams } from "react-router-dom";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { useAuth } from "../contexts/AuthContext";
-import { addHistoryToFirestore } from "../services/firebaseHelpers";
+import {
+    addHistoryToFirestore,
+    fetchHistoryFromFirestore,
+} from "../services/firebaseHelpers";
 // Dynamic import HLS.js khi cần
 let Hls = null;
 
@@ -313,6 +316,8 @@ export default function VodPlay() {
     const currentUrlRef = useRef(null); // Track URL hiện tại đang play để tránh duplicate init
     const hasInitializedRef = useRef(false); // Track xem đã initialize player hay chưa
     const isFetchingRef = useRef(false); // Prevent concurrent duplicate fetches
+    const lastFirestoreSyncRef = useRef(0); // Track thời điểm sync Firestore cuối cùng (throttle 30s)
+    const positionRestoredRef = useRef(null); // Track episode đã restore position (tránh restore lại)
     const [movie, setMovie] = useState(null);
     const [episodes, setEpisodes] = useState([]);
     const [activeEpisode, setActiveEpisode] = useState(null);
@@ -350,6 +355,29 @@ export default function VodPlay() {
     }, [episodes]);
 
     // Interceptors đã setup từ đầu file
+
+    // Sync history từ Firestore khi user đăng nhập
+    useEffect(() => {
+        if (currentUser) {
+            const loadFirestoreHistory = async () => {
+                try {
+                    const firestoreHistory = await fetchHistoryFromFirestore(
+                        currentUser.uid,
+                    );
+                    if (firestoreHistory && firestoreHistory.length > 0) {
+                        // Merge với localStorage history (ưu tiên Firestore)
+                        setViewHistory(firestoreHistory);
+                    }
+                } catch (error) {
+                    console.warn(
+                        "Failed to fetch history from Firestore:",
+                        error,
+                    );
+                }
+            };
+            loadFirestoreHistory();
+        }
+    }, [currentUser]);
 
     useEffect(() => {
         // Set tiêu đề mặc định khi load
@@ -423,7 +451,7 @@ export default function VodPlay() {
                 }
             }
         }
-    }, [movie, episodes, tmdbVideos]);
+    }, [movie, episodes, tmdbVideos, viewHistory]); // Thêm viewHistory để re-init khi history sync từ Firestore
 
     // Check for trailer when TMDB videos load
     useEffect(() => {
@@ -467,6 +495,31 @@ export default function VodPlay() {
             }
         }
     }, [tmdbVideos, movie, episodes]);
+
+    // Restore position khi viewHistory thay đổi (sau khi sync từ Firestore) và player đã ready
+    useEffect(() => {
+        // Chỉ restore nếu có player, có episode đang xem, và chưa restore cho episode này
+        if (!playerRef.current || !currentEpisodeId) return;
+        if (positionRestoredRef.current === currentEpisodeId) return;
+
+        const lastPosition = getLastWatchedPosition(currentEpisodeId);
+        if (lastPosition > 0) {
+            // Đánh dấu đã restore position cho episode này
+            positionRestoredRef.current = currentEpisodeId;
+
+            // Seek đến position đã lưu
+            const player = playerRef.current.player;
+            if (player) {
+                if (typeof player.seek === "function") {
+                    // JWPlayer
+                    player.seek(lastPosition);
+                } else if (typeof player.currentTime !== "undefined") {
+                    // HTML5 video
+                    player.currentTime = lastPosition;
+                }
+            }
+        }
+    }, [viewHistory, currentEpisodeId]);
 
     // Xử lý phím ESC để đóng modal
     useEffect(() => {
@@ -869,9 +922,7 @@ export default function VodPlay() {
                     initializeFromUrl(data.episodes);
                 }
             } else {
-                setErrorMessage(
-                    "Failed to load movie details from source_c.",
-                );
+                setErrorMessage("Failed to load movie details from source_c.");
             }
         } catch (err) {
             console.error("Error fetching source_c movie details:", err);
@@ -925,9 +976,7 @@ export default function VodPlay() {
                     fetchTmdbImages(data.movie.tmdb.id);
                 }
             } else {
-                setErrorMessage(
-                    "Failed to load movie details from source_o.",
-                );
+                setErrorMessage("Failed to load movie details from source_o.");
             }
         } catch (err) {
             console.error("Error fetching source_o movie details:", err);
@@ -952,7 +1001,11 @@ export default function VodPlay() {
         setActiveEpisode(null); // Reset active episode
         setCurrentEpisodeId(null); // Reset current episode ID
         try {
-            const sources = [SOURCES.SOURCE_O, SOURCES.SOURCE_K, SOURCES.SOURCE_C];
+            const sources = [
+                SOURCES.SOURCE_O,
+                SOURCES.SOURCE_K,
+                SOURCES.SOURCE_C,
+            ];
             const results = await Promise.allSettled(
                 sources.map(async (src) => {
                     try {
@@ -1187,18 +1240,20 @@ export default function VodPlay() {
                     (episode) =>
                         episode.server_name === serverName ||
                         episode.server_name.endsWith(` - ${serverName}`) ||
-                        episode.server_data?.some(
-                            (server) =>
-                                Number(getEpisodeKey(server.slug)) ===
-                                Number(episodeNum),
+                        episode.server_data?.some((server) =>
+                            compareEpisodeKeys(
+                                getEpisodeKey(server.slug),
+                                episodeNum,
+                            ),
                         ),
                 );
 
                 if (targetEpisode) {
-                    targetServer = targetEpisode.server_data.find(
-                        (server) =>
-                            Number(getEpisodeKey(server.slug)) ===
-                            Number(episodeNum),
+                    targetServer = targetEpisode.server_data.find((server) =>
+                        compareEpisodeKeys(
+                            getEpisodeKey(server.slug),
+                            episodeNum,
+                        ),
                     );
                 }
             }
@@ -1210,9 +1265,14 @@ export default function VodPlay() {
                     episode.server_data?.some((server) => {
                         const serverEpisodeKey = getEpisodeKey(server.slug);
                         return (
-                            Number(serverEpisodeKey) === Number(episodeParam) ||
-                            Number(serverEpisodeKey) ===
-                                Number(episodeParam.replace(/^0+/, "")) || // "01" → "1"
+                            compareEpisodeKeys(
+                                serverEpisodeKey,
+                                episodeParam,
+                            ) ||
+                            compareEpisodeKeys(
+                                serverEpisodeKey,
+                                episodeParam.replace(/^0+/, ""),
+                            ) || // "01" → "1"
                             server.slug.includes(`tap-${episodeParam}`) ||
                             server.slug.includes(`episode-${episodeParam}`)
                         );
@@ -1280,13 +1340,16 @@ export default function VodPlay() {
             (item) => item.slug === cleanSlug,
         );
 
-        if (historyItem?.current_episode?.key && episodesList.length > 0) {
+        if (
+            historyItem?.current_episode?.key !== undefined &&
+            episodesList.length > 0
+        ) {
             // Tìm episode có chứa tập đang xem
             const episodeKey = historyItem.current_episode.key;
             const matchingEpisode = episodesList.find((episode) =>
                 episode.server_data?.some((server) => {
                     const serverKey = getEpisodeKey(server.slug);
-                    return Number(serverKey) === Number(episodeKey);
+                    return compareEpisodeKeys(serverKey, episodeKey);
                 }),
             );
 
@@ -1315,7 +1378,7 @@ export default function VodPlay() {
                         (server) => {
                             if (!server) return false;
                             const serverKey = getEpisodeKey(server.slug);
-                            return Number(serverKey) === Number(episodeKey);
+                            return compareEpisodeKeys(serverKey, episodeKey);
                         },
                     );
                 }
@@ -1389,6 +1452,13 @@ export default function VodPlay() {
         return s;
     }
 
+    // Helper function: So sánh 2 key episode (hỗ trợ cả string và number)
+    function compareEpisodeKeys(key1, key2) {
+        const normalized1 = normalizeKey(key1);
+        const normalized2 = normalizeKey(key2);
+        return normalized1 === normalized2;
+    }
+
     // Helper function: Extract server type từ server name (vd: "#Hà Nội (Vietsub)" → "Vietsub")
     function extractServerType(serverName) {
         if (!serverName) return "";
@@ -1441,12 +1511,19 @@ export default function VodPlay() {
     // Helper function: Lấy position đã xem của episode từ lịch sử
     function getLastWatchedPosition(episodeSlug) {
         // Tìm movieData trong history bằng slug hiện tại
-        const movieData = viewHistory.find((item) => item.slug === slug);
-        if (!movieData || !movieData.episodes) return 0;
-        const episodeKey = getEpisodeKey(episodeSlug);
-        const episodeData = movieData.episodes.find(
-            (ep) => ep.key === episodeKey,
+        const cleanSlug = slug.split("?")[0];
+        const movieData = viewHistory.find((item) => item.slug === cleanSlug);
+
+        if (!movieData || !movieData.episodes) {
+            return 0;
+        }
+
+        const episodeKey = normalizeKey(getEpisodeKey(episodeSlug));
+
+        const episodeData = movieData.episodes.find((ep) =>
+            compareEpisodeKeys(ep.key, episodeKey),
         );
+
         return episodeData?.position || 0;
     }
 
@@ -1461,6 +1538,23 @@ export default function VodPlay() {
         // Lấy key tập phim (raw) rồi normalize để lưu/so sánh nhất quán
         const episodeKeyRaw = getEpisodeKey(episodeSlug);
         const episodeKey = normalizeKey(episodeKeyRaw);
+
+        // Format episode value để hiển thị đẹp (vd: "Tập 3", "full", etc.)
+        const formatEpisodeValue = () => {
+            // Ưu tiên 1: Dùng episode.name nếu có
+            if (episode?.name) return episode.name;
+            // Ưu tiên 2: Nếu key là "full" hoặc "trailer"
+            const keyStr = String(episodeKey).toLowerCase();
+            if (keyStr === "full") return "Full";
+            if (keyStr === "trailer") return "Trailer";
+            // Ưu tiên 3: Nếu key là số, format thành "Tập X"
+            if (typeof episodeKey === "number" || /^\d+$/.test(keyStr)) {
+                return `Tập ${episodeKey}`;
+            }
+            // Fallback: trả về episodeSlug
+            return episodeSlug;
+        };
+        const episodeValue = formatEpisodeValue();
 
         // Lấy lịch sử hiện tại (copy)
         let history = Array.isArray(viewHistory) ? [...viewHistory] : [];
@@ -1489,13 +1583,13 @@ export default function VodPlay() {
                 server: movieServer,
                 current_episode: {
                     key: episodeKey,
-                    value: episode?.name || episodeSlug,
+                    value: episodeValue,
                 },
                 time: new Date().toISOString(),
                 episodes: [
                     {
                         key: episodeKey,
-                        position: position || 0,
+                        position: typeof position === "number" ? position : 0,
                         timestamp: new Date().toISOString(),
                     },
                 ],
@@ -1516,15 +1610,20 @@ export default function VodPlay() {
                 if (!existing) {
                     dedupeMap.set(nk, { ...ep, key: nk });
                 } else {
-                    // Keep the entry with the latest timestamp, or with larger position
-                    const existingTime = new Date(
-                        existing.timestamp || 0,
-                    ).getTime();
-                    const epTime = new Date(ep.timestamp || 0).getTime();
-                    if (epTime > existingTime) {
+                    // Luôn giữ entry với position cao hơn
+                    const existingPos = existing.position || 0;
+                    const epPos = ep.position || 0;
+                    if (epPos > existingPos) {
                         dedupeMap.set(nk, { ...ep, key: nk });
-                    } else if ((ep.position || 0) > (existing.position || 0)) {
-                        dedupeMap.set(nk, { ...ep, key: nk });
+                    } else if (epPos === existingPos) {
+                        // Position bằng nhau, giữ timestamp mới hơn
+                        const existingTime = new Date(
+                            existing.timestamp || 0,
+                        ).getTime();
+                        const epTime = new Date(ep.timestamp || 0).getTime();
+                        if (epTime > existingTime) {
+                            dedupeMap.set(nk, { ...ep, key: nk });
+                        }
                     }
                 }
             });
@@ -1535,7 +1634,7 @@ export default function VodPlay() {
             movieData.server = movieServer;
             movieData.current_episode = {
                 key: episodeKey,
-                value: episode?.name || episodeSlug,
+                value: episodeValue,
             };
             movieData.time = new Date().toISOString();
 
@@ -1544,13 +1643,17 @@ export default function VodPlay() {
                 (ep) => normalizeKey(ep.key) === episodeKey,
             );
             if (epIndex === -1) {
+                // Tập mới, chỉ lưu position nếu có giá trị (không ghi đè 0)
                 movieData.episodes.push({
                     key: episodeKey,
-                    position: position || 0,
+                    position: typeof position === "number" ? position : 0,
                     timestamp: new Date().toISOString(),
                 });
             } else {
-                movieData.episodes[epIndex].position = position || 0;
+                // Tập đã có, chỉ update position khi có giá trị cụ thể (không phải null/undefined)
+                if (typeof position === "number") {
+                    movieData.episodes[epIndex].position = position;
+                }
                 movieData.episodes[epIndex].timestamp =
                     new Date().toISOString();
                 movieData.episodes[epIndex].key = normalizeKey(
@@ -1565,17 +1668,23 @@ export default function VodPlay() {
 
         setViewHistory(history);
 
-        // Đồng bộ với Firestore nếu user đã đăng nhập
+        // Đồng bộ với Firestore nếu user đã đăng nhập (throttle 30 giây)
         if (currentUser && history.length > 0) {
-            const latestHistoryItem = history[0]; // Lấy mục vừa thêm/cập nhật (ở đầu list)
-            addHistoryToFirestore(currentUser.uid, latestHistoryItem).catch(
-                (error) => {
-                    console.error(
-                        "Failed to sync history to Firestore:",
-                        error,
-                    );
-                },
-            );
+            const now = Date.now();
+            const THROTTLE_MS = 30000; // 30 giây
+
+            if (now - lastFirestoreSyncRef.current >= THROTTLE_MS) {
+                lastFirestoreSyncRef.current = now;
+                const latestHistoryItem = history[0]; // Lấy mục vừa thêm/cập nhật (ở đầu list)
+                addHistoryToFirestore(currentUser.uid, latestHistoryItem).catch(
+                    (error) => {
+                        console.error(
+                            "Failed to sync history to Firestore:",
+                            error,
+                        );
+                    },
+                );
+            }
         }
     };
 
@@ -1841,17 +1950,13 @@ export default function VodPlay() {
                 player.on("ready", () => {
                     setCurrentEpisodeId(episodeSlug);
 
-                    // Restore playback position (dùng episodeKey để share giữa các server)
-                    const lastWatchedList = getLastWatchedList();
-                    const movieData = lastWatchedList.find(
-                        (item) => item.movieSlug === slug,
-                    );
-
                     // Lấy position đã xem từ lịch sử mới
                     const lastPosition = getLastWatchedPosition(episodeSlug);
 
                     if (lastPosition > 0) {
                         player.seek(lastPosition);
+                        // Đánh dấu đã restore position cho episode này
+                        positionRestoredRef.current = episodeSlug;
                     }
 
                     // Thêm custom controls: nút tua trước/sau 10 giây trên desktop
@@ -2021,6 +2126,8 @@ export default function VodPlay() {
 
                     if (lastPosition > 0) {
                         video.currentTime = lastPosition;
+                        // Đánh dấu đã restore position cho episode này
+                        positionRestoredRef.current = episodeSlug;
                     }
                 });
 
@@ -2060,6 +2167,8 @@ export default function VodPlay() {
 
                     if (lastPosition > 0) {
                         video.currentTime = lastPosition;
+                        // Đánh dấu đã restore position cho episode này
+                        positionRestoredRef.current = episodeSlug;
                     }
                 });
 
@@ -2099,6 +2208,9 @@ export default function VodPlay() {
             const episodeName = server.name || "Trailer";
             document.title = `[${formatEpisodeName(episodeName)}] - ${movie.name}`;
         }
+
+        // Reset position restored ref để cho phép restore position cho episode mới
+        positionRestoredRef.current = null;
 
         // Lưu server ngay (không delay) - truyền episode để lấy server_name
         setWatchlist(server.slug, null, episode, movie);
@@ -2154,7 +2266,7 @@ export default function VodPlay() {
             if (episode.server_data) {
                 const serverIndex = episode.server_data.findIndex((server) => {
                     const serverKey = getEpisodeKey(server.slug);
-                    return Number(serverKey) === Number(currentEpisodeKey);
+                    return compareEpisodeKeys(serverKey, currentEpisodeKey);
                 });
                 if (serverIndex !== -1) {
                     currentEpisode = episode;
@@ -2279,12 +2391,12 @@ export default function VodPlay() {
 
         // 1) Try to find server in this tab that matches the desired episode key
         if (desiredEpisodeKey !== null && desiredEpisodeKey !== undefined) {
-            const numericDesired = Number(desiredEpisodeKey);
-
             // Match by slug-extracted key first
-            let matchByKey = episode.server_data?.find(
-                (server) =>
-                    Number(getEpisodeKey(server.slug)) === numericDesired,
+            let matchByKey = episode.server_data?.find((server) =>
+                compareEpisodeKeys(
+                    getEpisodeKey(server.slug),
+                    desiredEpisodeKey,
+                ),
             );
 
             // If not found, try parsing server.name (e.g. "Tập 5" or "5")
@@ -2295,7 +2407,7 @@ export default function VodPlay() {
                     const m = (name || "").toString().match(/\d+/);
                     const num = m ? parseInt(m[0], 10) : NaN;
                     if (!Number.isNaN(num)) {
-                        return num === numericDesired;
+                        return compareEpisodeKeys(num, desiredEpisodeKey);
                     }
                     return false;
                 });
@@ -2303,13 +2415,14 @@ export default function VodPlay() {
 
             // If still not found, try server.slug pattern contains 'tap-X' or 'episode-X'
             if (!matchByKey) {
+                const normalizedKey = normalizeKey(desiredEpisodeKey);
                 matchByKey = episode.server_data?.find(
                     (server) =>
                         (server.slug || "").includes(
-                            `tap-${String(numericDesired)}`,
+                            `tap-${String(normalizedKey)}`,
                         ) ||
                         (server.slug || "").includes(
-                            `episode-${String(numericDesired)}`,
+                            `episode-${String(normalizedKey)}`,
                         ),
                 );
             }

@@ -3,13 +3,77 @@ import {
     getDoc,
     setDoc,
     updateDoc,
-    arrayUnion,
     arrayRemove,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
 /**
+ * Dedupe history array theo slug, merge episodes và giữ position cao nhất
+ */
+function dedupeHistory(rawHistory) {
+    if (!Array.isArray(rawHistory)) return [];
+
+    const dedupeMap = new Map();
+    rawHistory.forEach((h) => {
+        if (!h || !h.slug) return;
+        const existing = dedupeMap.get(h.slug);
+        if (!existing) {
+            dedupeMap.set(h.slug, { ...h });
+        } else {
+            // Merge 2 entries cùng slug
+            const mergedEpisodes = new Map();
+
+            // Episodes từ entry cũ
+            (existing.episodes || []).forEach((ep) => {
+                const key = String(ep.key);
+                mergedEpisodes.set(key, ep);
+            });
+
+            // Merge episodes từ entry mới, giữ position cao hơn
+            (h.episodes || []).forEach((ep) => {
+                const key = String(ep.key);
+                const existingEp = mergedEpisodes.get(key);
+                if (!existingEp) {
+                    mergedEpisodes.set(key, ep);
+                } else {
+                    const newPos = ep.position || 0;
+                    const oldPos = existingEp.position || 0;
+                    const newTime = new Date(ep.timestamp || 0).getTime();
+                    const oldTime = new Date(
+                        existingEp.timestamp || 0,
+                    ).getTime();
+                    if (
+                        newPos > oldPos ||
+                        (newPos === oldPos && newTime > oldTime)
+                    ) {
+                        mergedEpisodes.set(key, ep);
+                    }
+                }
+            });
+
+            // Giữ entry mới hơn
+            const existingTime = new Date(existing.time || 0).getTime();
+            const hTime = new Date(h.time || 0).getTime();
+            const merged =
+                hTime > existingTime
+                    ? { ...existing, ...h }
+                    : { ...h, ...existing };
+            merged.episodes = Array.from(mergedEpisodes.values());
+            merged.time = hTime > existingTime ? h.time : existing.time;
+            dedupeMap.set(h.slug, merged);
+        }
+    });
+
+    // Sort theo time (mới nhất trước)
+    return Array.from(dedupeMap.values()).sort(
+        (a, b) =>
+            new Date(b.time || 0).getTime() - new Date(a.time || 0).getTime(),
+    );
+}
+
+/**
  * Fetch history từ Firestore (với fallback khi offline)
+ * Tự động dedupe nếu có entries trùng lặp
  */
 export const fetchHistoryFromFirestore = async (uid) => {
     if (!uid) return [];
@@ -17,7 +81,9 @@ export const fetchHistoryFromFirestore = async (uid) => {
         const docRef = doc(db, "users", uid);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-            return docSnap.data().history || [];
+            const rawHistory = docSnap.data().history || [];
+            // Dedupe để clean dữ liệu bị trùng
+            return dedupeHistory(rawHistory);
         }
         return [];
     } catch (error) {
@@ -25,7 +91,8 @@ export const fetchHistoryFromFirestore = async (uid) => {
         console.warn("Firestore offline, using localStorage:", error?.message);
         try {
             const localHistory = localStorage.getItem("viewHistory");
-            return localHistory ? JSON.parse(localHistory) : [];
+            const parsed = localHistory ? JSON.parse(localHistory) : [];
+            return dedupeHistory(parsed);
         } catch {
             return [];
         }
@@ -57,23 +124,35 @@ export const fetchFavoritesFromFirestore = async (uid) => {
 };
 
 /**
- * Thêm item vào history trên Firestore (với fallback khi offline)
+ * Thêm hoặc cập nhật item trong history trên Firestore
+ * Tìm theo slug và merge thay vì dùng arrayUnion (gây trùng lặp)
  */
 export const addHistoryToFirestore = async (uid, item) => {
-    if (!uid) return;
+    if (!uid || !item || !item.slug) return;
     try {
         const docRef = doc(db, "users", uid);
-        // Nếu doc chưa tồn tại, tạo mới; nếu tồn tại, thêm vào array
         const docSnap = await getDoc(docRef);
+
         if (!docSnap.exists()) {
+            // Doc chưa tồn tại, tạo mới
             await setDoc(docRef, {
                 history: [item],
                 favorites: [],
             });
         } else {
-            await updateDoc(docRef, {
-                history: arrayUnion(item),
-            });
+            // Doc đã tồn tại, dedupe và merge item mới
+            const data = docSnap.data();
+            const rawHistory = Array.isArray(data.history) ? data.history : [];
+
+            // Thêm item mới vào đầu rồi dedupe (dedupeHistory sẽ merge các entries cùng slug)
+            let history = dedupeHistory([item, ...rawHistory]);
+
+            // Giới hạn history tối đa 100 items
+            if (history.length > 100) {
+                history = history.slice(0, 100);
+            }
+
+            await updateDoc(docRef, { history });
         }
     } catch (error) {
         // Nếu offline, chỉ cảnh báo (localStorage đã được cập nhật ở Vods/VodPlay)
@@ -121,10 +200,10 @@ export const clearHistoryFromFirestore = async (uid) => {
 };
 
 /**
- * Thêm item vào favorites trên Firestore (với fallback khi offline)
+ * Thêm item vào favorites trên Firestore (tìm theo slug, không trùng lặp)
  */
 export const addFavoriteToFirestore = async (uid, item) => {
-    if (!uid) return;
+    if (!uid || !item || !item.slug) return;
     try {
         const docRef = doc(db, "users", uid);
         const docSnap = await getDoc(docRef);
@@ -134,9 +213,21 @@ export const addFavoriteToFirestore = async (uid, item) => {
                 favorites: [item],
             });
         } else {
-            await updateDoc(docRef, {
-                favorites: arrayUnion(item),
-            });
+            // Kiểm tra xem đã có item với slug này chưa
+            const data = docSnap.data();
+            const favorites = Array.isArray(data.favorites)
+                ? data.favorites
+                : [];
+            const existingIndex = favorites.findIndex(
+                (f) => f.slug === item.slug,
+            );
+
+            if (existingIndex === -1) {
+                // Chưa có, thêm mới vào đầu mảng
+                const newFavorites = [item, ...favorites];
+                await updateDoc(docRef, { favorites: newFavorites });
+            }
+            // Đã có thì không làm gì (tránh trùng lặp)
         }
     } catch (error) {
         console.warn(

@@ -2195,7 +2195,7 @@ export default function Vods() {
                         onClick={closeHistory}
                     >
                         <div
-                            className="flex max-h-96 w-11/12 max-w-2xl flex-col rounded-lg bg-white shadow-2xl"
+                            className="max-h-100 flex w-11/12 max-w-2xl flex-col rounded-lg bg-white shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-gray-200 from-blue-50 to-indigo-50 px-6 py-4">
@@ -2330,32 +2330,79 @@ export default function Vods() {
                                                     <div className="mt-1 text-xs font-medium text-blue-600">
                                                         Đã xem:{" "}
                                                         {(() => {
-                                                            if (
+                                                            const value =
                                                                 item
                                                                     .current_episode
-                                                                    ?.value
-                                                            ) {
-                                                                return item
-                                                                    .current_episode
-                                                                    .value;
-                                                            }
-                                                            if (
+                                                                    ?.value;
+                                                            const key =
                                                                 item
                                                                     .current_episode
-                                                                    ?.key
-                                                            ) {
-                                                                // Tạo value từ key (vd: "tap-4" → "Tập 4")
-                                                                const match =
-                                                                    item.current_episode.key.match(
-                                                                        /\d+/,
-                                                                    );
-                                                                return match
-                                                                    ? `Tập ${match[0]}`
-                                                                    : item
-                                                                          .current_episode
-                                                                          .key;
-                                                            }
-                                                            return "Chưa xem";
+                                                                    ?.key;
+
+                                                            // Helper: Format episode display
+                                                            const formatEpisode =
+                                                                (val) => {
+                                                                    if (
+                                                                        !val &&
+                                                                        val !==
+                                                                            0
+                                                                    )
+                                                                        return null;
+                                                                    const str =
+                                                                        String(
+                                                                            val,
+                                                                        ).toLowerCase();
+                                                                    // Nếu đã có format "Tập X" thì giữ nguyên
+                                                                    if (
+                                                                        /^tập\s/i.test(
+                                                                            String(
+                                                                                val,
+                                                                            ),
+                                                                        )
+                                                                    )
+                                                                        return val;
+                                                                    // Nếu là "full" hoặc "trailer"
+                                                                    if (
+                                                                        str ===
+                                                                        "full"
+                                                                    )
+                                                                        return "Full";
+                                                                    if (
+                                                                        str ===
+                                                                        "trailer"
+                                                                    )
+                                                                        return "Trailer";
+                                                                    // Nếu là số thuần, format thành "Tập X"
+                                                                    if (
+                                                                        /^\d+$/.test(
+                                                                            str,
+                                                                        )
+                                                                    )
+                                                                        return `Tập ${val}`;
+                                                                    // Tìm số trong string
+                                                                    const match =
+                                                                        String(
+                                                                            val,
+                                                                        ).match(
+                                                                            /\d+/,
+                                                                        );
+                                                                    if (match)
+                                                                        return `Tập ${match[0]}`;
+                                                                    return val;
+                                                                };
+
+                                                            // Ưu tiên value, fallback key
+                                                            const formatted =
+                                                                formatEpisode(
+                                                                    value,
+                                                                ) ||
+                                                                formatEpisode(
+                                                                    key,
+                                                                );
+                                                            return (
+                                                                formatted ||
+                                                                "Chưa xem"
+                                                            );
                                                         })()}
                                                     </div>
                                                 </div>
@@ -2413,7 +2460,7 @@ export default function Vods() {
                         onClick={closeFavorites}
                     >
                         <div
-                            className="flex max-h-96 w-11/12 max-w-2xl flex-col rounded-lg bg-white shadow-2xl"
+                            className="max-h-100 flex w-11/12 max-w-2xl flex-col rounded-lg bg-white shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                         >
                             <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-gray-200 from-red-50 to-rose-50 px-6 py-4">
@@ -2669,13 +2716,15 @@ export default function Vods() {
                                                 {movie.name}
                                             </h3>
                                             <div className="flex justify-between">
-                                                {movie.episode_current?.toLowerCase() === "trailer" ? (
+                                                {movie.episode_current?.toLowerCase() ===
+                                                "trailer" ? (
                                                     <span className="mt-2 text-xs font-medium text-red-500">
                                                         {movie.episode_current}
                                                     </span>
                                                 ) : (
                                                     <span className="mt-2 text-xs text-gray-500">
-                                                        {movie.episode_current || "N/A"}
+                                                        {movie.episode_current ||
+                                                            "N/A"}
                                                     </span>
                                                 )}
                                                 <span className="mt-2 text-xs text-gray-500">
