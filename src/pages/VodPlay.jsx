@@ -338,7 +338,46 @@ export default function VodPlay() {
     const [isTheaterMode, setIsTheaterMode] = useState(false);
     const [showShareModal, setShowShareModal] = useState(false);
     const [shareMessage, setShareMessage] = useState("");
+    const [autoplayEnabled, setAutoplayEnabled] = useLocalStorage(
+        "autoplayEnabled",
+        true,
+    ); // Tự động chuyển tập
+    const autoplayEnabledRef = useRef(autoplayEnabled); // Ref để track giá trị mới nhất trong event handlers
+    const [skipIntroEnabled, setSkipIntroEnabled] = useLocalStorage(
+        "skipIntroEnabled",
+        false,
+    ); // Tự động bỏ qua intro
+    const skipIntroEnabledRef = useRef(skipIntroEnabled);
+    const DEFAULT_INTRO_DURATION = 0; // Thời gian intro mặc định (giây)
+    const [introDurations, setIntroDurations] = useLocalStorage(
+        "introDurations",
+        {},
+    ); // Lưu thời gian intro theo từng phim {slug: duration}
+    const [introDuration, setIntroDuration] = useState(DEFAULT_INTRO_DURATION);
+    const introDurationRef = useRef(introDuration);
     const modalRef = useRef(null);
+
+    // Sync ref với state
+    useEffect(() => {
+        autoplayEnabledRef.current = autoplayEnabled;
+    }, [autoplayEnabled]);
+
+    useEffect(() => {
+        skipIntroEnabledRef.current = skipIntroEnabled;
+    }, [skipIntroEnabled]);
+
+    useEffect(() => {
+        introDurationRef.current = introDuration;
+    }, [introDuration]);
+
+    // Load intro duration cho phim hiện tại khi slug thay đổi
+    useEffect(() => {
+        if (slug) {
+            const cleanSlug = slug.split("?")[0];
+            const savedDuration = introDurations[cleanSlug];
+            setIntroDuration(savedDuration || DEFAULT_INTRO_DURATION);
+        }
+    }, [slug, introDurations]);
 
     const maxDigits = useMemo(() => {
         const allEpisodeNumbers = episodes.flatMap((ep) =>
@@ -407,12 +446,7 @@ export default function VodPlay() {
                 initializeFromUrl(episodes, movie);
             } else {
                 // Check for trailer if no episodes
-                console.log(
-                    "No episodes, checking trailer: movie.trailer_url=",
-                    movie.trailer_url,
-                    "tmdbVideos=",
-                    !!tmdbVideos,
-                );
+
                 let trailerUrl = null;
                 if (movie.trailer_url) {
                     trailerUrl = movie.trailer_url;
@@ -428,7 +462,6 @@ export default function VodPlay() {
                         trailerUrl = `https://www.youtube.com/embed/${trailer.key}`;
                     }
                 }
-                console.log("Trailer URL found:", trailerUrl);
                 if (trailerUrl) {
                     const trailerEpisode = {
                         server_name: "Trailer",
@@ -446,7 +479,6 @@ export default function VodPlay() {
                     initializeFromUrl([trailerEpisode], movie);
                 } else if (!movie.tmdb || tmdbVideos !== null) {
                     // No trailer available, set error
-                    console.log("No trailer, setting error");
                     setErrorMessage(t("vodPlay.noPlayableLink"));
                 }
             }
@@ -657,6 +689,18 @@ export default function VodPlay() {
                     hlsVideo.muted = !hlsVideo.muted;
                 }
             }
+
+            // T để toggle chế độ nhà hát (theater mode)
+            if (e.key === "t" || e.key === "T") {
+                e.preventDefault();
+                setIsTheaterMode((prev) => !prev);
+            }
+
+            // N để chuyển sang tập tiếp theo
+            if (e.key === "n" || e.key === "N") {
+                e.preventDefault();
+                playNextEpisode();
+            }
         };
 
         window.addEventListener("keydown", handleVideoKeyDown);
@@ -692,7 +736,7 @@ export default function VodPlay() {
         // source_c: use thumb_url as poster_url for display
         if (source === SOURCES.SOURCE_C) {
             // Swap: poster_url <- thumb_url, thumbnail <- poster_url
-            m.poster_url = getMovieImage(m.thumb_url || m.poster_url, source);
+            m.poster_url = getMovieImage(m.poster_url || m.thumb_url, source);
             m.thumb_url = getMovieImage(m.thumb_url || m.poster_url, source);
 
             // Additional mappings for source_c
@@ -710,12 +754,17 @@ export default function VodPlay() {
             }
         } else if (source === SOURCES.SOURCE_O) {
             // Source O: use thumb_url as poster_url, thêm prefix uploads/movies/ nếu cần
-            let posterPath = m.thumb_url || m.poster_url;
+            let posterPath = m.poster_url || m.thumb_url;
             if (posterPath && !posterPath.startsWith("uploads/movies/")) {
                 posterPath = `uploads/movies/${posterPath}`;
             }
             m.poster_url = getMovieImage(posterPath, source);
-            m.thumb_url = getMovieImage(posterPath, source);
+
+            let thumbPath = m.thumb_url || m.poster_url;
+            if (thumbPath && !thumbPath.startsWith("uploads/movies/")) {
+                thumbPath = `uploads/movies/${thumbPath}`;
+            }
+            m.thumb_url = getMovieImage(thumbPath, source);
 
             // Additional mappings for source_o
             m.episode_current = m.episode_current;
@@ -841,7 +890,6 @@ export default function VodPlay() {
             );
             const json = await res.json();
             const data = json || {};
-            console.log("Source C API response:", data); // Thêm log để debug
             if (data.status === "success" && data.movie) {
                 const normalizedMovie = normalizeMovieForSource(
                     data.movie,
@@ -851,7 +899,6 @@ export default function VodPlay() {
                 // Normalize episodes for source_c
                 let episodesData = [];
                 if (data.movie.episodes && Array.isArray(data.movie.episodes)) {
-                    console.log("Episodes array:", data.movie.episodes); // Log episodes
                     episodesData = data.movie.episodes.map((ep) => ({
                         server_name: ep.server_name,
                         server_data: ep.items.map((item) => ({
@@ -990,9 +1037,6 @@ export default function VodPlay() {
     async function fetchAllMovieDetails() {
         // Guard: nếu đang fetch thì không gọi lại
         if (isFetchingRef.current) {
-            console.log(
-                "fetchAllMovieDetails: already fetching, skip duplicate call",
-            );
             return;
         }
         isFetchingRef.current = true;
@@ -1073,7 +1117,6 @@ export default function VodPlay() {
 
             // Fetch TMDb data if movie has tmdb info
             if (movieData && movieData.tmdb && movieData.tmdb.id) {
-                console.log("Fetching TMDB for movie:", movieData.tmdb);
                 const tmdbId = movieData.tmdb.id;
                 const tmdbType = movieData.tmdb.type || "movie";
 
@@ -1086,7 +1129,6 @@ export default function VodPlay() {
                 fetchTmdbCredits(tmdbId, tmdbType);
                 fetchTmdbImages(tmdbId, tmdbType);
             } else {
-                console.log("No TMDB data for movie:", movieData?.slug);
             }
 
             // Nếu có episode sau khi lọc/unique, set active từ `uniqueEpisodes`
@@ -1131,7 +1173,6 @@ export default function VodPlay() {
                 );
                 if (videosResponse.ok) {
                     const videosData = await videosResponse.json();
-                    console.log("TMDB videos:", videosData.results);
                     setTmdbVideos(videosData.results || []);
                 }
             }
@@ -1163,7 +1204,6 @@ export default function VodPlay() {
                 );
                 if (videosResponse.ok) {
                     const videosData = await videosResponse.json();
-                    console.log("TMDB videos:", videosData.results);
                     setTmdbVideos(videosData.results || []);
                 }
             }
@@ -1788,15 +1828,15 @@ export default function VodPlay() {
             controlbar.insertBefore(forwardBtn, rewindBtn.nextSibling);
         }
 
-        // Thêm nút Theater Mode vào góc phải của controlbar
-        const theaterBtn = document.createElement("div");
-        theaterBtn.className =
-            "jw-icon jw-icon-inline jw-button-color jw-reset jw-icon-theater";
-        theaterBtn.setAttribute("role", "button");
-        theaterBtn.setAttribute("tabindex", "0");
-        theaterBtn.setAttribute("aria-label", "Chế độ nhà hát");
-        theaterBtn.title = "Chế độ nhà hát";
-        theaterBtn.style.cssText = "cursor: pointer;";
+        // // Thêm nút Theater Mode vào góc phải của controlbar
+        // const theaterBtn = document.createElement("div");
+        // theaterBtn.className =
+        //     "jw-icon jw-icon-inline jw-button-color jw-reset jw-icon-theater";
+        // theaterBtn.setAttribute("role", "button");
+        // theaterBtn.setAttribute("tabindex", "0");
+        // theaterBtn.setAttribute("aria-label", "Chế độ nhà hát");
+        // theaterBtn.title = "Chế độ nhà hát";
+        // theaterBtn.style.cssText = "cursor: pointer;";
 
         // Function để update icon theo state - dùng currentColor để khớp với theme
         const updateTheaterIcon = (isTheater) => {
@@ -1849,16 +1889,6 @@ export default function VodPlay() {
         // Ưu tiên m3u8 cho Source O để autoplay
         let masterUrl = server.link_m3u8 || server.link_embed;
 
-        console.log(
-            "Initializing player with URL:",
-            masterUrl,
-            "Episode:",
-            episodeSlug,
-            "Source:",
-            source,
-            "Server:",
-            server,
-        ); // Thêm log
         if (!masterUrl) {
             // Fallback to trailer if available
             if (movie?.trailer_url) {
@@ -1867,7 +1897,6 @@ export default function VodPlay() {
                     const videoId = embedUrl.split("v=")[1].split("&")[0];
                     embedUrl = `https://www.youtube.com/embed/${videoId}`;
                 }
-                console.log("Playing trailer:", embedUrl);
                 await setupEmbedPlayer(embedUrl, episodeSlug);
                 return;
             }
@@ -1875,7 +1904,6 @@ export default function VodPlay() {
                 (v) => v.type === "Trailer" && v.site === "YouTube",
             );
             if (trailer) {
-                console.log("Playing TMDB trailer:", trailer.key);
                 await setupEmbedPlayer(
                     `https://www.youtube.com/embed/${trailer.key}`,
                     episodeSlug,
@@ -1998,6 +2026,9 @@ export default function VodPlay() {
                         player.seek(lastPosition);
                         // Đánh dấu đã restore position cho episode này
                         positionRestoredRef.current = episodeKey;
+                    } else if (skipIntroEnabledRef.current) {
+                        // Tự động bỏ qua intro nếu không có position được lưu
+                        player.seek(introDurationRef.current);
                     }
 
                     // Thêm custom controls: nút tua trước/sau 10 giây trên desktop
@@ -2033,17 +2064,14 @@ export default function VodPlay() {
 
                 // Auto-play next episode when finished
                 player.on("complete", () => {
-                    playNextEpisode();
+                    if (autoplayEnabledRef.current) {
+                        playNextEpisode();
+                    }
                 });
 
                 player.on("error", (event) => {
-                    console.log("JWPlayer error:", event);
                     // Fallback to embed if available and different from current URL
                     if (server.link_embed && server.link_embed !== masterUrl) {
-                        console.log(
-                            "Falling back to embed:",
-                            server.link_embed,
-                        );
                         setupEmbedPlayer(
                             server.link_embed,
                             episodeSlug,
@@ -2101,8 +2129,6 @@ export default function VodPlay() {
             const episodeKey = String(getEpisodeKey(episodeSlug, serverName));
             setCurrentEpisodeId(episodeKey);
             currentUrlRef.current = embedUrl;
-
-            console.log("Embed player setup with URL:", embedUrl);
         } catch (err) {
             setErrorMessage(`Embed player setup failed: ${err.message}`);
         }
@@ -2182,6 +2208,9 @@ export default function VodPlay() {
                         video.currentTime = lastPosition;
                         // Đánh dấu đã restore position cho episode này
                         positionRestoredRef.current = episodeKey;
+                    } else if (skipIntroEnabledRef.current) {
+                        // Tự động bỏ qua giới thiệu nếu không có position được lưu
+                        video.currentTime = introDurationRef.current;
                     }
                 });
 
@@ -2210,7 +2239,9 @@ export default function VodPlay() {
 
                 // Auto-play next episode
                 video.addEventListener("ended", () => {
-                    playNextEpisode();
+                    if (autoplayEnabledRef.current) {
+                        playNextEpisode();
+                    }
                 });
 
                 playerRef.current = { player: video, hls };
@@ -2235,6 +2266,9 @@ export default function VodPlay() {
                         video.currentTime = lastPosition;
                         // Đánh dấu đã restore position cho episode này
                         positionRestoredRef.current = episodeSlug;
+                    } else if (skipIntroEnabledRef.current) {
+                        // Tự động bỏ qua giới thiệu nếu không có position được lưu
+                        video.currentTime = introDurationRef.current;
                     }
                 });
 
@@ -2258,7 +2292,9 @@ export default function VodPlay() {
 
                 // Auto-play next episode
                 video.addEventListener("ended", () => {
-                    playNextEpisode();
+                    if (autoplayEnabledRef.current) {
+                        playNextEpisode();
+                    }
                 });
 
                 playerRef.current = { player: video };
@@ -2274,7 +2310,6 @@ export default function VodPlay() {
     }
 
     function openEpisode(server, episode = null, movie) {
-        console.log("Opening episode:", server, episode); // Thêm log
         // Update document title - chỉ update khi có đầy đủ thông tin
         if (movie?.name) {
             const episodeName = server.name || "Trailer";
@@ -2297,12 +2332,6 @@ export default function VodPlay() {
         }
 
         // Initialize player with server - ưu tiên m3u8, fallback embed nếu lỗi
-        console.log(
-            "Master URL:",
-            server.link_m3u8,
-            "Embed:",
-            server.link_embed,
-        ); // Log URL
         initializePlayer(server, server.slug, movie);
     }
 
@@ -2373,20 +2402,8 @@ export default function VodPlay() {
         // Không có tập tiếp theo trong cùng episode, tìm episode khác với cùng server type
         const savedServerSlug = historyItem.server; // "thuyet-minh", "vietsub", etc.
 
-        console.log("🔍 Auto-play debug:", {
-            savedServerSlug: savedServerSlug,
-            availableEpisodes: episodes.map((ep) => ({
-                name: ep.server_name,
-                serverData: ep.server_data?.length || 0,
-            })),
-        });
-
         if (savedServerSlug) {
             const savedServerName = slugToServerName(savedServerSlug); // Convert "thuyet-minh" → "Thuyết Minh"
-            console.log("🔍 Converting server:", {
-                savedServerSlug: savedServerSlug,
-                savedServerName: savedServerName,
-            });
 
             // Tìm episode tiếp theo có cùng server type
             const currentEpisodeIndex = episodes.findIndex(
@@ -2395,16 +2412,6 @@ export default function VodPlay() {
 
             for (let i = currentEpisodeIndex + 1; i < episodes.length; i++) {
                 const nextEpisode = episodes[i];
-
-                console.log("🔍 Checking episode:", {
-                    nextEpisodeName: nextEpisode.server_name,
-                    savedServerName: savedServerName,
-                    match:
-                        nextEpisode.server_name === savedServerName ||
-                        nextEpisode.server_name.endsWith(
-                            ` - ${savedServerName}`,
-                        ),
-                });
 
                 // Tìm server đầu tiên trong episode này có cùng server type
                 // So sánh với episode.server_name (đã chuẩn hóa) thay vì server.server_name
@@ -2415,10 +2422,6 @@ export default function VodPlay() {
                     // Lấy server đầu tiên trong episode này
                     const firstServer = nextEpisode.server_data?.[0];
                     if (firstServer) {
-                        console.log(
-                            "✅ Found matching episode, auto-playing:",
-                            nextEpisode.server_name,
-                        );
                         setActiveEpisode(nextEpisode);
                         openEpisode(firstServer, nextEpisode, movie);
                         return;
@@ -3080,16 +3083,227 @@ export default function VodPlay() {
                         >
                             {/* Player + Server Tabs */}
                             <div
-                                className={`flex w-full flex-col overflow-hidden rounded-md border-zinc-700 bg-zinc-800 shadow transition-all duration-300 ${
+                                className={`flex w-full flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-800 shadow transition-all duration-300 ${
                                     isTheaterMode ? "lg:w-full" : "lg:w-8/12"
                                 }`}
                             >
                                 {/* Player */}
                                 <div
                                     id="player-container"
-                                    className="w-full overflow-hidden"
+                                    className="w-full overflow-hidden rounded-b-md"
                                     style={{ aspectRatio: "16/9" }}
                                 ></div>
+                                {/* Control Bar - Responsive */}
+                                <div className="flex flex-col gap-2 border-zinc-700 bg-zinc-900/80 px-3 py-2 sm:px-4">
+                                    {/* Hàng 1: Thông tin tập + Các nút action */}
+                                    <div className="flex items-center justify-between gap-2">
+                                        {/* Thông tin tập hiện tại */}
+                                        <div className="flex items-center gap-2 text-sm text-zinc-400">
+                                            {currentEpisodeId && (
+                                                <span className="rounded bg-blue-600/20 px-2 py-0.5 text-blue-400">
+                                                    {/^\d+$/.test(
+                                                        currentEpisodeId,
+                                                    )
+                                                        ? `Tập ${currentEpisodeId}`
+                                                        : currentEpisodeId}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* Các nút action */}
+                                        <div className="flex items-center gap-2">
+                                            {/* Nút chế độ nhà hát - chỉ hiện trên desktop */}
+                                            <button
+                                                onClick={() =>
+                                                    setIsTheaterMode(
+                                                        !isTheaterMode,
+                                                    )
+                                                }
+                                                className={`hidden cursor-pointer items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all lg:flex ${
+                                                    isTheaterMode
+                                                        ? "bg-blue-500 text-white hover:opacity-90"
+                                                        : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600 hover:text-white"
+                                                }`}
+                                                title={
+                                                    isTheaterMode
+                                                        ? "Thoát chế độ nhà hát (T)"
+                                                        : "Bật chế độ nhà hát (T)"
+                                                }
+                                            >
+                                                <svg
+                                                    className="h-4 w-4"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    {isTheaterMode ? (
+                                                        <path
+                                                            strokeLinecap="round"
+                                                            strokeLinejoin="round"
+                                                            strokeWidth={2}
+                                                            d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25"
+                                                        />
+                                                    ) : (
+                                                        <path
+                                                            strokeLinecap="round"
+                                                            strokeLinejoin="round"
+                                                            strokeWidth={2}
+                                                            d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"
+                                                        />
+                                                    )}
+                                                </svg>
+                                                <span className="hidden xl:inline">
+                                                    {isTheaterMode
+                                                        ? "Thu nhỏ"
+                                                        : "Mở rộng"}
+                                                </span>
+                                            </button>
+
+                                            {/* Nút tập tiếp theo */}
+                                            <button
+                                                onClick={playNextEpisode}
+                                                className="flex cursor-pointer items-center gap-1 rounded-md bg-zinc-700 px-2 py-1.5 text-xs font-medium text-zinc-300 transition-all hover:bg-zinc-600 hover:text-white sm:gap-1.5 sm:px-3 sm:text-sm"
+                                                title="Tập tiếp theo (N)"
+                                            >
+                                                <span>Tập tiếp</span>
+                                                <svg
+                                                    className="h-3.5 w-3.5 sm:h-4 sm:w-4"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                        strokeWidth={2}
+                                                        d="M13 5l7 7-7 7M5 5l7 7-7 7"
+                                                    />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Hàng 2: Các switch settings */}
+                                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                                        {/* Switch bỏ qua intro + input */}
+                                        <div className="flex items-center gap-2">
+                                            <div
+                                                className="flex cursor-pointer items-center gap-1.5 sm:gap-2"
+                                                onClick={() =>
+                                                    setSkipIntroEnabled(
+                                                        !skipIntroEnabled,
+                                                    )
+                                                }
+                                                title={
+                                                    skipIntroEnabled
+                                                        ? "Tắt tự động bỏ qua giới thiệu"
+                                                        : "Bật tự động bỏ qua giới thiệu"
+                                                }
+                                            >
+                                                <span className="text-xs text-zinc-400 sm:text-sm">
+                                                    <span className="inline">
+                                                        Bỏ qua giới thiệu
+                                                    </span>
+                                                </span>
+                                                <div
+                                                    className={`relative h-4 w-7 rounded-full transition-colors sm:h-5 sm:w-9 ${
+                                                        skipIntroEnabled
+                                                            ? "bg-blue-500"
+                                                            : "bg-zinc-600"
+                                                    }`}
+                                                >
+                                                    <div
+                                                        className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 ${
+                                                            skipIntroEnabled
+                                                                ? "translate-x-3 sm:translate-x-4"
+                                                                : "translate-x-0.5"
+                                                        }`}
+                                                    ></div>
+                                                </div>
+                                            </div>
+                                            {/* Input thời gian intro */}
+                                            {skipIntroEnabled && (
+                                                <div className="flex items-center gap-1">
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        max="300"
+                                                        value={introDuration}
+                                                        onChange={(e) => {
+                                                            const value =
+                                                                Math.max(
+                                                                    0,
+                                                                    Math.min(
+                                                                        300,
+                                                                        parseInt(
+                                                                            e
+                                                                                .target
+                                                                                .value,
+                                                                        ) || 0,
+                                                                    ),
+                                                                );
+                                                            setIntroDuration(
+                                                                value,
+                                                            );
+                                                            const cleanSlug =
+                                                                slug.split(
+                                                                    "?",
+                                                                )[0];
+                                                            setIntroDurations(
+                                                                (prev) => ({
+                                                                    ...prev,
+                                                                    [cleanSlug]:
+                                                                        value,
+                                                                }),
+                                                            );
+                                                        }}
+                                                        className="w-12 rounded bg-zinc-700 px-1.5 py-0.5 text-center text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:w-14 sm:px-2 sm:text-sm"
+                                                        title="Thời gian intro (giây)"
+                                                    />
+                                                    <span className="text-[10px] text-zinc-500 sm:text-xs">
+                                                        giây
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Switch tự động chuyển tập */}
+                                        <div
+                                            className="flex cursor-pointer items-center gap-1.5 sm:gap-2"
+                                            onClick={() =>
+                                                setAutoplayEnabled(
+                                                    !autoplayEnabled,
+                                                )
+                                            }
+                                            title={
+                                                autoplayEnabled
+                                                    ? "Tắt tự động chuyển tập"
+                                                    : "Bật tự động chuyển tập"
+                                            }
+                                        >
+                                            <span className="text-xs text-zinc-400 sm:text-sm">
+                                                <span className="inline">
+                                                    Tự động chuyển tập
+                                                </span>
+                                            </span>
+                                            <div
+                                                className={`relative h-4 w-7 rounded-full transition-colors sm:h-5 sm:w-9 ${
+                                                    autoplayEnabled
+                                                        ? "bg-blue-500"
+                                                        : "bg-zinc-600"
+                                                }`}
+                                            >
+                                                <div
+                                                    className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-transform sm:h-4 sm:w-4 ${
+                                                        autoplayEnabled
+                                                            ? "translate-x-3 sm:translate-x-4"
+                                                            : "translate-x-0.5"
+                                                    }`}
+                                                ></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Episode List */}
@@ -3127,10 +3341,10 @@ export default function VodPlay() {
                                 {activeEpisode &&
                                     activeEpisode.server_data?.length > 0 && (
                                         <div
-                                            className={`grid h-fit auto-rows-max grid-cols-3 items-start gap-4 overflow-y-auto p-4 transition-all sm:grid-cols-6 ${
+                                            className={`grid h-fit auto-rows-max grid-cols-4 items-start gap-4 overflow-y-auto p-4 transition-all sm:grid-cols-6 xl:grid-cols-4 ${
                                                 isTheaterMode
-                                                    ? "max-h-96 lg:grid-cols-12"
-                                                    : "max-h-96 lg:h-0 lg:max-h-none lg:grow lg:grid-cols-4"
+                                                    ? "max-h-116 lg:grid-cols-12"
+                                                    : "max-h-116 lg:h-0 lg:max-h-none lg:grow lg:grid-cols-3"
                                             }`}
                                         >
                                             {(() => {
