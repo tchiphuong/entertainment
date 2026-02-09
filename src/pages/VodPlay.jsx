@@ -6,6 +6,7 @@ import React, {
     useState,
 } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { useAuth } from "../contexts/AuthContext";
 import {
@@ -285,6 +286,7 @@ function getMovieImage(imagePath, source) {
 }
 
 export default function VodPlay() {
+    const { t, i18n } = useTranslation();
     // Lưu và lấy âm lượng từ localStorage
     const VOLUME_KEY = "vodPlayerVolume";
     const getSavedVolume = () => {
@@ -381,7 +383,7 @@ export default function VodPlay() {
 
     useEffect(() => {
         // Set tiêu đề mặc định khi load
-        document.title = slug ? "Đang tải..." : "VOD Player";
+        document.title = slug ? t("vodPlay.loading") : "VOD Player";
         if (slug) {
             // Reset flags khi load video khác
             hasInitializedRef.current = false;
@@ -445,9 +447,7 @@ export default function VodPlay() {
                 } else if (!movie.tmdb || tmdbVideos !== null) {
                     // No trailer available, set error
                     console.log("No trailer, setting error");
-                    setErrorMessage(
-                        "Không có link phát phim và trailer cho tập này. Vui lòng thử tập khác hoặc liên hệ admin.",
-                    );
+                    setErrorMessage(t("vodPlay.noPlayableLink"));
                 }
             }
         }
@@ -1242,7 +1242,7 @@ export default function VodPlay() {
                         episode.server_name.endsWith(` - ${serverName}`) ||
                         episode.server_data?.some((server) =>
                             compareEpisodeKeys(
-                                getEpisodeKey(server.slug),
+                                getEpisodeKey(server.slug, server.name),
                                 episodeNum,
                             ),
                         ),
@@ -1251,7 +1251,7 @@ export default function VodPlay() {
                 if (targetEpisode) {
                     targetServer = targetEpisode.server_data.find((server) =>
                         compareEpisodeKeys(
-                            getEpisodeKey(server.slug),
+                            getEpisodeKey(server.slug, server.name),
                             episodeNum,
                         ),
                     );
@@ -1263,7 +1263,10 @@ export default function VodPlay() {
                 // Tìm episode có chứa tập với số episode này (vd: episode=01 → tìm "tap-01", "tap-1", etc.)
                 targetEpisode = episodesList.find((episode) =>
                     episode.server_data?.some((server) => {
-                        const serverEpisodeKey = getEpisodeKey(server.slug);
+                        const serverEpisodeKey = getEpisodeKey(
+                            server.slug,
+                            server.name,
+                        );
                         return (
                             compareEpisodeKeys(
                                 serverEpisodeKey,
@@ -1307,6 +1310,7 @@ export default function VodPlay() {
                             (server) => {
                                 const serverEpisodeKey = getEpisodeKey(
                                     server.slug,
+                                    server.name,
                                 );
                                 return (
                                     serverEpisodeKey === episodeParam ||
@@ -1348,7 +1352,7 @@ export default function VodPlay() {
             const episodeKey = historyItem.current_episode.key;
             const matchingEpisode = episodesList.find((episode) =>
                 episode.server_data?.some((server) => {
-                    const serverKey = getEpisodeKey(server.slug);
+                    const serverKey = getEpisodeKey(server.slug, server.name);
                     return compareEpisodeKeys(serverKey, episodeKey);
                 }),
             );
@@ -1377,7 +1381,10 @@ export default function VodPlay() {
                     targetServer = matchingEpisode.server_data.find(
                         (server) => {
                             if (!server) return false;
-                            const serverKey = getEpisodeKey(server.slug);
+                            const serverKey = getEpisodeKey(
+                                server.slug,
+                                server.name,
+                            );
                             return compareEpisodeKeys(serverKey, episodeKey);
                         },
                     );
@@ -1421,24 +1428,39 @@ export default function VodPlay() {
 
     // Add to watch history
     // Helper function: Extract episode number từ slug (linh hoạt với nhiều format)
-    function getEpisodeKey(episodeSlug) {
+    function getEpisodeKey(episodeSlug, episodeName = "") {
         // Defensive: coerce to string so callers can pass undefined/null safely
-        const slugStr =
+        let slugStr =
             typeof episodeSlug === "string"
                 ? episodeSlug
                 : String(episodeSlug || "");
-        // Tìm số đầu tiên trong slug (vd: "tap-3-vietsub" → 3, "episode-5" → 5, "3-long-tieng" → 3)
+
+        // Nếu slug rỗng, fallback sang episodeName
+        if (!slugStr && episodeName) {
+            slugStr =
+                typeof episodeName === "string"
+                    ? episodeName
+                    : String(episodeName);
+        }
+
+        // Nếu vẫn rỗng, trả về null để biết không có key hợp lệ
+        if (!slugStr) {
+            return null;
+        }
+
+        // Chỉ trả về "full" nếu name thực sự là "full"/"Full" (phim lẻ)
+        if (slugStr.toLowerCase() === "full") {
+            return "full";
+        }
+
+        // Tìm số đầu tiên trong slug (vd: "tap-3-vietsub" → 3, "episode-5" → 5, "3-long-tieng" → 3, "01" → 1, "28-End" → 28)
         const numberMatch = slugStr.match(/\d+/);
-        const episodeNumber = numberMatch
-            ? parseInt(numberMatch[0], 10)
-            : slugStr;
+        if (numberMatch) {
+            return parseInt(numberMatch[0], 10);
+        }
 
-        // Tìm phần server (phần sau số, vd: "vietsub", "long-tieng")
-        // Remove số và dấu - ở đầu để lấy server suffix
-        const serverPart = slugStr.replace(/^[^a-z]*\d+[^a-z]*/i, "");
-
-        // Key = "số" (để share position giữa các server)
-        return episodeNumber;
+        // Không tìm thấy số, trả về chuỗi gốc
+        return slugStr;
     }
 
     // Normalize a saved key for consistent storage and comparison
@@ -1509,7 +1531,7 @@ export default function VodPlay() {
     }
 
     // Helper function: Lấy position đã xem của episode từ lịch sử
-    function getLastWatchedPosition(episodeSlug) {
+    function getLastWatchedPosition(episodeSlug, episodeName = "") {
         // Tìm movieData trong history bằng slug hiện tại
         const cleanSlug = slug.split("?")[0];
         const movieData = viewHistory.find((item) => item.slug === cleanSlug);
@@ -1518,7 +1540,9 @@ export default function VodPlay() {
             return 0;
         }
 
-        const episodeKey = normalizeKey(getEpisodeKey(episodeSlug));
+        const episodeKey = normalizeKey(
+            getEpisodeKey(episodeSlug, episodeName),
+        );
 
         const episodeData = movieData.episodes.find((ep) =>
             compareEpisodeKeys(ep.key, episodeKey),
@@ -1535,9 +1559,20 @@ export default function VodPlay() {
         episode = null,
         movie = {},
     ) => {
+        // Lấy tên episode để fallback khi slug rỗng
+        const episodeName = episode?.name || episode?.server_name || "";
         // Lấy key tập phim (raw) rồi normalize để lưu/so sánh nhất quán
-        const episodeKeyRaw = getEpisodeKey(episodeSlug);
+        const episodeKeyRaw = getEpisodeKey(episodeSlug, episodeName);
         const episodeKey = normalizeKey(episodeKeyRaw);
+
+        // Không lưu nếu không có key hợp lệ
+        if (episodeKey === null || episodeKey === undefined) {
+            console.warn(
+                "Không lưu history: không tìm được episode key từ slug/name",
+                { episodeSlug, episodeName },
+            );
+            return;
+        }
 
         // Format episode value để hiển thị đẹp (vd: "Tập 3", "full", etc.)
         const formatEpisodeValue = () => {
@@ -1862,7 +1897,7 @@ export default function VodPlay() {
 
         // Trên mobile, prefer HLS.js thay vì JWPlayer
         if (isMobile) {
-            await setupHlsPlayer(masterUrl, episodeSlug);
+            await setupHlsPlayer(masterUrl, episodeSlug, server.name);
             return;
         }
 
@@ -1948,15 +1983,21 @@ export default function VodPlay() {
 
                 // Save watchlist on ready
                 player.on("ready", () => {
-                    setCurrentEpisodeId(episodeSlug);
+                    const episodeKey = String(
+                        getEpisodeKey(episodeSlug, server.name),
+                    );
+                    setCurrentEpisodeId(episodeKey);
 
                     // Lấy position đã xem từ lịch sử mới
-                    const lastPosition = getLastWatchedPosition(episodeSlug);
+                    const lastPosition = getLastWatchedPosition(
+                        episodeSlug,
+                        server.name,
+                    );
 
                     if (lastPosition > 0) {
                         player.seek(lastPosition);
                         // Đánh dấu đã restore position cho episode này
-                        positionRestoredRef.current = episodeSlug;
+                        positionRestoredRef.current = episodeKey;
                     }
 
                     // Thêm custom controls: nút tua trước/sau 10 giây trên desktop
@@ -1985,12 +2026,8 @@ export default function VodPlay() {
                     const currentTime = Math.floor(event.position);
                     if (currentTime - lastSavedTime >= 5) {
                         lastSavedTime = currentTime;
-                        setWatchlist(
-                            episodeSlug,
-                            currentTime,
-                            episodes.find((ep) => ep.slug === episodeSlug),
-                            movie,
-                        );
+                        // Truyền server object thay vì find() vì slug có thể rỗng
+                        setWatchlist(episodeSlug, currentTime, server, movie);
                     }
                 });
 
@@ -2007,7 +2044,11 @@ export default function VodPlay() {
                             "Falling back to embed:",
                             server.link_embed,
                         );
-                        setupEmbedPlayer(server.link_embed, episodeSlug);
+                        setupEmbedPlayer(
+                            server.link_embed,
+                            episodeSlug,
+                            server.name,
+                        );
                     } else {
                         setErrorMessage(`Playback error: ${event.message}`);
                     }
@@ -2033,12 +2074,12 @@ export default function VodPlay() {
             }
         } catch (err) {
             // Fallback to HLS.js player
-            await setupHlsPlayer(masterUrl, episodeSlug);
+            await setupHlsPlayer(masterUrl, episodeSlug, server.name);
         }
     }
 
     // Fallback embed player using iframe
-    async function setupEmbedPlayer(embedUrl, episodeSlug) {
+    async function setupEmbedPlayer(embedUrl, episodeSlug, serverName = "") {
         try {
             const playerDiv = document.getElementById("player-container");
             if (!playerDiv) throw new Error("Player container not found");
@@ -2056,8 +2097,9 @@ export default function VodPlay() {
 
             playerDiv.appendChild(iframe);
 
-            // Set current episode
-            setCurrentEpisodeId(episodeSlug);
+            // Set current episode - lưu key thay vì slug
+            const episodeKey = String(getEpisodeKey(episodeSlug, serverName));
+            setCurrentEpisodeId(episodeKey);
             currentUrlRef.current = embedUrl;
 
             console.log("Embed player setup with URL:", embedUrl);
@@ -2067,7 +2109,7 @@ export default function VodPlay() {
     }
 
     // Fallback HLS.js player for mobile/CORS issues
-    async function setupHlsPlayer(masterUrl, episodeSlug) {
+    async function setupHlsPlayer(masterUrl, episodeSlug, serverName = "") {
         try {
             // Load HLS.js library
             if (!Hls) {
@@ -2118,16 +2160,28 @@ export default function VodPlay() {
                 hls.attachMedia(video);
 
                 hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    setCurrentEpisodeId(episodeSlug);
-                    setWatchlist(episodeSlug, null, null, movie);
+                    const episodeKey = String(
+                        getEpisodeKey(episodeSlug, serverName),
+                    );
+                    setCurrentEpisodeId(episodeKey);
+                    // Truyền object với name để fallback khi slug rỗng
+                    setWatchlist(
+                        episodeSlug,
+                        null,
+                        { name: serverName },
+                        movie,
+                    );
 
                     // Restore playback position từ lịch sử mới
-                    const lastPosition = getLastWatchedPosition(episodeSlug);
+                    const lastPosition = getLastWatchedPosition(
+                        episodeSlug,
+                        serverName,
+                    );
 
                     if (lastPosition > 0) {
                         video.currentTime = lastPosition;
                         // Đánh dấu đã restore position cho episode này
-                        positionRestoredRef.current = episodeSlug;
+                        positionRestoredRef.current = episodeKey;
                     }
                 });
 
@@ -2144,7 +2198,13 @@ export default function VodPlay() {
                     );
                     if (currentTime - lastSavedTime >= 5) {
                         video.dataset.lastSavedTime = currentTime;
-                        setWatchlist(episodeSlug, currentTime, null, movie);
+                        // Truyền object với name để fallback khi slug rỗng
+                        setWatchlist(
+                            episodeSlug,
+                            currentTime,
+                            { name: serverName },
+                            movie,
+                        );
                     }
                 });
 
@@ -2160,7 +2220,13 @@ export default function VodPlay() {
                 video.src = masterUrl;
                 video.addEventListener("loadedmetadata", () => {
                     setCurrentEpisodeId(episodeSlug);
-                    setWatchlist(episodeSlug, null, null, movie);
+                    // Truyền object với name để fallback khi slug rỗng
+                    setWatchlist(
+                        episodeSlug,
+                        null,
+                        { name: serverName },
+                        movie,
+                    );
 
                     // Restore playback position từ lịch sử mới
                     const lastPosition = getLastWatchedPosition(episodeSlug);
@@ -2180,7 +2246,13 @@ export default function VodPlay() {
                     );
                     if (currentTime - lastSavedTime >= 5) {
                         video.dataset.lastSavedTime = currentTime;
-                        setWatchlist(episodeSlug, currentTime, null, movie);
+                        // Truyền object với name để fallback khi slug rỗng
+                        setWatchlist(
+                            episodeSlug,
+                            currentTime,
+                            { name: serverName },
+                            movie,
+                        );
                     }
                 });
 
@@ -2212,12 +2284,14 @@ export default function VodPlay() {
         // Reset position restored ref để cho phép restore position cho episode mới
         positionRestoredRef.current = null;
 
-        // Lưu server ngay (không delay) - truyền episode để lấy server_name
-        setWatchlist(server.slug, null, episode, movie);
+        // Lưu server ngay (không delay) - truyền server vì nó có .name để fallback khi slug rỗng
+        setWatchlist(server.slug, null, server, movie);
 
         // Set current episode id immediately so UI highlights selection
+        // Lưu key thay vì slug để đồng bộ với history
         try {
-            setCurrentEpisodeId(server.slug);
+            const episodeKey = getEpisodeKey(server.slug, server.name);
+            setCurrentEpisodeId(String(episodeKey));
         } catch (e) {
             // ignore
         }
@@ -2265,7 +2339,7 @@ export default function VodPlay() {
         for (const episode of episodes) {
             if (episode.server_data) {
                 const serverIndex = episode.server_data.findIndex((server) => {
-                    const serverKey = getEpisodeKey(server.slug);
+                    const serverKey = getEpisodeKey(server.slug, server.name);
                     return compareEpisodeKeys(serverKey, currentEpisodeKey);
                 });
                 if (serverIndex !== -1) {
@@ -2394,7 +2468,7 @@ export default function VodPlay() {
             // Match by slug-extracted key first
             let matchByKey = episode.server_data?.find((server) =>
                 compareEpisodeKeys(
-                    getEpisodeKey(server.slug),
+                    getEpisodeKey(server.slug, server.name),
                     desiredEpisodeKey,
                 ),
             );
@@ -2532,7 +2606,7 @@ export default function VodPlay() {
             navigator.clipboard
                 .writeText(text)
                 .then(() => {
-                    setShareMessage("✓ Đã sao chép link!");
+                    setShareMessage(t("vodPlay.copied"));
                     setTimeout(() => {
                         setShareMessage("");
                     }, 2000);
@@ -2558,13 +2632,13 @@ export default function VodPlay() {
         try {
             const successful = document.execCommand("copy");
             if (successful) {
-                setErrorMessage("Đã sao chép link vào clipboard!");
+                setErrorMessage(t("vodPlay.copied"));
                 setTimeout(() => {
                     setErrorMessage(null);
                 }, 2000);
             }
         } catch (err) {
-            setErrorMessage("Không thể sao chép link!");
+            setErrorMessage(t("vodPlay.copyFailed"));
             setTimeout(() => {
                 setErrorMessage(null);
             }, 2000);
@@ -2578,7 +2652,7 @@ export default function VodPlay() {
             <LoadingSpinner isLoading={isLoading} />
             {errorMessage && (
                 <div className="container mx-auto p-4">
-                    <div className="rounded-md bg-red-100 p-4 text-red-500">
+                    <div className="rounded-md bg-red-900/50 p-4 text-red-300">
                         {errorMessage}
                     </div>
                 </div>
@@ -2587,31 +2661,31 @@ export default function VodPlay() {
             {isLoading && !movie && (
                 <main className="container mx-auto flex h-full flex-col gap-4 p-4">
                     {/* Skeleton Breadcrumb */}
-                    <nav className="text-sm text-gray-600">
+                    <nav className="text-sm text-zinc-400">
                         <div className="flex items-center gap-2">
-                            <div className="h-4 w-20 animate-pulse rounded bg-gray-300"></div>
+                            <div className="h-4 w-20 animate-pulse rounded bg-zinc-600"></div>
                             <div>/</div>
-                            <div className="h-4 w-40 animate-pulse rounded bg-gray-300"></div>
+                            <div className="h-4 w-40 animate-pulse rounded bg-zinc-600"></div>
                         </div>
                     </nav>
 
                     <div className="flex h-full w-full flex-col justify-start gap-4 lg:h-auto lg:flex-row lg:justify-center">
                         {/* Skeleton Player */}
-                        <div className="flex w-full flex-col overflow-hidden rounded-md border-gray-50 bg-white shadow lg:w-8/12">
+                        <div className="flex w-full flex-col overflow-hidden rounded-md border-zinc-700 bg-zinc-800 shadow lg:w-8/12">
                             <div
-                                className="w-full animate-pulse bg-gray-300"
+                                className="w-full animate-pulse bg-zinc-600"
                                 style={{ aspectRatio: "16/9" }}
                             ></div>
                         </div>
 
                         {/* Skeleton Episode List */}
-                        <div className="flex w-full flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow lg:w-4/12">
+                        <div className="flex w-full flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-800 shadow lg:w-4/12">
                             {/* Skeleton Tabs */}
-                            <div className="border-b-2 border-gray-300 bg-gray-100">
+                            <div className="border-b-2 border-zinc-600 bg-zinc-700">
                                 <ul className="flex list-none overflow-x-auto">
                                     {Array.from({ length: 3 }).map((_, i) => (
                                         <li key={i} className="px-6 py-3.5">
-                                            <div className="h-5 w-20 animate-pulse rounded bg-gray-300"></div>
+                                            <div className="h-5 w-20 animate-pulse rounded bg-zinc-600"></div>
                                         </li>
                                     ))}
                                 </ul>
@@ -2622,9 +2696,9 @@ export default function VodPlay() {
                                 {Array.from({ length: 12 }).map((_, i) => (
                                     <div
                                         key={i}
-                                        className="animate-pulse rounded-md border-2 border-transparent bg-gray-200 px-3 py-2 text-center"
+                                        className="animate-pulse rounded-md border-2 border-transparent bg-zinc-700 px-3 py-2 text-center"
                                     >
-                                        <div className="h-4 rounded bg-gray-300"></div>
+                                        <div className="h-4 rounded bg-zinc-600"></div>
                                     </div>
                                 ))}
                             </div>
@@ -2632,28 +2706,28 @@ export default function VodPlay() {
                     </div>
 
                     {/* Skeleton Movie Info */}
-                    <div className="rounded-md border border-gray-200 bg-white p-4 shadow-md">
+                    <div className="rounded-md border border-zinc-700 bg-zinc-800 p-4 shadow-md">
                         <div className="flex flex-col gap-4 lg:flex-row">
                             {/* Skeleton Poster */}
                             <div
                                 className="hidden h-56 shrink-0 lg:block"
                                 style={{ aspectRatio: "2/3" }}
                             >
-                                <div className="h-full w-full animate-pulse rounded-md bg-gray-300"></div>
+                                <div className="h-full w-full animate-pulse rounded-md bg-zinc-600"></div>
                             </div>
                             <div
                                 className="w-full shrink-0 lg:hidden"
                                 style={{ aspectRatio: "16/9" }}
                             >
-                                <div className="h-full w-full animate-pulse rounded-md bg-gray-300"></div>
+                                <div className="h-full w-full animate-pulse rounded-md bg-zinc-600"></div>
                             </div>
 
                             {/* Skeleton Content */}
                             <div className="flex grow flex-col gap-3">
                                 {/* Skeleton Title */}
                                 <div>
-                                    <div className="mb-2 h-6 w-3/4 animate-pulse rounded bg-gray-300"></div>
-                                    <div className="h-4 w-1/2 animate-pulse rounded bg-gray-200"></div>
+                                    <div className="mb-2 h-6 w-3/4 animate-pulse rounded bg-zinc-600"></div>
+                                    <div className="h-4 w-1/2 animate-pulse rounded bg-zinc-700"></div>
                                 </div>
 
                                 {/* Skeleton Tags */}
@@ -2661,7 +2735,7 @@ export default function VodPlay() {
                                     {Array.from({ length: 4 }).map((_, i) => (
                                         <div
                                             key={i}
-                                            className="h-6 w-20 animate-pulse rounded-md bg-gray-300"
+                                            className="h-6 w-20 animate-pulse rounded-md bg-zinc-600"
                                         ></div>
                                     ))}
                                 </div>
@@ -2671,7 +2745,7 @@ export default function VodPlay() {
                                     {Array.from({ length: 4 }).map((_, i) => (
                                         <div
                                             key={i}
-                                            className="h-6 w-16 animate-pulse rounded-md bg-gray-300"
+                                            className="h-6 w-16 animate-pulse rounded-md bg-zinc-600"
                                         ></div>
                                     ))}
                                 </div>
@@ -2681,16 +2755,16 @@ export default function VodPlay() {
                                     {Array.from({ length: 5 }).map((_, i) => (
                                         <div
                                             key={i}
-                                            className="h-6 w-24 animate-pulse rounded-md bg-gray-300"
+                                            className="h-6 w-24 animate-pulse rounded-md bg-zinc-600"
                                         ></div>
                                     ))}
                                 </div>
 
                                 {/* Skeleton Description */}
                                 <div className="space-y-2">
-                                    <div className="h-4 animate-pulse rounded bg-gray-300"></div>
-                                    <div className="h-4 w-5/6 animate-pulse rounded bg-gray-300"></div>
-                                    <div className="h-4 w-4/6 animate-pulse rounded bg-gray-300"></div>
+                                    <div className="h-4 animate-pulse rounded bg-zinc-600"></div>
+                                    <div className="h-4 w-5/6 animate-pulse rounded bg-zinc-600"></div>
+                                    <div className="h-4 w-4/6 animate-pulse rounded bg-zinc-600"></div>
                                 </div>
                             </div>
                         </div>
@@ -2698,18 +2772,18 @@ export default function VodPlay() {
 
                     {/* Skeleton Cast Section */}
                     <div>
-                        <div className="mb-4 h-6 w-32 animate-pulse rounded bg-gray-300"></div>
-                        <div className="rounded-md border border-gray-200 bg-white p-6 shadow-md">
+                        <div className="mb-4 h-6 w-32 animate-pulse rounded bg-zinc-600"></div>
+                        <div className="rounded-md border border-zinc-700 bg-zinc-800 p-6 shadow-md">
                             <div className="grid grid-cols-4 gap-4 sm:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10">
                                 {Array.from({ length: 10 }).map((_, i) => (
                                     <div
                                         key={i}
                                         className="flex flex-col items-center gap-2 text-center"
                                     >
-                                        <div className="bg-linear-to-br h-16 w-16 animate-pulse rounded-full from-gray-300 via-gray-400 to-gray-500"></div>
+                                        <div className="bg-linear-to-br h-16 w-16 animate-pulse rounded-full from-zinc-500 via-zinc-600 to-zinc-700"></div>
                                         <div className="w-32">
-                                            <div className="mb-1 h-4 animate-pulse rounded bg-gray-300"></div>
-                                            <div className="h-3 w-3/4 animate-pulse rounded bg-gray-200"></div>
+                                            <div className="mb-1 h-4 animate-pulse rounded bg-zinc-600"></div>
+                                            <div className="h-3 w-3/4 animate-pulse rounded bg-zinc-700"></div>
                                         </div>
                                     </div>
                                 ))}
@@ -2719,13 +2793,13 @@ export default function VodPlay() {
 
                     {/* Skeleton Images Section */}
                     <div>
-                        <div className="mb-4 h-6 w-36 animate-pulse rounded bg-gray-300"></div>
-                        <div className="rounded-md border border-gray-200 bg-white p-6 shadow-md">
+                        <div className="mb-4 h-6 w-36 animate-pulse rounded bg-zinc-600"></div>
+                        <div className="rounded-md border border-zinc-700 bg-zinc-800 p-6 shadow-md">
                             <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6">
                                 {Array.from({ length: 8 }).map((_, i) => (
                                     <div
                                         key={i}
-                                        className="animate-pulse overflow-hidden rounded-lg bg-gray-300"
+                                        className="animate-pulse overflow-hidden rounded-lg bg-zinc-600"
                                         style={{ aspectRatio: "16/9" }}
                                     ></div>
                                 ))}
@@ -2839,17 +2913,17 @@ export default function VodPlay() {
                     onClick={() => setShowShareModal(false)}
                 >
                     <div
-                        className="w-full max-w-md rounded-xl bg-white shadow-2xl"
+                        className="w-full max-w-md rounded-xl bg-zinc-800 shadow-2xl"
                         onClick={(e) => e.stopPropagation()}
                     >
                         {/* Header */}
-                        <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
-                            <h3 className="text-lg font-bold text-gray-900">
-                                Chia sẻ phim
+                        <div className="flex items-center justify-between border-b border-zinc-700 px-6 py-4">
+                            <h3 className="text-lg font-bold text-zinc-100">
+                                {t("vodPlay.shareMovie")}
                             </h3>
                             <button
                                 onClick={() => setShowShareModal(false)}
-                                className="cursor-pointer rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                                className="cursor-pointer rounded-full p-1 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                             >
                                 <svg
                                     className="h-6 w-6"
@@ -2877,10 +2951,10 @@ export default function VodPlay() {
                                     className="h-20 w-14 rounded-md object-cover shadow-md"
                                 />
                                 <div className="flex-1">
-                                    <h4 className="font-semibold text-gray-900">
+                                    <h4 className="font-semibold text-zinc-100">
                                         {movie.name}
                                     </h4>
-                                    <p className="text-sm text-gray-500">
+                                    <p className="text-sm text-zinc-400">
                                         {movie.origin_name}
                                     </p>
                                 </div>
@@ -2888,15 +2962,15 @@ export default function VodPlay() {
 
                             {/* Copy Link */}
                             <div className="">
-                                <label className="mb-2 block text-sm font-medium text-gray-700">
-                                    Link phim
+                                <label className="mb-2 block text-sm font-medium text-zinc-300">
+                                    {t("vodPlay.movieLink")}
                                 </label>
                                 <div className="flex gap-2">
                                     <input
                                         type="text"
                                         readOnly
                                         value={window.location.href}
-                                        className="flex-1 rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700"
+                                        className="flex-1 rounded-lg border border-zinc-600 bg-zinc-700 px-3 py-2 text-sm text-zinc-200"
                                     />
                                     <button
                                         onClick={() =>
@@ -2910,7 +2984,7 @@ export default function VodPlay() {
                                     </button>
                                 </div>
                                 {shareMessage && (
-                                    <p className="mt-2 text-sm text-green-600">
+                                    <p className="mt-2 text-sm text-green-400">
                                         {shareMessage}
                                     </p>
                                 )}
@@ -2924,18 +2998,18 @@ export default function VodPlay() {
                     <main className="container mx-auto flex h-full flex-col gap-4 p-4">
                         {/* Breadcrumb Navigation with Actions */}
                         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                            <nav className="text-sm text-gray-600">
+                            <nav className="text-sm text-zinc-400">
                                 <ul className="flex items-center gap-2">
                                     <li className="flex items-center">
-                                        <button
-                                            onClick={() => navigate("/vods")}
-                                            className="flex items-center gap-1 text-blue-500 hover:underline"
+                                        <a
+                                            href="/entertainment/vods"
+                                            className="flex items-center gap-1 text-blue-400 hover:underline"
                                         >
-                                            Trang chủ
-                                        </button>
+                                            {t("common.home")}
+                                        </a>
                                     </li>
                                     <li>/</li>
-                                    <li className="font-semibold text-gray-800">
+                                    <li className="font-semibold text-zinc-100">
                                         {movie.name}
                                     </li>
                                 </ul>
@@ -2948,8 +3022,8 @@ export default function VodPlay() {
                                     onClick={() => toggleFavorite(movie)}
                                     className={`flex cursor-pointer items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
                                         isFavorited(movie.slug)
-                                            ? "bg-red-100 text-red-700 hover:bg-red-200"
-                                            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                                            ? "bg-red-900/50 text-red-300 hover:bg-red-900/70"
+                                            : "bg-zinc-700 text-zinc-300 hover:bg-zinc-600"
                                     }`}
                                 >
                                     <svg
@@ -2970,14 +3044,14 @@ export default function VodPlay() {
                                         />
                                     </svg>
                                     {isFavorited(movie.slug)
-                                        ? "Đã thích"
-                                        : "Thích"}
+                                        ? t("vodPlay.liked")
+                                        : t("vodPlay.like")}
                                 </button>
 
                                 {/* Share Button */}
                                 <button
                                     onClick={() => shareMovie(movie)}
-                                    className="flex cursor-pointer items-center gap-1 rounded-lg bg-blue-100 px-3 py-1.5 text-sm font-medium text-blue-700 transition-all hover:bg-blue-200"
+                                    className="flex cursor-pointer items-center gap-1 rounded-lg bg-blue-900/50 px-3 py-1.5 text-sm font-medium text-blue-300 transition-all hover:bg-blue-900/70"
                                 >
                                     <svg
                                         className="h-4 w-4"
@@ -2992,7 +3066,7 @@ export default function VodPlay() {
                                             d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z"
                                         />
                                     </svg>
-                                    Chia sẻ
+                                    {t("common.share")}
                                 </button>
                             </div>
                         </div>
@@ -3006,7 +3080,7 @@ export default function VodPlay() {
                         >
                             {/* Player + Server Tabs */}
                             <div
-                                className={`flex w-full flex-col overflow-hidden rounded-md border-gray-50 bg-white shadow transition-all duration-300 ${
+                                className={`flex w-full flex-col overflow-hidden rounded-md border-zinc-700 bg-zinc-800 shadow transition-all duration-300 ${
                                     isTheaterMode ? "lg:w-full" : "lg:w-8/12"
                                 }`}
                             >
@@ -3020,12 +3094,12 @@ export default function VodPlay() {
 
                             {/* Episode List */}
                             <div
-                                className={`flex w-full flex-col overflow-hidden rounded-md border border-gray-200 bg-white shadow transition-all duration-300 ${
+                                className={`flex w-full flex-col overflow-hidden rounded-md border border-zinc-700 bg-zinc-800 shadow transition-all duration-300 ${
                                     isTheaterMode ? "lg:w-full" : "lg:w-4/12"
                                 }`}
                             >
                                 {/* Episode Tabs */}
-                                <div className="border-b-2 border-gray-300 bg-gray-100">
+                                <div className="border-b-2 border-zinc-600 bg-zinc-700">
                                     <ul
                                         className="flex list-none overflow-x-auto"
                                         role="tablist"
@@ -3039,8 +3113,8 @@ export default function VodPlay() {
                                                 className={`border-b-3 relative cursor-pointer whitespace-nowrap px-6 py-3.5 text-base font-bold transition-all ${
                                                     activeEpisode?.server_name ===
                                                     episode.server_name
-                                                        ? "border-b-4 border-blue-600 bg-white text-blue-600 shadow-sm"
-                                                        : "border-transparent bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900"
+                                                        ? "border-b-4 border-blue-500 bg-zinc-800 text-blue-400 shadow-sm"
+                                                        : "border-transparent bg-zinc-700 text-zinc-300 hover:bg-zinc-600 hover:text-zinc-100"
                                                 }`}
                                             >
                                                 {episode.server_name}
@@ -3069,24 +3143,21 @@ export default function VodPlay() {
                                                 ).forEach((s, i) => {
                                                     const raw = getEpisodeKey(
                                                         s.slug,
+                                                        s.name,
                                                     );
                                                     const k = /^\d+$/.test(
                                                         String(raw),
                                                     )
                                                         ? String(raw)
-                                                        : s.slug || `idx-${i}`;
+                                                        : s.slug ||
+                                                          s.name ||
+                                                          `idx-${i}`;
                                                     if (!map.has(k))
                                                         map.set(k, s);
                                                 });
-                                                const currentRaw =
-                                                    getEpisodeKey(
-                                                        currentEpisodeId || "",
-                                                    );
-                                                const currentKey = /^\d+$/.test(
-                                                    String(currentRaw),
-                                                )
-                                                    ? String(currentRaw)
-                                                    : currentEpisodeId || "";
+                                                // currentEpisodeId giờ đã là key (số tập) thay vì slug
+                                                const currentKey =
+                                                    currentEpisodeId || "";
                                                 return Array.from(
                                                     map.entries(),
                                                 ).map(([k, server]) => {
@@ -3103,7 +3174,7 @@ export default function VodPlay() {
                                                             className={`cursor-pointer rounded-md border-2 border-transparent px-3 py-2 text-center shadow transition-all ${
                                                                 k === currentKey
                                                                     ? "border-blue-500 bg-blue-500 text-white"
-                                                                    : "bg-gray-200 hover:border-blue-400"
+                                                                    : "bg-zinc-700 hover:border-blue-400"
                                                             }`}
                                                         >
                                                             <p className="text-sm font-semibold">
@@ -3128,7 +3199,7 @@ export default function VodPlay() {
                         </div>
 
                         {/* Movie Details */}
-                        <div className="rounded-md border border-gray-200 bg-white p-4 shadow-md">
+                        <div className="rounded-md border border-zinc-700 bg-zinc-800 p-4 shadow-md">
                             <div className="flex flex-col gap-4 lg:flex-row">
                                 {/* Poster */}
                                 <div
@@ -3169,11 +3240,11 @@ export default function VodPlay() {
                                 {/* Movie Details */}
                                 <div className="flex grow flex-col gap-3">
                                     <div>
-                                        <div className="text-xl font-bold text-gray-800">
+                                        <div className="text-xl font-bold text-zinc-100">
                                             {movie.name}
                                         </div>
                                         <div
-                                            className="text-sm italic text-gray-500"
+                                            className="text-sm italic text-zinc-400"
                                             title={movie.origin_name}
                                         >
                                             {movie.origin_name}
@@ -3181,23 +3252,29 @@ export default function VodPlay() {
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {movie.time && movie.time !== "0" && (
-                                            <span className="inline-block rounded-md bg-blue-100 px-2 py-1 text-sm text-blue-800">
-                                                <strong>Thời lượng:</strong>{" "}
+                                            <span className="inline-block rounded-md bg-blue-900/50 px-2 py-1 text-sm text-blue-300">
+                                                <strong>
+                                                    {t("vodPlay.duration")}:
+                                                </strong>{" "}
                                                 {movie.time}
                                             </span>
                                         )}
                                         {movie.quality &&
                                             movie.quality !== "0" && (
-                                                <span className="inline-block rounded-md bg-green-100 px-2 py-1 text-sm text-green-800">
-                                                    <strong>Chất lượng:</strong>{" "}
+                                                <span className="inline-block rounded-md bg-green-900/50 px-2 py-1 text-sm text-green-300">
+                                                    <strong>
+                                                        {t("vodPlay.quality")}:
+                                                    </strong>{" "}
                                                     {movie.quality}
                                                 </span>
                                             )}
                                         {movie.year &&
                                             movie.year !== 0 &&
                                             movie.year !== "0" && (
-                                                <span className="inline-block rounded-md bg-purple-100 px-2 py-1 text-sm text-purple-800">
-                                                    <strong>Năm:</strong>{" "}
+                                                <span className="inline-block rounded-md bg-purple-900/50 px-2 py-1 text-sm text-purple-300">
+                                                    <strong>
+                                                        {t("vodPlay.year")}:
+                                                    </strong>{" "}
                                                     {movie.year}
                                                 </span>
                                             )}
@@ -3206,7 +3283,7 @@ export default function VodPlay() {
                                             tmdbData?.vote_count &&
                                             tmdbData.vote_count > 0 && (
                                                 <>
-                                                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-1 text-sm text-amber-800">
+                                                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-900/50 px-2 py-1 text-sm text-amber-300">
                                                         <svg
                                                             className="h-4 w-4 fill-current"
                                                             viewBox="0 0 24 24"
@@ -3232,7 +3309,7 @@ export default function VodPlay() {
                                         {movie.category?.map((cat, idx) => (
                                             <span
                                                 key={idx}
-                                                className="inline-block rounded-md bg-yellow-100 px-2 py-1 text-sm text-yellow-800"
+                                                className="inline-block rounded-md bg-yellow-900/50 px-2 py-1 text-sm text-yellow-300"
                                             >
                                                 {cat.name}
                                             </span>
@@ -3249,7 +3326,7 @@ export default function VodPlay() {
                                         ))}
                                     </div> */}
                                     <div
-                                        className="line-clamp-4 text-sm text-gray-600"
+                                        className="line-clamp-4 text-sm text-zinc-300"
                                         title={movie.content}
                                         dangerouslySetInnerHTML={{
                                             __html: movie.content,
@@ -3263,10 +3340,10 @@ export default function VodPlay() {
                         {((tmdbCredits?.cast && tmdbCredits.cast.length > 0) ||
                             (movie.actor && movie.actor.length > 0)) && (
                             <>
-                                <h3 className="text-lg font-semibold text-gray-800">
-                                    Diễn viên chính
+                                <h3 className="text-lg font-semibold text-zinc-100">
+                                    {t("vodPlay.cast")}
                                 </h3>
-                                <div className="rounded-md border border-gray-200 bg-white p-6 shadow-md">
+                                <div className="rounded-md border border-zinc-700 bg-zinc-800 p-6 shadow-md">
                                     <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-10">
                                         {/* Ưu tiên TMDb, fallback về movie.actor */}
                                         {(tmdbCredits?.cast &&
@@ -3295,7 +3372,7 @@ export default function VodPlay() {
                                                         }
                                                     />
                                                 ) : (
-                                                    <div className="bg-linear-to-br flex h-16 w-16 items-center justify-center rounded-full from-gray-400 via-gray-500 to-gray-600 shadow-md transition-all duration-300 group-hover:shadow-lg">
+                                                    <div className="bg-linear-to-br flex h-16 w-16 items-center justify-center rounded-full from-zinc-500 via-zinc-600 to-zinc-700 shadow-md transition-all duration-300 group-hover:shadow-lg">
                                                         <span className="text-lg font-bold text-white">
                                                             {c.name
                                                                 ? c.name
@@ -3319,11 +3396,11 @@ export default function VodPlay() {
                                                     </div>
                                                 )}
                                                 <div className="w-32">
-                                                    <div className="line-clamp-2 text-sm font-semibold text-gray-800 transition-colors duration-300 group-hover:text-blue-600">
+                                                    <div className="line-clamp-2 text-sm font-semibold text-zinc-100 transition-colors duration-300 group-hover:text-blue-400">
                                                         {c.name}
                                                     </div>
                                                     {c.character && (
-                                                        <div className="line-clamp-2 text-xs text-gray-500 transition-colors duration-300 group-hover:text-gray-700">
+                                                        <div className="line-clamp-2 text-xs text-zinc-400 transition-colors duration-300 group-hover:text-zinc-300">
                                                             {c.character}
                                                         </div>
                                                     )}
@@ -3340,10 +3417,10 @@ export default function VodPlay() {
                             (tmdbImages.posters?.length > 0 ||
                                 tmdbImages.backdrops?.length > 0) && (
                                 <>
-                                    <h3 className="text-lg font-semibold text-gray-800">
-                                        Thư viện hình ảnh
+                                    <h3 className="text-lg font-semibold text-zinc-100">
+                                        {t("vodPlay.gallery")}
                                     </h3>
-                                    <div className="rounded-md border border-gray-200 bg-white p-6 shadow-md">
+                                    <div className="rounded-md border border-zinc-700 bg-zinc-800 p-6 shadow-md">
                                         <div className="grid grid-cols-3 gap-4 sm:grid-cols-4 lg:grid-cols-6">
                                             {/* Poster + Backdrop combined */}
                                             {(() => {

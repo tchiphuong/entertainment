@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import Select from "react-select";
 import moment from "moment";
 import LoadingSpinner from "../components/LoadingSpinner";
@@ -8,6 +9,7 @@ import LoadingSpinner from "../components/LoadingSpinner";
 const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT;
 
 export default function Home() {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [matches, setMatches] = useState([]);
@@ -81,7 +83,7 @@ export default function Home() {
 
     // ✅ OPTIMIZATION: Separate useEffect for initial setup (runs once)
     useEffect(() => {
-        document.title = "Trang chủ - Entertainment";
+        document.title = t("home.title");
         fetchData();
 
         const handleScroll = () => {
@@ -211,13 +213,13 @@ export default function Home() {
                 // onClick={() => navigate(`/match/${match.id}`)}
                 className="group relative h-full cursor-pointer"
             >
-                <div className="relative h-full overflow-hidden rounded-2xl bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
+                <div className="relative h-full overflow-hidden rounded-2xl bg-zinc-800 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
                     <div className="absolute right-2 top-2 z-0">
                         {getStatusBadge()}
                     </div>
 
                     {match.tournament && (
-                        <div className="bg-linear-to-r flex items-center gap-2 border-b border-blue-200 from-blue-50 to-blue-100 px-4 py-2">
+                        <div className="flex items-center gap-2 border-b border-zinc-700 bg-zinc-700/50 px-4 py-2">
                             {match.tournament.logo && (
                                 <img
                                     src={match.tournament.logo}
@@ -226,7 +228,7 @@ export default function Home() {
                                     onError={(e) => { e.target.style.visibility = 'hidden'; e.target.onerror = null; }}
                                 />
                             )}
-                            <span className="line-clamp-1 text-xs font-bold text-gray-800">
+                            <span className="line-clamp-1 text-xs font-bold text-zinc-100">
                                 {match.tournament.name}
                             </span>
                         </div>
@@ -235,11 +237,11 @@ export default function Home() {
                     <div className="space-y-4 p-5">
                         <div className="flex flex-col items-center justify-center">
                             {match._isHotMatch && match.date && match.date.length === 8 && (
-                                <span className="mb-0.5 text-xs font-semibold text-gray-500">
+                                <span className="mb-0.5 text-xs font-semibold text-zinc-400">
                                     {`${match.date.substring(6, 8)}/${match.date.substring(4, 6)}`}
                                 </span>
                             )}
-                            <div className="text-sm font-bold text-blue-600">
+                            <div className="text-sm font-bold text-blue-400">
                                 {match.date_txt ? (
                                     <span dangerouslySetInnerHTML={{ __html: match.date_txt }} />
                                 ) : (
@@ -249,7 +251,7 @@ export default function Home() {
                         </div>
 
                         <div className="space-y-3">
-                            <div className="bg-linear-to-r hover:bg-linear-to-r flex items-center justify-between gap-3 rounded-lg from-blue-50 to-transparent p-3 transition-colors hover:from-blue-100 hover:to-transparent">
+                            <div className="flex items-center justify-between gap-3 rounded-lg bg-blue-900/20 p-3 transition-colors hover:bg-blue-900/30">
                                 <div className="flex min-w-0 flex-1 items-center gap-3">
                                     {match.home?.logo && (
                                         <img
@@ -259,12 +261,12 @@ export default function Home() {
                                             onError={(e) => { e.target.style.visibility = 'hidden'; e.target.onerror = null; }}
                                         />
                                     )}
-                                    <p className="line-clamp-2 text-sm font-bold text-gray-800">
+                                    <p className="line-clamp-2 text-sm font-bold text-zinc-100">
                                         {match.home?.name_short || match.home?.name}
                                     </p>
                                 </div>
                                 {match.scores && match.match_status === "live" && (
-                                    <span className="min-w-fit shrink-0 text-2xl font-black text-blue-600">
+                                    <span className="min-w-fit shrink-0 text-2xl font-black text-blue-400">
                                         {match.scores.home}
                                     </span>
                                 )}
@@ -272,14 +274,14 @@ export default function Home() {
 
                             {match.home && match.away && (
                                 <div className="flex items-center justify-center px-2 py-0.5">
-                                    <span className="rounded-full bg-gray-400 px-3 py-0.5 text-xs font-bold text-white">
+                                    <span className="rounded-full bg-zinc-600 px-3 py-0.5 text-xs font-bold text-white">
                                         VS
                                     </span>
                                 </div>
                             )}
 
                             {match.away && (
-                                <div className="bg-linear-to-r hover:bg-linear-to-r flex items-center justify-between gap-3 rounded-lg from-red-50 to-transparent p-3 transition-colors hover:from-red-100 hover:to-transparent">
+                                <div className="flex items-center justify-between gap-3 rounded-lg bg-red-900/20 p-3 transition-colors hover:bg-red-900/30">
                                     <div className="flex min-w-0 flex-1 items-center gap-3">
                                         {match.away.logo && (
                                             <img
@@ -289,12 +291,12 @@ export default function Home() {
                                                 onError={(e) => { e.target.style.visibility = 'hidden'; e.target.onerror = null; }}
                                             />
                                         )}
-                                        <p className="line-clamp-2 text-sm font-bold text-gray-800">
+                                        <p className="line-clamp-2 text-sm font-bold text-zinc-100">
                                             {match.away.name_short || match.away.name}
                                         </p>
                                     </div>
                                     {match.scores && match.match_status === "live" && (
-                                        <span className="min-w-fit shrink-0 text-2xl font-black text-red-600">
+                                        <span className="min-w-fit shrink-0 text-2xl font-black text-red-400">
                                             {match.scores.away}
                                         </span>
                                     )}
@@ -308,14 +310,14 @@ export default function Home() {
     });
 
     return (
-        <div className="min-h-screen bg-white">
+        <div className="min-h-screen bg-zinc-900">
             <LoadingSpinner isLoading={loading} />
 
             <main className="container mx-auto px-4 py-10">
                 {tournaments.length > 0 && (
                     <div className="mb-8">
-                        <h3 className="mb-3 text-sm font-bold text-gray-700">
-                            Lọc theo giải đấu:
+                        <h3 className="mb-3 text-sm font-bold text-zinc-300">
+                            {t("tv.filterByTournament")}:
                         </h3>
                         <div className="max-w-md">
                             <Select
@@ -328,7 +330,7 @@ export default function Home() {
                                     );
                                 }}
                                 classNamePrefix="react-select"
-                                placeholder="Chọn giải đấu..."
+                                placeholder={t("tv.selectTournament")}
                                 formatOptionLabel={(option) => (
                                     <div className="flex items-center gap-2">
                                         {option.logo && (
@@ -351,8 +353,8 @@ export default function Home() {
                 {hotMatches.length > 0 && (
                     <div className="mb-10">
                         <div className="mb-4">
-                            <h2 className="border-b-2 border-blue-600 pb-2 text-lg font-bold text-gray-800">
-                                🔥 TRẬN HOT
+                            <h2 className="border-b-2 border-blue-500 pb-2 text-lg font-bold text-zinc-100">
+                                {t("tv.hotMatches")}
                             </h2>
                         </div>
                         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -371,7 +373,7 @@ export default function Home() {
                             .map((dateKey) => (
                                 <div key={dateKey}>
                                     <div className="mb-4">
-                                        <h2 className="border-b-2 border-blue-600 pb-2 text-lg font-bold text-gray-800">
+                                        <h2 className="border-b-2 border-blue-500 pb-2 text-lg font-bold text-zinc-100">
                                             📅{" "}
                                             {new Date(dateKey + "T00:00:00").toLocaleDateString("vi-VN", {
                                                 weekday: "long",
@@ -395,10 +397,10 @@ export default function Home() {
                     </div>
                 ) : matches.length > 0 && hotMatches.length === 0 ? ( // Only show "empty" if truly empty (no hot, no normal)
                     <div className="py-20 text-center">
-                        <p className="mb-2 text-xl font-semibold text-gray-600">
-                            😔 Không có trận đấu để hiển thị
+                        <p className="mb-2 text-xl font-semibold text-zinc-400">
+                            {t("tv.noMatches")}
                         </p>
-                        <p className="text-sm text-gray-500">Vui lòng quay lại sau</p>
+                        <p className="text-sm text-zinc-500">{t("tv.checkBackLater")}</p>
                     </div>
                 ) : null}
             </main>

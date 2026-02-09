@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useAuth } from "../contexts/AuthContext";
 import { auth } from "../services/firebase";
@@ -25,6 +26,7 @@ import {
 
 function UserProfile({ onLogout }) {
     const { currentUser } = useAuth();
+    const { t } = useTranslation();
     const [authError, setAuthError] = useState(null);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef(null);
@@ -133,27 +135,27 @@ function UserProfile({ onLogout }) {
                     <div
                         ref={menuRef}
                         className={clsx(
-                            "absolute right-0 top-full mt-2 w-48 origin-top-right rounded-md bg-white shadow-lg transition-all duration-200 ease-in-out",
+                            "absolute right-0 top-full mt-2 w-48 origin-top-right rounded-md bg-zinc-800 shadow-lg transition-all duration-200 ease-in-out",
                             isMenuOpen
                                 ? "pointer-events-auto scale-100 opacity-100"
                                 : "pointer-events-none scale-95 opacity-0",
                         )}
                     >
                         <div className="py-1">
-                            <div className="border-b border-gray-200 px-4 py-2">
-                                <p className="text-sm font-semibold text-gray-900">
+                            <div className="border-b border-zinc-700 px-4 py-2">
+                                <p className="text-sm font-semibold text-zinc-100">
                                     {currentUser.displayName}
                                 </p>
-                                <p className="truncate text-xs text-gray-500">
+                                <p className="truncate text-xs text-zinc-400">
                                     {currentUser.email}
                                 </p>
                             </div>
                             <button
                                 type="button"
                                 onClick={handleLogout}
-                                className="block w-full cursor-pointer px-4 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100"
+                                className="block w-full cursor-pointer px-4 py-2 text-left text-sm text-zinc-300 transition hover:bg-zinc-700"
                             >
-                                Đăng xuất
+                                {t("common.logout")}
                             </button>
                         </div>
                     </div>
@@ -178,12 +180,12 @@ function UserProfile({ onLogout }) {
                             d="M488 261.8C488 403.3 381.5 512 244 512 109.8 512 0 402.2 0 256S109.8 0 244 0c73.2 0 136.2 29.3 182.4 75.4l-62.4 60.3C337.2 114.6 295.6 96 244 96c-88.6 0-160.1 71.1-160.1 160s71.5 160 160.1 160c97.4 0 134-60.5 138.5-93.2H244v-74.4h239.9c2.4 12.6 3.6 25.8 3.6 40.2z"
                         ></path>
                     </svg>
-                    <span>Đăng nhập</span>
+                    <span>{t("common.login")}</span>
                 </button>
             )}
             {authError && (
-                <div className="absolute right-0 top-full mt-2 w-64 rounded-md bg-red-100 p-3 text-sm text-red-800 shadow-lg">
-                    <p className="font-bold">Lỗi xác thực</p>
+                <div className="absolute right-0 top-full mt-2 w-64 rounded-md bg-red-900/50 p-3 text-sm text-red-200 shadow-lg">
+                    <p className="font-bold">{t("auth.authError")}</p>
                     <p className="mt-1 text-xs">{authError.message}</p>
                 </div>
             )}
@@ -278,6 +280,7 @@ function getMovieImage(imagePath) {
 
 // Tooltip Component cho movie details
 function MovieTooltip({ movie, children }) {
+    const { t } = useTranslation();
     const [isVisible, setIsVisible] = useState(false);
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [showBelow, setShowBelow] = useState(false);
@@ -385,18 +388,18 @@ function MovieTooltip({ movie, children }) {
                     {showBelow ? (
                         // Arrow pointing up (khi tooltip ở dưới)
                         <>
-                            <div className="absolute -top-2 left-1/2 h-0 w-0 -translate-x-1/2 border-b-8 border-l-8 border-r-8 border-b-gray-200 border-l-transparent border-r-transparent"></div>
-                            <div className="absolute -top-2 left-1/2 h-0 w-0 -translate-x-1/2 translate-y-px border-b-8 border-l-8 border-r-8 border-b-white border-l-transparent border-r-transparent"></div>
+                            <div className="absolute -top-2 left-1/2 h-0 w-0 -translate-x-1/2 border-b-8 border-l-8 border-r-8 border-b-zinc-700 border-l-transparent border-r-transparent"></div>
+                            <div className="absolute -top-2 left-1/2 h-0 w-0 -translate-x-1/2 translate-y-px border-b-8 border-l-8 border-r-8 border-b-zinc-800 border-l-transparent border-r-transparent"></div>
                         </>
                     ) : (
                         // Arrow pointing down (khi tooltip ở trên)
                         <>
-                            <div className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-gray-200"></div>
-                            <div className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 -translate-y-px border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-white"></div>
+                            <div className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-zinc-700"></div>
+                            <div className="absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 -translate-y-px border-l-8 border-r-8 border-t-8 border-l-transparent border-r-transparent border-t-zinc-800"></div>
                         </>
                     )}
 
-                    <div className="flex rounded-xl bg-white/95">
+                    <div className="flex rounded-xl bg-zinc-800/95">
                         {/* Thumbnail */}
                         <div className="w-32 shrink-0 self-stretch">
                             <img
@@ -410,27 +413,27 @@ function MovieTooltip({ movie, children }) {
                         <div className="flex-1 space-y-2 px-4 py-3">
                             {/* Title & Quick Info */}
                             <div>
-                                <h3 className="mb-1 text-sm font-bold leading-tight text-gray-900">
+                                <h3 className="mb-1 text-sm font-bold leading-tight text-zinc-100">
                                     {movie.name}
                                 </h3>
 
                                 {/* Original Name */}
                                 {movie.origin_name &&
                                     movie.origin_name !== movie.name && (
-                                        <p className="mb-1.5 text-xs italic text-gray-600">
+                                        <p className="mb-1.5 text-xs italic text-zinc-400">
                                             {movie.origin_name}
                                         </p>
                                     )}
 
                                 {/* Quick Info Row */}
                                 <div className="mb-2 flex items-center gap-2 text-xs">
-                                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
+                                    <span className="rounded-full bg-red-900/50 px-2 py-0.5 text-xs font-semibold text-red-300">
                                         {movie.quality}
                                     </span>
-                                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">
+                                    <span className="rounded-full bg-blue-900/50 px-2 py-0.5 text-xs font-semibold text-blue-300">
                                         {movie.episode_current || "N/A"}
                                     </span>
-                                    <span className="text-gray-600">
+                                    <span className="text-zinc-400">
                                         {movie.year || "N/A"}
                                     </span>
                                 </div>
@@ -442,8 +445,8 @@ function MovieTooltip({ movie, children }) {
                                 {movie.category &&
                                     movie.category.length > 0 && (
                                         <div>
-                                            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                                Thể loại
+                                            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                                                {t("tooltip.genre")}
                                             </h4>
                                             <div className="flex flex-wrap gap-1">
                                                 {movie.category
@@ -451,13 +454,13 @@ function MovieTooltip({ movie, children }) {
                                                     .map((cat, i) => (
                                                         <span
                                                             key={i}
-                                                            className="rounded-md bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700 ring-1 ring-blue-200/50"
+                                                            className="rounded-md bg-blue-900/50 px-1.5 py-0.5 text-xs font-medium text-blue-300 ring-1 ring-blue-700/50"
                                                         >
                                                             {cat.name}
                                                         </span>
                                                     ))}
                                                 {movie.category.length > 3 && (
-                                                    <span className="text-xs text-gray-500">
+                                                    <span className="text-xs text-zinc-400">
                                                         +
                                                         {movie.category.length -
                                                             3}
@@ -472,10 +475,10 @@ function MovieTooltip({ movie, children }) {
                                     {movie.country &&
                                         movie.country.length > 0 && (
                                             <div>
-                                                <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                                    Quốc gia
+                                                <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                                                    {t("tooltip.country")}
                                                 </div>
-                                                <div className="text-gray-700">
+                                                <div className="text-zinc-300">
                                                     {movie.country[0]?.name}
                                                 </div>
                                             </div>
@@ -483,8 +486,8 @@ function MovieTooltip({ movie, children }) {
 
                                     {movie.lang && (
                                         <div className="flex-1">
-                                            <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                                Ngôn ngữ
+                                            <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                                                {t("tooltip.language")}
                                             </div>
                                             <div className="flex flex-wrap gap-1">
                                                 {movie.lang
@@ -493,7 +496,7 @@ function MovieTooltip({ movie, children }) {
                                                     .map((lang, i) => (
                                                         <span
                                                             key={i}
-                                                            className="rounded bg-green-50 px-1.5 py-0.5 text-xs font-medium text-green-700 ring-1 ring-green-200/50"
+                                                            className="rounded bg-green-900/50 px-1.5 py-0.5 text-xs font-medium text-green-300 ring-1 ring-green-700/50"
                                                         >
                                                             {lang
                                                                 .trim()
@@ -529,10 +532,10 @@ function MovieTooltip({ movie, children }) {
                                         movie.time.trim() !== "" &&
                                         movie.time !== "0" && (
                                             <div>
-                                                <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                                    Thời lượng
+                                                <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                                                    {t("tooltip.duration")}
                                                 </div>
-                                                <div className="text-gray-700">
+                                                <div className="text-zinc-300">
                                                     {movie.time}
                                                 </div>
                                             </div>
@@ -541,20 +544,20 @@ function MovieTooltip({ movie, children }) {
                                     {/* TMDB Rating */}
                                     {movie.tmdb?.id && (
                                         <div>
-                                            <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                                                TMDB
+                                            <div className="mb-0.5 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                                                {t("tooltip.tmdb")}
                                             </div>
                                             <div className="flex items-center gap-1">
-                                                <span className="text-yellow-600">
+                                                <span className="text-yellow-500">
                                                     ★
                                                 </span>
-                                                <span className="text-gray-700">
+                                                <span className="text-zinc-300">
                                                     {movie.tmdb.vote_average}
                                                 </span>
                                                 {movie.tmdb.vote_count &&
                                                     movie.tmdb.vote_count >
                                                         0 && (
-                                                        <span className="text-gray-500">
+                                                        <span className="text-zinc-400">
                                                             (
                                                             {
                                                                 movie.tmdb
@@ -592,11 +595,13 @@ function useLocalStorage(key, initial) {
 }
 
 export default function Vods() {
+    const { t } = useTranslation();
+
     // Define tabs với SVG icons
     const TABS = [
         {
             id: SOURCES.SOURCE_O,
-            label: "Nguồn A",
+            label: t("vods.sourceA"),
             // Icon: Server
             icon: (
                 <svg
@@ -616,7 +621,7 @@ export default function Vods() {
         },
         {
             id: SOURCES.SOURCE_K,
-            label: "Nguồn B",
+            label: t("vods.sourceB"),
             // Icon: Database
             icon: (
                 <svg
@@ -636,7 +641,7 @@ export default function Vods() {
         },
         {
             id: SOURCES.SOURCE_C,
-            label: "Nguồn C",
+            label: t("vods.sourceC"),
             // Icon: Cloud
             icon: (
                 <svg
@@ -1623,33 +1628,33 @@ export default function Vods() {
     function langBadgeClass(lang) {
         if (!lang) return "";
         if (lang.indexOf("Vietsub") !== -1)
-            return "bg-green-50 text-green-700 ring-green-600/10";
+            return "bg-green-900/50 text-green-300 ring-green-700/50";
         if (lang.indexOf("Thuyết Minh") !== -1)
-            return "bg-blue-50 text-blue-700 ring-blue-600/10";
+            return "bg-blue-900/50 text-blue-300 ring-blue-700/50";
         if (lang.indexOf("Lồng Tiếng") !== -1)
-            return "bg-yellow-50 text-yellow-700 ring-yellow-600/10";
-        return "bg-gray-50 text-gray-700";
+            return "bg-yellow-900/50 text-yellow-300 ring-yellow-700/50";
+        return "bg-zinc-700 text-zinc-300";
     }
 
     const activeIndex = TABS.findIndex((tab) => tab.id === source);
     const tabWidthPercent = 100 / TABS.length;
 
     return (
-        <div className="min-h-screen bg-gray-100 font-sans text-gray-800">
+        <div className="min-h-screen bg-zinc-900 font-sans text-zinc-200">
             {/* Header */}
-            <header className="sticky top-0 z-40 bg-white/80 shadow-md backdrop-blur-md">
+            <header className="sticky top-0 z-40 bg-zinc-800/80 shadow-md backdrop-blur-md">
                 <div className="container mx-auto p-4 lg:px-32">
                     <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-4">
                         {/* Left: Title + Source Selector */}
                         <div className="flex items-center justify-center gap-2 md:gap-4">
                             {/* Source Selector */}
                             <div
-                                className="grid-items-center relative grid w-full grid-cols-3 rounded-full bg-gray-200 p-1"
+                                className="grid-items-center relative grid w-full grid-cols-3 rounded-full bg-zinc-700 p-1"
                                 role="tablist"
                             >
                                 {/* Animated indicator background */}
                                 <div
-                                    className="absolute bottom-1 top-1 cursor-pointer rounded-full bg-white shadow transition-transform duration-300 ease-in-out"
+                                    className="absolute bottom-1 top-1 cursor-pointer rounded-full bg-zinc-600 shadow transition-transform duration-300 ease-in-out"
                                     style={{
                                         transform: `translateX(calc(${activeIndex * 100}% + 0.25rem))`,
                                         left: 0,
@@ -1672,8 +1677,8 @@ export default function Vods() {
                                             onClick={() => setSource(tab.id)}
                                             className={`relative z-10 flex flex-1 cursor-pointer items-center justify-center rounded-full p-2 transition-colors duration-200 ${
                                                 isActive
-                                                    ? "text-gray-900"
-                                                    : "text-gray-500 hover:text-gray-700"
+                                                    ? "text-zinc-100"
+                                                    : "text-zinc-400 hover:text-zinc-200"
                                             }`}
                                         >
                                             {tab.icon}
@@ -1687,7 +1692,7 @@ export default function Vods() {
                         <div className="relative flex-1 md:max-w-md">
                             <input
                                 type="text"
-                                placeholder="Tìm kiếm phim..."
+                                placeholder={t("vods.searchPlaceholder")}
                                 value={searchInputValue}
                                 onChange={(e) => {
                                     const value = e.target.value;
@@ -1707,10 +1712,10 @@ export default function Vods() {
                                     );
                                 }}
                                 onKeyDown={searchMoviesKey}
-                                className="w-full rounded-full border border-gray-300 bg-gray-50 px-4 py-2 pr-10 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                className="w-full rounded-full border border-zinc-600 bg-zinc-700 px-4 py-2 pr-10 text-sm text-zinc-200 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                             />
                             <svg
-                                className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400"
+                                className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-400"
                                 fill="none"
                                 stroke="currentColor"
                                 viewBox="0 0 24 24"
@@ -1729,8 +1734,8 @@ export default function Vods() {
                         <div className="flex items-center justify-end gap-2 md:gap-4">
                             <button
                                 onClick={() => setIsFilterOpen(true)}
-                                className="relative rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
-                                aria-label="Bộ lọc"
+                                className="relative rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                                aria-label={t("common.filter")}
                             >
                                 <svg
                                     className="h-5 w-5 md:h-6 md:w-6"
@@ -1759,8 +1764,8 @@ export default function Vods() {
                             </button>
                             <button
                                 onClick={toggleFavorites}
-                                className="relative rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
-                                aria-label="Phim yêu thích"
+                                className="relative rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                                aria-label={t("vods.favorites")}
                             >
                                 <svg
                                     className="h-5 w-5 md:h-6 md:w-6"
@@ -1785,8 +1790,8 @@ export default function Vods() {
                             </button>
                             <button
                                 onClick={toggleHistory}
-                                className="relative rounded-full p-2 text-gray-600 transition-colors hover:bg-gray-200 hover:text-gray-900"
-                                aria-label="Lịch sử xem"
+                                className="relative rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
+                                aria-label={t("vods.history")}
                             >
                                 <svg
                                     className="h-5 w-5 md:h-6 md:w-6"
@@ -1822,14 +1827,14 @@ export default function Vods() {
                         onClick={() => setIsFilterOpen(false)}
                     >
                         <div
-                            className="flex max-h-[90vh] w-11/12 max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl"
+                            className="flex max-h-[90vh] w-11/12 max-w-2xl flex-col overflow-hidden rounded-lg bg-zinc-800 shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-gray-200 from-blue-50 to-indigo-50 px-6 py-4">
+                            <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-zinc-700 from-zinc-800 to-zinc-700 px-6 py-4">
                                 <div className="flex items-center gap-3">
-                                    <div className="rounded-lg bg-white p-2 shadow-sm">
+                                    <div className="rounded-lg bg-zinc-700 p-2 shadow-sm">
                                         <svg
-                                            className="h-5 w-5 text-blue-600"
+                                            className="h-5 w-5 text-blue-400"
                                             fill="none"
                                             stroke="currentColor"
                                             viewBox="0 0 24 24"
@@ -1842,13 +1847,13 @@ export default function Vods() {
                                             ></path>
                                         </svg>
                                     </div>
-                                    <h2 className="text-lg font-bold text-gray-900">
-                                        Bộ lọc phim
+                                    <h2 className="text-lg font-bold text-zinc-100">
+                                        {t("vods.filterTitle")}
                                     </h2>
                                 </div>
                                 <button
                                     onClick={() => setIsFilterOpen(false)}
-                                    className="text-2xl leading-none text-gray-400 transition-colors hover:text-gray-600"
+                                    className="text-2xl leading-none text-zinc-400 transition-colors hover:text-zinc-200"
                                 >
                                     ×
                                 </button>
@@ -1856,9 +1861,9 @@ export default function Vods() {
                             <div className="flex-1 space-y-6 overflow-y-auto p-6">
                                 {/* Country Filter */}
                                 <div>
-                                    <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
+                                    <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-300">
                                         <svg
-                                            className="h-4 w-4 text-blue-500"
+                                            className="h-4 w-4 text-blue-400"
                                             fill="none"
                                             stroke="currentColor"
                                             viewBox="0 0 24 24"
@@ -1870,11 +1875,11 @@ export default function Vods() {
                                                 d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"
                                             />
                                         </svg>
-                                        Quốc gia
+                                        {t("vods.country")}
                                     </label>
                                     {countries.length === 0 ? (
                                         // Skeleton cho Country Select khi đang load
-                                        <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-300"></div>
+                                        <div className="h-[42px] w-full animate-pulse rounded-lg bg-zinc-600"></div>
                                     ) : (
                                         (() => {
                                             const countryOptions =
@@ -1919,8 +1924,8 @@ export default function Vods() {
                                                     <div className="relative">
                                                         <ComboboxInput
                                                             className={clsx(
-                                                                "w-full rounded-full border border-gray-300 bg-white py-2.5 pl-3 pr-10 text-sm leading-5 text-gray-900",
-                                                                "focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200",
+                                                                "w-full rounded-full border border-zinc-600 bg-zinc-700 py-2.5 pl-3 pr-10 text-sm leading-5 text-zinc-200",
+                                                                "focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-700",
                                                                 "transition duration-150 ease-in-out",
                                                             )}
                                                             displayValue={(
@@ -1935,13 +1940,15 @@ export default function Vods() {
                                                                         .value,
                                                                 )
                                                             }
-                                                            placeholder="Chọn quốc gia"
+                                                            placeholder={t(
+                                                                "vods.selectCountry",
+                                                            )}
                                                         />
 
                                                         <ComboboxButton className="group absolute inset-y-0 right-0 px-2.5">
                                                             {/* SVG Mũi tên xuống (Thay thế cho ChevronDownIcon) */}
                                                             <svg
-                                                                className="size-5 text-gray-400 group-hover:text-gray-500"
+                                                                className="size-5 text-zinc-400 group-hover:text-zinc-300"
                                                                 viewBox="0 0 20 20"
                                                                 fill="currentColor"
                                                                 aria-hidden="true"
@@ -1960,7 +1967,7 @@ export default function Vods() {
                                                         transition
                                                         className={clsx(
                                                             // w-[var(--input-width)] giúp dropdown rộng bằng đúng input
-                                                            "w-(--input-width) max-h-60 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg",
+                                                            "w-(--input-width) max-h-60 overflow-y-auto rounded-xl border border-zinc-600 bg-zinc-700 p-1 shadow-lg",
                                                             "data-leave:data-closed:opacity-0 transition duration-100 ease-in",
                                                             "z-50 mt-1 empty:invisible",
                                                         )}
@@ -1968,8 +1975,10 @@ export default function Vods() {
                                                         {filteredCountries.length ===
                                                             0 &&
                                                         countryQuery !== "" ? (
-                                                            <div className="relative cursor-default select-none px-4 py-2 text-gray-700">
-                                                                Không tìm thấy.
+                                                            <div className="relative cursor-default select-none px-4 py-2 text-zinc-400">
+                                                                {t(
+                                                                    "vods.notFound",
+                                                                )}
                                                             </div>
                                                         ) : (
                                                             filteredCountries.map(
@@ -1981,7 +1990,7 @@ export default function Vods() {
                                                                         value={
                                                                             c
                                                                         }
-                                                                        className="data-focus:bg-blue-100 group flex cursor-default select-none items-center gap-2 rounded-lg px-3 py-1.5"
+                                                                        className="data-focus:bg-zinc-600 group flex cursor-default select-none items-center gap-2 rounded-lg px-3 py-1.5"
                                                                     >
                                                                         {/* SVG Dấu tích (Thay thế cho CheckIcon) */}
                                                                         <svg
@@ -1997,7 +2006,7 @@ export default function Vods() {
                                                                             />
                                                                         </svg>
 
-                                                                        <div className="group-data-selected:font-semibold text-sm text-gray-700">
+                                                                        <div className="group-data-selected:font-semibold text-sm text-zinc-200">
                                                                             {
                                                                                 c.label
                                                                             }
@@ -2014,9 +2023,9 @@ export default function Vods() {
                                 </div>
                                 {/* Category Filter */}
                                 <div>
-                                    <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-700">
+                                    <label className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-300">
                                         <svg
-                                            className="h-4 w-4 text-blue-500"
+                                            className="h-4 w-4 text-blue-400"
                                             fill="none"
                                             stroke="currentColor"
                                             viewBox="0 0 24 24"
@@ -2028,10 +2037,10 @@ export default function Vods() {
                                                 d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
                                             />
                                         </svg>
-                                        Thể loại
+                                        {t("vods.category")}
                                     </label>
                                     {categories.length === 0 ? (
-                                        <div className="h-[42px] w-full animate-pulse rounded-lg bg-gray-300"></div>
+                                        <div className="h-[42px] w-full animate-pulse rounded-lg bg-zinc-600"></div>
                                     ) : (
                                         (() => {
                                             const categoryOptions =
@@ -2075,8 +2084,8 @@ export default function Vods() {
                                                     <div className="relative">
                                                         <ComboboxInput
                                                             className={clsx(
-                                                                "w-full rounded-full border border-gray-300 bg-white py-2.5 pl-3 pr-10 text-sm leading-5 text-gray-900",
-                                                                "focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200",
+                                                                "w-full rounded-full border border-zinc-600 bg-zinc-700 py-2.5 pl-3 pr-10 text-sm leading-5 text-zinc-200",
+                                                                "focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-700",
                                                                 "transition duration-150 ease-in-out",
                                                             )}
                                                             displayValue={(
@@ -2091,12 +2100,14 @@ export default function Vods() {
                                                                         .value,
                                                                 )
                                                             }
-                                                            placeholder="Chọn thể loại"
+                                                            placeholder={t(
+                                                                "vods.selectCategory",
+                                                            )}
                                                         />
 
                                                         <ComboboxButton className="group absolute inset-y-0 right-0 px-2.5">
                                                             <svg
-                                                                className="size-5 text-gray-400 group-hover:text-gray-500"
+                                                                className="size-5 text-zinc-400 group-hover:text-zinc-300"
                                                                 viewBox="0 0 20 20"
                                                                 fill="currentColor"
                                                                 aria-hidden="true"
@@ -2114,7 +2125,7 @@ export default function Vods() {
                                                         anchor="bottom"
                                                         transition
                                                         className={clsx(
-                                                            "w-(--input-width) rounded-xl border border-gray-200 bg-white p-1 shadow-lg",
+                                                            "w-(--input-width) rounded-xl border border-zinc-600 bg-zinc-700 p-1 shadow-lg",
                                                             "max-h-60 overflow-y-auto",
                                                             "data-leave:data-closed:opacity-0 transition duration-100 ease-in",
                                                             "z-50 mt-1 empty:invisible",
@@ -2123,8 +2134,10 @@ export default function Vods() {
                                                         {filteredCategories.length ===
                                                             0 &&
                                                         categoryQuery !== "" ? (
-                                                            <div className="relative cursor-default select-none px-4 py-2 text-gray-700">
-                                                                Không tìm thấy.
+                                                            <div className="relative cursor-default select-none px-4 py-2 text-zinc-400">
+                                                                {t(
+                                                                    "vods.notFound",
+                                                                )}
                                                             </div>
                                                         ) : (
                                                             filteredCategories.map(
@@ -2136,10 +2149,10 @@ export default function Vods() {
                                                                         value={
                                                                             c
                                                                         }
-                                                                        className="data-focus:bg-blue-100 group flex cursor-default select-none items-center gap-2 rounded-lg px-3 py-1.5"
+                                                                        className="data-focus:bg-zinc-600 group flex cursor-default select-none items-center gap-2 rounded-lg px-3 py-1.5"
                                                                     >
                                                                         <svg
-                                                                            className="group-data-selected:visible invisible size-4 fill-blue-600"
+                                                                            className="group-data-selected:visible invisible size-4 fill-blue-400"
                                                                             viewBox="0 0 20 20"
                                                                             fill="currentColor"
                                                                             aria-hidden="true"
@@ -2151,7 +2164,7 @@ export default function Vods() {
                                                                             />
                                                                         </svg>
 
-                                                                        <div className="group-data-selected:font-semibold text-sm text-gray-700">
+                                                                        <div className="group-data-selected:font-semibold text-sm text-zinc-200">
                                                                             {
                                                                                 c.label
                                                                             }
@@ -2167,22 +2180,22 @@ export default function Vods() {
                                     )}
                                 </div>
                             </div>
-                            <div className="flex gap-3 border-t border-gray-200 bg-gray-50 px-6 py-3">
+                            <div className="flex gap-3 border-t border-zinc-700 bg-zinc-900 px-6 py-3">
                                 <button
                                     onClick={() => {
                                         setCountry("");
                                         setCategory("");
                                         setCurrentPage(1);
                                     }}
-                                    className="flex-1 rounded-full border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                                    className="flex-1 rounded-full border border-zinc-600 bg-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-600"
                                 >
-                                    Xóa bộ lọc
+                                    {t("vods.clearFilter")}
                                 </button>
                                 <button
                                     onClick={() => setIsFilterOpen(false)}
                                     className="flex-1 rounded-full bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600"
                                 >
-                                    Áp dụng
+                                    {t("common.apply")}
                                 </button>
                             </div>
                         </div>
@@ -2195,14 +2208,14 @@ export default function Vods() {
                         onClick={closeHistory}
                     >
                         <div
-                            className="max-h-100 flex w-11/12 max-w-2xl flex-col rounded-lg bg-white shadow-2xl"
+                            className="max-h-100 flex w-11/12 max-w-2xl flex-col rounded-lg bg-zinc-800 shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-gray-200 from-blue-50 to-indigo-50 px-6 py-4">
+                            <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-zinc-700 from-zinc-800 to-zinc-700 px-6 py-4">
                                 <div className="flex items-center gap-3">
-                                    <div className="rounded-lg bg-white p-2 shadow-sm">
+                                    <div className="rounded-lg bg-zinc-700 p-2 shadow-sm">
                                         <svg
-                                            className="h-5 w-5 text-blue-600"
+                                            className="h-5 w-5 text-blue-400"
                                             fill="none"
                                             viewBox="0 0 24 24"
                                             stroke="currentColor"
@@ -2215,21 +2228,21 @@ export default function Vods() {
                                             />
                                         </svg>
                                     </div>
-                                    <h2 className="text-lg font-bold text-gray-900">
-                                        Lịch sử xem
+                                    <h2 className="text-lg font-bold text-zinc-100">
+                                        {t("vods.history")}
                                     </h2>
                                 </div>
                                 <button
                                     onClick={closeHistory}
-                                    className="text-2xl leading-none text-gray-400 transition-colors hover:text-gray-600"
+                                    className="text-2xl leading-none text-zinc-400 transition-colors hover:text-zinc-200"
                                 >
                                     ×
                                 </button>
                             </div>
-                            <ul className="flex-1 divide-y divide-gray-100 overflow-y-auto">
+                            <ul className="flex-1 divide-y divide-zinc-700 overflow-y-auto">
                                 {history.length === 0 && !isLoading && (
-                                    <li className="flex items-center justify-center py-12 text-gray-400">
-                                        Oops~ Bạn chưa xem phim nào cả! 🥺
+                                    <li className="flex items-center justify-center py-12 text-zinc-400">
+                                        {t("vods.noHistory")}
                                     </li>
                                 )}
 
@@ -2242,21 +2255,21 @@ export default function Vods() {
                                                 className="flex animate-pulse items-center gap-4 px-6 py-3"
                                             >
                                                 {/* Skeleton Poster */}
-                                                <div className="h-16 w-12 shrink-0 rounded-md bg-gray-300"></div>
+                                                <div className="h-16 w-12 shrink-0 rounded-md bg-zinc-600"></div>
 
                                                 {/* Skeleton Content */}
                                                 <div className="min-w-0 flex-1">
-                                                    <div className="mb-2 h-4 w-3/4 rounded bg-gray-300"></div>
+                                                    <div className="mb-2 h-4 w-3/4 rounded bg-zinc-600"></div>
                                                     <div className="mb-1 flex gap-2">
-                                                        <div className="h-3 w-20 rounded bg-gray-200"></div>
-                                                        <div className="h-3 w-1 rounded bg-gray-200"></div>
-                                                        <div className="h-3 w-16 rounded bg-gray-200"></div>
+                                                        <div className="h-3 w-20 rounded bg-zinc-700"></div>
+                                                        <div className="h-3 w-1 rounded bg-zinc-700"></div>
+                                                        <div className="h-3 w-16 rounded bg-zinc-700"></div>
                                                     </div>
-                                                    <div className="h-3 w-24 rounded bg-gray-200"></div>
+                                                    <div className="h-3 w-24 rounded bg-zinc-700"></div>
                                                 </div>
 
                                                 {/* Skeleton Delete Button */}
-                                                <div className="h-5 w-5 rounded bg-gray-300"></div>
+                                                <div className="h-5 w-5 rounded bg-zinc-600"></div>
                                             </li>
                                         ),
                                     )}
@@ -2296,7 +2309,7 @@ export default function Vods() {
                                                     }
                                                     return url;
                                                 })()}
-                                                className="flex cursor-pointer items-center gap-4 px-6 py-3 text-inherit no-underline transition-colors hover:bg-blue-50"
+                                                className="flex cursor-pointer items-center gap-4 px-6 py-3 text-inherit no-underline transition-colors hover:bg-zinc-700"
                                             >
                                                 <img
                                                     src={item.poster}
@@ -2305,10 +2318,10 @@ export default function Vods() {
                                                     className="h-16 w-12 shrink-0 rounded-md object-cover shadow-md"
                                                 />
                                                 <div className="min-w-0 flex-1">
-                                                    <h3 className="truncate text-sm font-semibold text-gray-900">
+                                                    <h3 className="truncate text-sm font-semibold text-zinc-100">
                                                         {item.name}
                                                     </h3>
-                                                    <div className="mt-1 flex gap-2 text-xs text-gray-500">
+                                                    <div className="mt-1 flex gap-2 text-xs text-zinc-400">
                                                         <span>
                                                             {new Date(
                                                                 item.timestamp ||
@@ -2328,7 +2341,7 @@ export default function Vods() {
                                                         </span>
                                                     </div>
                                                     <div className="mt-1 text-xs font-medium text-blue-600">
-                                                        Đã xem:{" "}
+                                                        {t("vods.watched")}:{" "}
                                                         {(() => {
                                                             const value =
                                                                 item
@@ -2401,7 +2414,9 @@ export default function Vods() {
                                                                 );
                                                             return (
                                                                 formatted ||
-                                                                "Chưa xem"
+                                                                t(
+                                                                    "vods.notWatched",
+                                                                )
                                                             );
                                                         })()}
                                                     </div>
@@ -2416,7 +2431,7 @@ export default function Vods() {
                                                         e,
                                                     );
                                                 }}
-                                                className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-400 opacity-0 transition-all hover:bg-red-900/50 hover:text-red-400 group-hover:opacity-100"
                                             >
                                                 <svg
                                                     className="h-5 w-5"
@@ -2430,12 +2445,12 @@ export default function Vods() {
                                     ))}
                             </ul>
                             {history.length > 0 && (
-                                <div className="rounded-b-lg border-t border-gray-200 bg-gray-50 px-6 py-3 text-right">
+                                <div className="rounded-b-lg border-t border-zinc-700 bg-zinc-900 px-6 py-3 text-right">
                                     <button
                                         onClick={() => setConfirmDelete(true)}
                                         className="rounded-full bg-red-500 px-4 py-2 text-white shadow transition hover:bg-red-600"
                                     >
-                                        Xóa lịch sử xem
+                                        {t("vods.clearHistory")}
                                     </button>
                                 </div>
                             )}
@@ -2445,10 +2460,10 @@ export default function Vods() {
 
                 <ConfirmDialog
                     isOpen={confirmDelete}
-                    title="Xác nhận xoá"
-                    message="Bạn chắc chắn muốn xoá toàn bộ lịch sử xem? Hành động này không thể hoàn tác."
-                    confirmText="Xoá"
-                    cancelText="Huỷ"
+                    title={t("vods.confirmDelete")}
+                    message={t("vods.confirmClearHistory")}
+                    confirmText={t("common.delete")}
+                    cancelText={t("common.cancel")}
                     isDangerous={true}
                     onConfirm={clearHistory}
                     onCancel={() => setConfirmDelete(false)}
@@ -2460,14 +2475,14 @@ export default function Vods() {
                         onClick={closeFavorites}
                     >
                         <div
-                            className="max-h-100 flex w-11/12 max-w-2xl flex-col rounded-lg bg-white shadow-2xl"
+                            className="max-h-100 flex w-11/12 max-w-2xl flex-col rounded-lg bg-zinc-800 shadow-2xl"
                             onClick={(e) => e.stopPropagation()}
                         >
-                            <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-gray-200 from-red-50 to-rose-50 px-6 py-4">
+                            <div className="bg-linear-to-r flex items-center justify-between rounded-t-lg border-b border-zinc-700 from-zinc-800 to-zinc-700 px-6 py-4">
                                 <div className="flex items-center gap-3">
-                                    <div className="rounded-lg bg-white p-2 shadow-sm">
+                                    <div className="rounded-lg bg-zinc-700 p-2 shadow-sm">
                                         <svg
-                                            className="h-5 w-5 text-red-600"
+                                            className="h-5 w-5 text-red-400"
                                             fill="none"
                                             viewBox="0 0 24 24"
                                             stroke="currentColor"
@@ -2480,21 +2495,21 @@ export default function Vods() {
                                             />
                                         </svg>
                                     </div>
-                                    <h2 className="text-lg font-bold text-gray-900">
-                                        Phim yêu thích
+                                    <h2 className="text-lg font-bold text-zinc-100">
+                                        {t("vods.favorites")}
                                     </h2>
                                 </div>
                                 <button
                                     onClick={closeFavorites}
-                                    className="text-2xl leading-none text-gray-400 transition-colors hover:text-gray-600"
+                                    className="text-2xl leading-none text-zinc-400 transition-colors hover:text-zinc-200"
                                 >
                                     ×
                                 </button>
                             </div>
-                            <ul className="flex-1 divide-y divide-gray-100 overflow-y-auto">
+                            <ul className="flex-1 divide-y divide-zinc-700 overflow-y-auto">
                                 {favorites.length === 0 && !isLoading && (
-                                    <li className="flex items-center justify-center py-12 text-gray-400">
-                                        Oops~ Bạn chưa có phim yêu thích nào! 💔
+                                    <li className="flex items-center justify-center py-12 text-zinc-400">
+                                        {t("vods.noFavorites")}
                                     </li>
                                 )}
 
@@ -2506,7 +2521,7 @@ export default function Vods() {
                                         >
                                             <a
                                                 href={`/entertainment/vods/play/${item.slug}`}
-                                                className="flex cursor-pointer items-center gap-4 px-6 py-3 text-inherit no-underline transition-colors hover:bg-red-50"
+                                                className="flex cursor-pointer items-center gap-4 px-6 py-3 text-inherit no-underline transition-colors hover:bg-zinc-700"
                                             >
                                                 <img
                                                     src={item.poster}
@@ -2515,10 +2530,10 @@ export default function Vods() {
                                                     className="h-16 w-12 shrink-0 rounded-md object-cover shadow-md"
                                                 />
                                                 <div className="min-w-0 flex-1">
-                                                    <h3 className="truncate text-sm font-semibold text-gray-900">
+                                                    <h3 className="truncate text-sm font-semibold text-zinc-100">
                                                         {item.name}
                                                     </h3>
-                                                    <div className="mt-1 flex gap-2 text-xs text-gray-500">
+                                                    <div className="mt-1 flex gap-2 text-xs text-zinc-400">
                                                         {item.year && (
                                                             <>
                                                                 <span>
@@ -2528,7 +2543,7 @@ export default function Vods() {
                                                             </>
                                                         )}
                                                         {item.quality && (
-                                                            <span className="font-medium text-red-600">
+                                                            <span className="font-medium text-red-400">
                                                                 {item.quality}
                                                             </span>
                                                         )}
@@ -2543,7 +2558,7 @@ export default function Vods() {
                                                         e,
                                                     );
                                                 }}
-                                                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full p-2 text-gray-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+                                                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full p-2 text-zinc-400 opacity-0 transition-all hover:bg-red-900/50 hover:text-red-400 group-hover:opacity-100"
                                             >
                                                 <svg
                                                     className="h-5 w-5"
@@ -2557,14 +2572,14 @@ export default function Vods() {
                                     ))}
                             </ul>
                             {favorites.length > 0 && (
-                                <div className="rounded-b-lg border-t border-gray-200 bg-gray-50 px-6 py-3 text-right">
+                                <div className="rounded-b-lg border-t border-zinc-700 bg-zinc-900 px-6 py-3 text-right">
                                     <button
                                         onClick={() =>
                                             setConfirmDeleteFavorites(true)
                                         }
                                         className="rounded-full bg-red-500 px-4 py-2 text-white shadow transition hover:bg-red-600"
                                     >
-                                        Xóa tất cả yêu thích
+                                        {t("vods.clearFavorites")}
                                     </button>
                                 </div>
                             )}
@@ -2574,10 +2589,10 @@ export default function Vods() {
 
                 <ConfirmDialog
                     isOpen={confirmDeleteFavorites}
-                    title="Xác nhận xoá"
-                    message="Bạn chắc chắn muốn xoá toàn bộ danh sách yêu thích? Hành động này không thể hoàn tác."
-                    confirmText="Xoá"
-                    cancelText="Huỷ"
+                    title={t("vods.confirmDelete")}
+                    message={t("vods.confirmClearFavorites")}
+                    confirmText={t("common.delete")}
+                    cancelText={t("common.cancel")}
                     isDangerous={true}
                     onConfirm={clearFavorites}
                     onCancel={() => setConfirmDeleteFavorites(false)}
@@ -2590,34 +2605,33 @@ export default function Vods() {
                             Array.from({ length: 12 }).map((_, index) => (
                                 <div
                                     key={`skeleton-${index}`}
-                                    className="group relative flex transform animate-pulse cursor-pointer flex-col overflow-hidden rounded-lg bg-white shadow"
+                                    className="group relative flex transform animate-pulse cursor-pointer flex-col overflow-hidden rounded-lg bg-zinc-800 shadow"
                                 >
                                     {/* Skeleton Image */}
-                                    <div className="relative bg-gray-200">
-                                        <div className="aspect-2/3 w-full bg-gray-300" />
+                                    <div className="relative bg-zinc-700">
+                                        <div className="aspect-2/3 w-full bg-zinc-600" />
                                         {/* Skeleton badges */}
                                         <div className="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1">
-                                            <div className="h-5 w-8 rounded-md bg-gray-400"></div>
-                                            <div className="h-5 w-6 rounded-md bg-gray-400"></div>
+                                            <div className="h-5 w-8 rounded-md bg-zinc-500"></div>
+                                            <div className="h-5 w-6 rounded-md bg-zinc-500"></div>
                                         </div>
                                     </div>
                                     {/* Skeleton Content */}
                                     <div className="flex grow flex-col p-3">
-                                        <div className="mb-2 h-4 rounded bg-gray-300"></div>
+                                        <div className="mb-2 h-4 rounded bg-zinc-600"></div>
                                         <div className="mt-auto flex justify-between">
-                                            <div className="h-3 w-16 rounded bg-gray-200"></div>
-                                            <div className="h-3 w-12 rounded bg-gray-200"></div>
+                                            <div className="h-3 w-16 rounded bg-zinc-700"></div>
+                                            <div className="h-3 w-12 rounded bg-zinc-700"></div>
                                         </div>
                                     </div>
                                     {/* Skeleton Quality Badge */}
-                                    <div className="absolute right-2 top-2 h-5 w-12 rounded-md bg-gray-400"></div>
+                                    <div className="absolute right-2 top-2 h-5 w-12 rounded-md bg-zinc-500"></div>
                                 </div>
                             ))}
 
                         {!isLoading && movies.length === 0 && (
-                            <div className="col-span-full py-4 text-center text-gray-500">
-                                Oops~ Không có phim nào trong danh sách của bạn!
-                                🥺
+                            <div className="col-span-full py-4 text-center text-zinc-400">
+                                {t("vods.noMovies")}
                             </div>
                         )}
 
@@ -2626,9 +2640,9 @@ export default function Vods() {
                                 <MovieTooltip key={movie.slug} movie={movie}>
                                     <a
                                         href={`/entertainment/vods/play/${movie.slug}`}
-                                        className="group relative flex transform cursor-pointer flex-col overflow-hidden rounded-lg bg-white text-inherit no-underline shadow transition-transform hover:scale-105 hover:shadow-lg"
+                                        className="group relative flex transform cursor-pointer flex-col overflow-hidden rounded-lg bg-zinc-800 text-inherit no-underline shadow transition-transform hover:scale-105 hover:shadow-lg"
                                     >
-                                        <div className="relative bg-gray-200">
+                                        <div className="relative bg-zinc-700">
                                             <img
                                                 src={getMovieImage(
                                                     movie.poster_url,
@@ -2643,8 +2657,8 @@ export default function Vods() {
                                                     if (loader) loader.remove();
                                                 }}
                                             />
-                                            <div className="bg-linear-to-b aspect-2/3 absolute inset-0 flex items-center justify-center from-gray-200 to-gray-300">
-                                                <div className="h-8 w-8 animate-spin rounded-full border-4 border-gray-300 border-t-blue-500"></div>
+                                            <div className="bg-linear-to-b aspect-2/3 absolute inset-0 flex items-center justify-center from-zinc-700 to-zinc-600">
+                                                <div className="h-8 w-8 animate-spin rounded-full border-4 border-zinc-600 border-t-blue-500"></div>
                                             </div>
                                             {/* Nút yêu thích nhanh */}
                                             <button
@@ -2654,19 +2668,19 @@ export default function Vods() {
                                                         e,
                                                     )
                                                 }
-                                                className={`absolute left-2 top-2 rounded-full bg-red-200 p-1.5 shadow-md transition-all duration-200 ${
+                                                className={`absolute left-2 top-2 rounded-full bg-red-900/50 p-1.5 shadow-md transition-all duration-200 ${
                                                     isMovieFavorited(movie.slug)
                                                         ? "opacity-100"
                                                         : "opacity-0 group-hover:opacity-100"
                                                 } hover:scale-110`}
                                                 title={
                                                     isMovieFavorited(movie.slug)
-                                                        ? "Đã thích"
-                                                        : "Thêm vào yêu thích"
+                                                        ? t("vodPlay.liked")
+                                                        : t("vodPlay.like")
                                                 }
                                             >
                                                 <svg
-                                                    className="h-5 w-5 text-red-700"
+                                                    className="h-5 w-5 text-red-300"
                                                     fill={
                                                         isMovieFavorited(
                                                             movie.slug,
@@ -2712,27 +2726,27 @@ export default function Vods() {
                                             </div>
                                         </div>
                                         <div className="flex grow flex-col p-3">
-                                            <h3 className="line-clamp-1 text-sm font-semibold text-gray-800">
+                                            <h3 className="line-clamp-1 text-sm font-semibold text-zinc-100">
                                                 {movie.name}
                                             </h3>
                                             <div className="flex justify-between">
                                                 {movie.episode_current?.toLowerCase() ===
                                                 "trailer" ? (
-                                                    <span className="mt-2 text-xs font-medium text-red-500">
+                                                    <span className="mt-2 text-xs font-medium text-red-400">
                                                         {movie.episode_current}
                                                     </span>
                                                 ) : (
-                                                    <span className="mt-2 text-xs text-gray-500">
+                                                    <span className="mt-2 text-xs text-zinc-400">
                                                         {movie.episode_current ||
                                                             "N/A"}
                                                     </span>
                                                 )}
-                                                <span className="mt-2 text-xs text-gray-500">
+                                                <span className="mt-2 text-xs text-zinc-400">
                                                     {movie.year}
                                                 </span>
                                             </div>
                                         </div>
-                                        <span className="absolute right-2 top-2 inline-flex items-center rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/10">
+                                        <span className="absolute right-2 top-2 inline-flex items-center rounded-md bg-red-900/50 px-2 py-1 text-xs font-medium text-red-300 ring-1 ring-inset ring-red-600/30">
                                             {movie.quality}
                                         </span>
                                     </a>
@@ -2745,24 +2759,24 @@ export default function Vods() {
                 {isLoading && (
                     <nav className="mt-8 flex w-full flex-col items-center justify-center gap-4 sm:flex-row">
                         {/* Skeleton Pagination buttons */}
-                        <div className="flex h-11 animate-pulse items-center rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+                        <div className="flex h-11 animate-pulse items-center rounded-lg border border-zinc-700 bg-zinc-800 p-1 shadow-sm">
                             <ul className="flex items-center">
                                 {Array.from({ length: 7 }).map((_, index) => (
                                     <li key={`pagination-skeleton-${index}`}>
-                                        <div className="mx-0.5 h-9 w-9 rounded-md bg-gray-300"></div>
+                                        <div className="mx-0.5 h-9 w-9 rounded-md bg-zinc-600"></div>
                                     </li>
                                 ))}
                             </ul>
                         </div>
 
                         {/* Skeleton Page input */}
-                        <div className="flex h-11 animate-pulse items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 shadow-sm">
+                        <div className="flex h-11 animate-pulse items-center gap-3 rounded-lg border border-zinc-700 bg-zinc-800 px-4 shadow-sm">
                             <div className="flex items-center gap-2">
-                                <div className="h-4 w-8 rounded bg-gray-300"></div>{" "}
+                                <div className="h-4 w-8 rounded bg-zinc-600"></div>{" "}
                                 {/* "Trang:" */}
-                                <div className="h-7 w-16 rounded-md bg-gray-300"></div>{" "}
+                                <div className="h-7 w-16 rounded-md bg-zinc-600"></div>{" "}
                                 {/* Input */}
-                                <div className="h-4 w-6 rounded bg-gray-300"></div>{" "}
+                                <div className="h-4 w-6 rounded bg-zinc-600"></div>{" "}
                                 {/* "/ X" */}
                             </div>
                         </div>
@@ -2772,15 +2786,15 @@ export default function Vods() {
                 {!isLoading && movies.length > 0 && (
                     <nav className="mt-3 flex w-full flex-col items-center justify-center gap-4 sm:flex-row">
                         {/* Pagination buttons */}
-                        <div className="flex h-11 items-center rounded-lg border border-gray-200 bg-white p-1 shadow-sm">
+                        <div className="flex h-11 items-center rounded-lg border border-zinc-700 bg-zinc-800 p-1 shadow-sm">
                             <ul className="flex items-center">
                                 {currentPage > 1 && (
                                     <>
                                         <li>
                                             <button
                                                 onClick={() => goToPage(1)}
-                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-all duration-200 hover:bg-blue-50 hover:text-blue-600"
-                                                title="Trang đầu"
+                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-zinc-400 transition-all duration-200 hover:bg-zinc-700 hover:text-blue-400"
+                                                title={t("vods.firstPage")}
                                             >
                                                 <svg
                                                     className="h-4 w-4"
@@ -2798,8 +2812,8 @@ export default function Vods() {
                                         <li>
                                             <button
                                                 onClick={prevPage}
-                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-all duration-200 hover:bg-blue-50 hover:text-blue-600"
-                                                title="Trang trước"
+                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-zinc-400 transition-all duration-200 hover:bg-zinc-700 hover:text-blue-400"
+                                                title={t("vods.prevPage")}
                                             >
                                                 <svg
                                                     className="h-4 w-4"
@@ -2831,7 +2845,7 @@ export default function Vods() {
                                             className={`mx-0.5 flex h-9 w-9 items-center justify-center rounded-md font-medium transition-all duration-200 ${
                                                 page === currentPage
                                                     ? "bg-blue-600 text-white shadow-md"
-                                                    : "text-gray-700 hover:bg-blue-50 hover:text-blue-600"
+                                                    : "text-zinc-300 hover:bg-zinc-700 hover:text-blue-400"
                                             }`}
                                         >
                                             {page}
@@ -2844,8 +2858,8 @@ export default function Vods() {
                                         <li>
                                             <button
                                                 onClick={nextPage}
-                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-all duration-200 hover:bg-blue-50 hover:text-blue-600"
-                                                title="Trang sau"
+                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-zinc-400 transition-all duration-200 hover:bg-zinc-700 hover:text-blue-400"
+                                                title={t("vods.nextPage")}
                                             >
                                                 <svg
                                                     className="h-4 w-4"
@@ -2865,8 +2879,8 @@ export default function Vods() {
                                                 onClick={() =>
                                                     goToPage(totalPages)
                                                 }
-                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-gray-500 transition-all duration-200 hover:bg-blue-50 hover:text-blue-600"
-                                                title="Trang cuối"
+                                                className="mx-0.5 flex h-9 w-9 items-center justify-center rounded-md text-zinc-400 transition-all duration-200 hover:bg-zinc-700 hover:text-blue-400"
+                                                title={t("vods.lastPage")}
                                             >
                                                 <svg
                                                     className="h-4 w-4"
@@ -2892,10 +2906,10 @@ export default function Vods() {
                         </div>
 
                         {/* Page input */}
-                        <div className="flex h-11 items-center gap-3 rounded-lg border border-gray-200 bg-white px-4 shadow-sm">
+                        <div className="flex h-11 items-center gap-3 rounded-lg border border-zinc-700 bg-zinc-800 px-4 shadow-sm">
                             <div className="flex items-center gap-2">
-                                <label className="text-sm font-medium text-gray-700">
-                                    Trang:
+                                <label className="text-sm font-medium text-zinc-300">
+                                    {t("vods.pageLabel")}:
                                 </label>
                                 <div className="relative">
                                     <input
@@ -2934,14 +2948,14 @@ export default function Vods() {
                                                     e.target.style.borderColor =
                                                         "#ef4444";
                                                     e.target.style.backgroundColor =
-                                                        "#fef2f2";
+                                                        "#7f1d1d";
                                                     e.target.select(); // Chọn hết text để dễ sửa
                                                 } else {
                                                     // Số không hợp lệ (< 1 hoặc NaN)
                                                     e.target.style.borderColor =
                                                         "#ef4444";
                                                     e.target.style.backgroundColor =
-                                                        "#fef2f2";
+                                                        "#7f1d1d";
                                                     e.target.select();
                                                 }
                                             }
@@ -2979,12 +2993,12 @@ export default function Vods() {
                                             e.target.style.borderColor = "";
                                             e.target.style.backgroundColor = "";
                                         }}
-                                        className="w-16 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-center text-sm font-medium text-gray-900 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                                        className="w-16 rounded-md border border-zinc-600 bg-zinc-700 px-2 py-1.5 text-center text-sm font-medium text-zinc-100 transition-colors focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-700"
                                     />
                                 </div>
-                                <span className="text-sm text-gray-500">
+                                <span className="text-sm text-zinc-400">
                                     /{" "}
-                                    <span className="font-medium text-gray-700">
+                                    <span className="font-medium text-zinc-300">
                                         {totalPages}
                                     </span>
                                 </span>

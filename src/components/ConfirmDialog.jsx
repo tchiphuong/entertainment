@@ -18,29 +18,25 @@ export default function ConfirmDialog({
             onClick={onCancel}
         >
             <div
-                className="w-11/12 max-w-md rounded-lg bg-white shadow-2xl"
+                className="w-11/12 max-w-md rounded-lg bg-zinc-800 shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="px-6 py-4 border-b border-gray-200">
-                    <h3 className="text-lg font-bold text-gray-900">
-                        {title}
-                    </h3>
+                <div className="border-b border-zinc-700 px-6 py-4">
+                    <h3 className="text-lg font-bold text-zinc-100">{title}</h3>
                 </div>
                 <div className="px-6 py-4">
-                    <p className="text-gray-600">
-                        {message}
-                    </p>
+                    <p className="text-zinc-400">{message}</p>
                 </div>
-                <div className="px-6 py-3 bg-gray-50 rounded-b-lg flex justify-end gap-3">
+                <div className="flex justify-end gap-3 rounded-b-lg bg-zinc-700 px-6 py-3">
                     <button
                         onClick={onCancel}
-                        className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 transition"
+                        className="rounded-lg bg-zinc-600 px-4 py-2 text-zinc-300 transition hover:bg-zinc-500"
                     >
                         {cancelText}
                     </button>
                     <button
                         onClick={onConfirm}
-                        className={`px-4 py-2 text-white rounded-lg transition ${
+                        className={`rounded-lg px-4 py-2 text-white transition ${
                             isDangerous
                                 ? "bg-red-500 hover:bg-red-600"
                                 : "bg-blue-500 hover:bg-blue-600"

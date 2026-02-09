@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 
 // Mock JWPlayer license response để bypass CORS
 const JWPLAYER_LICENSE_MOCK = {
@@ -345,6 +346,7 @@ function ChannelScroller({ channels, selectedChannel, onSelectChannel }) {
 }
 
 export default function TV() {
+    const { t } = useTranslation();
     // Simple toast helper (DOM-based) using Tailwind classes (no inline CSS)
     const showToast = (message, opts = {}) => {
         try {

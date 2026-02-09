@@ -1,8 +1,10 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { auth, googleProvider } from "../services/firebase";
 import { signInWithPopup } from "firebase/auth";
 
 export default function Login() {
+    const { t } = useTranslation();
     const handleGoogleLogin = async () => {
         try {
             await signInWithPopup(auth, googleProvider);
@@ -12,14 +14,13 @@ export default function Login() {
     };
 
     return (
-        <div className="flex min-h-screen flex-col items-center justify-center bg-gray-100">
-            <div className="w-full max-w-md rounded-lg bg-white p-8 text-center shadow-lg">
-                <h1 className="mb-4 text-2xl font-bold text-gray-800">
-                    Chào mừng bạn!
+        <div className="flex min-h-screen flex-col items-center justify-center bg-zinc-900">
+            <div className="w-full max-w-md rounded-lg bg-zinc-800 p-8 text-center shadow-lg">
+                <h1 className="mb-4 text-2xl font-bold text-zinc-100">
+                    {t("auth.welcome")}
                 </h1>
-                <p className="mb-6 text-gray-600">
-                    Vui lòng đăng nhập để tiếp tục và khám phá thế giới phim
-                    ảnh.
+                <p className="mb-6 text-zinc-400">
+                    {t("auth.loginPrompt")}
                 </p>
                 <button
                     onClick={handleGoogleLogin}
@@ -40,7 +41,7 @@ export default function Login() {
                             d="M488 261.8C488 403.3 381.5 512 244 512 109.8 512 0 402.2 0 256S109.8 0 244 0c73.2 0 136.2 29.3 182.4 75.4l-62.4 60.3C337.2 114.6 295.6 96 244 96c-88.6 0-160.1 71.1-160.1 160s71.5 160 160.1 160c97.4 0 134-60.5 138.5-93.2H244v-74.4h239.9c2.4 12.6 3.6 25.8 3.6 40.2z"
                         ></path>
                     </svg>
-                    <span>Đăng nhập với Google</span>
+                    <span>{t("auth.loginWithGoogle")}</span>
                 </button>
             </div>
         </div>
