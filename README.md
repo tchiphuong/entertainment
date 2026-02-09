@@ -1,5 +1,14 @@
 # Entertainment - Dự án học tập React
 
+![React](https://img.shields.io/badge/React-18.2.0-61DAFB?style=flat-square&logo=react&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-5.0.0-646CFF?style=flat-square&logo=vite&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.1.16-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white)
+![Firebase](https://img.shields.io/badge/Firebase-12.8.0-FFCA28?style=flat-square&logo=firebase&logoColor=black)
+![React Router](https://img.shields.io/badge/React_Router-6.14.1-CA4245?style=flat-square&logo=react-router&logoColor=white)
+![i18next](https://img.shields.io/badge/i18next-25.8.4-26A69A?style=flat-square&logo=i18next&logoColor=white)
+![JavaScript](https://img.shields.io/badge/JavaScript-ES6+-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
+![Node.js](https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js&logoColor=white)
+
 > **Disclaimer:** Đây là dự án mã nguồn mở phục vụ mục đích **học tập và nghiên cứu**. Dự án không lưu trữ, phân phối hay sở hữu bất kỳ nội dung video nào. Tất cả nội dung đều được lấy từ các API công khai của bên thứ ba. Tác giả không chịu trách nhiệm về việc sử dụng sai mục đích của người dùng.
 
 ## Mục đích dự án
