@@ -120,6 +120,7 @@
         "country": "Country",
         "language": "Language",
         "duration": "Duration",
-        "tmdb": "TMDB"
+        "tmdb": "TMDB",
+        "watchNow": "Watch Now"
     }
 }

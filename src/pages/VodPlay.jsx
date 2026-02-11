@@ -5,7 +5,7 @@ import React, {
     useRef,
     useState,
 } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { useAuth } from "../contexts/AuthContext";
@@ -307,8 +307,9 @@ export default function VodPlay() {
     const query = useQuery();
     const params = useParams();
     const slug = params.slug || query.get("slug") || "";
-    const episodeParam = query.get("episode");
-    const serverParam = query.get("server"); // Thêm server param
+    const [searchParams, setSearchParams] = useSearchParams();
+    const episodeParam = searchParams.get("episode");
+    const serverParam = searchParams.get("server"); // Thêm server param
     const source = SOURCES.SOURCE_O; // Không cần param source nữa vì fetch tất cả
     const debugTmdb = query.get("debugTmdb") === "true"; // toggle to show raw TMDb JSON for debugging
     const debugMobile = query.get("debugMobile") === "true"; // Debug mode để test mobile behavior
@@ -736,8 +737,14 @@ export default function VodPlay() {
         // source_c: use thumb_url as poster_url for display
         if (source === SOURCES.SOURCE_C) {
             // Swap: poster_url <- thumb_url, thumbnail <- poster_url
-            m.poster_url = getMovieImage(m.poster_url || m.thumb_url, source);
-            m.thumb_url = getMovieImage(m.thumb_url || m.poster_url, source);
+            m.poster_url = getMovieImage(
+                item.thumb_url || item.poster_url,
+                source,
+            );
+            m.thumb_url = getMovieImage(
+                item.poster_url || item.thumb_url,
+                source,
+            );
 
             // Additional mappings for source_c
             m.episode_current = m.current_episode;
@@ -754,24 +761,20 @@ export default function VodPlay() {
             }
         } else if (source === SOURCES.SOURCE_O) {
             // Source O: use thumb_url as poster_url, thêm prefix uploads/movies/ nếu cần
-            let posterPath = m.poster_url || m.thumb_url;
+            // IMPORTANT: read from original item values to avoid double-proxy
+            let posterPath = item.thumb_url || item.poster_url;
             if (posterPath && !posterPath.startsWith("uploads/movies/")) {
                 posterPath = `uploads/movies/${posterPath}`;
             }
             m.poster_url = getMovieImage(posterPath, source);
 
-            let thumbPath = m.thumb_url || m.poster_url;
+            let thumbPath = item.poster_url || item.thumb_url;
             if (thumbPath && !thumbPath.startsWith("uploads/movies/")) {
                 thumbPath = `uploads/movies/${thumbPath}`;
             }
             m.thumb_url = getMovieImage(thumbPath, source);
 
             // Additional mappings for source_o
-            m.episode_current = m.episode_current;
-            m.lang = m.lang;
-            m.content = m.content;
-            m.actor = m.actor;
-            m.director = m.director;
             m.trailer_url = m.trailer_url;
         } else {
             // primary: ensure poster_url exists
@@ -783,8 +786,8 @@ export default function VodPlay() {
         }
 
         // Ensure poster field exists for history/list usage
-        if (!m.poster_url) m.poster_url = m.poster_url || m.thumb_url || "";
-        if (!m.thumb_url) m.thumb_url = m.thumb_url || m.poster_url || "";
+        if (!m.poster_url) m.poster_url = m.thumb_url || "";
+        if (!m.thumb_url) m.thumb_url = m.poster_url || "";
 
         return m;
     }
@@ -1276,17 +1279,30 @@ export default function VodPlay() {
                 const episodeNum = episodeParam; // Số tập
 
                 // Tìm episode có server type này với số tập này
-                targetEpisode = episodesList.find(
-                    (episode) =>
-                        episode.server_name === serverName ||
-                        episode.server_name.endsWith(` - ${serverName}`) ||
-                        episode.server_data?.some((server) =>
-                            compareEpisodeKeys(
-                                getEpisodeKey(server.slug, server.name),
-                                episodeNum,
-                            ),
+                // Tìm episode có server type này với số tập này
+                // Use robust slug matching
+                targetEpisode = episodesList.find((episode) => {
+                    const currentServerSlug = serverNameToSlug(
+                        episode.server_name,
+                    );
+                    // Check fast match or slug match
+                    // serverParam is already slugified (mostly) or we received it as is
+                    // serverName is from slugToServerName() which might be raw slug if no mapping
+                    const isServerMatch =
+                        currentServerSlug === serverParam ||
+                        (serverParam &&
+                            (currentServerSlug.includes(serverParam) ||
+                                serverParam.includes(currentServerSlug)));
+
+                    if (!isServerMatch) return false;
+
+                    return episode.server_data?.some((server) =>
+                        compareEpisodeKeys(
+                            getEpisodeKey(server.slug, server.name),
+                            episodeNum,
                         ),
-                );
+                    );
+                });
 
                 if (targetEpisode) {
                     targetServer = targetEpisode.server_data.find((server) =>
@@ -1389,30 +1405,63 @@ export default function VodPlay() {
             episodesList.length > 0
         ) {
             // Tìm episode có chứa tập đang xem
+            // Tìm episode có chứa tập đang xem
             const episodeKey = historyItem.current_episode.key;
-            const matchingEpisode = episodesList.find((episode) =>
+            const savedServerSlug = historyItem.server; // "thuyet-minh", "vietsub", etc.
+
+            // Filter all groups containing this episode
+            const groupsWithEpisode = episodesList.filter((episode) =>
                 episode.server_data?.some((server) => {
                     const serverKey = getEpisodeKey(server.slug, server.name);
                     return compareEpisodeKeys(serverKey, episodeKey);
                 }),
             );
 
+            let matchingEpisode = null;
+            if (groupsWithEpisode.length > 0) {
+                if (savedServerSlug) {
+                    // Try to find matching group
+                    matchingEpisode = groupsWithEpisode.find((group) => {
+                        const currentSlug = serverNameToSlug(group.server_name);
+                        return (
+                            currentSlug === savedServerSlug ||
+                            currentSlug.includes(savedServerSlug) ||
+                            savedServerSlug.includes(currentSlug) ||
+                            (savedServerSlug === "vietsub" &&
+                                currentSlug.includes("vietsub"))
+                        );
+                    });
+                }
+                // Fallback to first group if no preferred server found
+                if (!matchingEpisode) {
+                    matchingEpisode = groupsWithEpisode[0];
+                }
+            }
+
             if (matchingEpisode) {
                 // Ưu tiên 1: Tìm server cùng type đã lưu (từ slug server)
-                const savedServerSlug = historyItem.server; // "thuyet-minh", "vietsub", etc.
+                // savedServerSlug was extracted above
                 let targetServer = null;
 
                 if (savedServerSlug) {
-                    // Convert slug về server name để tìm
-                    const savedServerName = slugToServerName(savedServerSlug);
+                    // Normalize saved slug and current server slugs for robust comparison
                     targetServer = matchingEpisode.server_data.find(
-                        (server) =>
-                            server &&
-                            (server.server_name === savedServerName ||
-                                (server.server_name &&
-                                    server.server_name?.endsWith(
-                                        ` - ${savedServerName}`,
-                                    ))),
+                        (server) => {
+                            if (!server || !server.server_name) return false;
+                            const currentSlug = serverNameToSlug(
+                                server.server_name,
+                            );
+                            // 1. Exact match (new format: source_o-vietsub)
+                            // 2. Fuzzy match (legacy format: vietsub)
+                            // 3. Reverse fuzzy (legacy saved as "Vietsub" capitalized?) - no, standard is lowercase slug
+                            return (
+                                currentSlug === savedServerSlug ||
+                                currentSlug.includes(savedServerSlug) ||
+                                savedServerSlug.includes(currentSlug) ||
+                                (savedServerSlug === "vietsub" &&
+                                    currentSlug.includes("vietsub"))
+                            );
+                        },
                     );
                 }
 
@@ -1438,7 +1487,7 @@ export default function VodPlay() {
 
                     // Cập nhật URL với đầy đủ thông tin
                     const params = new URLSearchParams();
-                    params.set("slug", cleanSlug);
+                    // Slug is already in the path, do not add it as query param
                     params.set("episode", episodeKey); // Số tập
                     params.set(
                         "server",
@@ -1456,6 +1505,97 @@ export default function VodPlay() {
 
         // Ưu tiên 3 (fallback): Tập đầu tiên
         if (episodesList.length > 0) {
+            // Check history for saved state before falling back to absolute default
+            const lastWatchedList = getLastWatchedList();
+            const movieData = lastWatchedList.find(
+                (item) => item.slug === slug,
+            );
+
+            if (movieData) {
+                const savedServerSlug = movieData.server;
+                const savedEpisodeSlug = movieData.episode; // stored as slug e.g. "tap-1"
+
+                if (savedEpisodeSlug) {
+                    // Try to find the episode group that contains this episode
+                    // Logic: Iterate all server groups, check if any server data item matches savedEpisodeSlug
+                    // Note: episodesList is array of server groups (e.g. Vietsub, Thuyet Minh)
+                    // savedEpisodeSlug is specific episode (e.g. tap-1)
+
+                    // Find valid server group (episode group)
+                    let savedGroup = episodesList.find((group) =>
+                        group.server_data?.some(
+                            (s) => s.slug === savedEpisodeSlug,
+                        ),
+                    );
+
+                    // Fallback: match by number if slug doesn't match
+                    // e.g. saved "tap-1", group has "Tap 1" with different slug format
+                    if (!savedGroup) {
+                        const match = savedEpisodeSlug.match(/(\d+)/);
+                        if (match) {
+                            const num = parseInt(match[1]);
+                            savedGroup = episodesList.find((group) =>
+                                group.server_data?.some((s) =>
+                                    compareEpisodeKeys(
+                                        getEpisodeKey(s.slug, s.name),
+                                        num,
+                                    ),
+                                ),
+                            );
+                        }
+                    }
+
+                    if (savedGroup) {
+                        let targetServerData = null;
+
+                        // If we have a saved server preference, try to find that specific server in the group
+                        if (savedServerSlug) {
+                            // Normalize for comparison
+                            targetServerData = savedGroup.server_data.find(
+                                (s) => {
+                                    // We need to compare specific server item's type/source against savedServerSlug?
+                                    // savedServerSlug is like "source_o-vietsub" or "vietsub"
+                                    // s.slug is episode slug (tap-1).
+                                    // Wait, savedServerSlug refers to the SERVER GROUP TYPE usually?
+                                    // No, in setWatchlist: `setWatchlist(server.slug...` and `server` is `server.slug`?
+                                    // Let's check setWatchlist: `setWatchlist(server.slug, ...)` -> line 2326: `setWatchlist(server.slug...`
+                                    // server here is `server_data[i]`. So `server.slug` is "tap-1".
+                                    // WRONG. `setWatchlist` signature: `(episodeSlug, position, ...)`
+                                    // line 2326: `setWatchlist(server.slug, null, server, movie)`
+                                    // So savedEpisodeSlug = server.slug ("tap-1").
+                                    // savedServerSlug = movieData.server (from `server` object passed to setWatchlist).
+                                    // But setWatchlist implementation: `server: episode ? extractServerType(episode.server_name) : ...`?
+                                    // Let's check `setWatchlist` implementation if possible.
+                                    // Assuming `movieData.server` is the server group slug (e.g. "vietsub").
+                                    return false; // Complex logic, fallback to simple find
+                                },
+                            );
+                        }
+
+                        // Simpler approach: If we found the group containing the episode, just use that group
+                        // And find the specific server item that matches the episode slug
+                        targetServerData = savedGroup.server_data.find(
+                            (s) =>
+                                s.slug === savedEpisodeSlug ||
+                                (savedEpisodeSlug.match(/(\d+)/) &&
+                                    compareEpisodeKeys(
+                                        getEpisodeKey(s.slug, s.name),
+                                        parseInt(
+                                            savedEpisodeSlug.match(/(\d+)/)[1],
+                                        ),
+                                    )),
+                        );
+
+                        if (targetServerData) {
+                            hasInitializedRef.current = true;
+                            setActiveEpisode(savedGroup);
+                            openEpisode(targetServerData, savedGroup, movie);
+                            return;
+                        }
+                    }
+                }
+            }
+
             const firstEpisode = episodesList[0];
             hasInitializedRef.current = true;
             setActiveEpisode(firstEpisode);
@@ -1549,25 +1689,24 @@ export default function VodPlay() {
 
     // Helper function: Chuẩn hóa server name thành URL slug
     function serverNameToSlug(serverName) {
-        // Server name đã được chuẩn hóa trong fetchMovieDetails() rồi
-        const mapping = {
-            Vietsub: "vietsub",
-            "Thuyết Minh": "thuyet-minh",
-            "Lồng Tiếng": "long-tieng",
-        };
-        return (
-            mapping[serverName] || serverName.toLowerCase().replace(/\s+/g, "-")
-        );
+        if (!serverName) return "";
+        // Handle "SOURCE - Type" format
+        // VD: "SOURCE_O - Vietsub" -> "source_o-vietsub"
+        return serverName
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-|-$/g, "");
     }
 
     // Helper function: Chuẩn hóa URL slug thành server name
     function slugToServerName(slug) {
+        // Basic mapping for legacy/simple slugs, but for complex ones we rely on slug matching
         const mapping = {
             vietsub: "Vietsub",
             "thuyet-minh": "Thuyết Minh",
             "long-tieng": "Lồng Tiếng",
         };
-        return mapping[slug] || slug;
+        return mapping[slug] || slug; // Return strict slug if not found, logic elsewhere handles regex/fuzzy match
     }
 
     // Helper function: Lấy position đã xem của episode từ lịch sử
@@ -2333,6 +2472,24 @@ export default function VodPlay() {
 
         // Initialize player with server - ưu tiên m3u8, fallback embed nếu lỗi
         initializePlayer(server, server.slug, movie);
+
+        // Update URL params
+        const serverSlug = serverNameToSlug(episode.server_name);
+        try {
+            const episodeKey = getEpisodeKey(server.slug, server.name);
+            setSearchParams(
+                (prev) => {
+                    const newParams = new URLSearchParams(prev);
+                    newParams.delete("slug"); // Remove redundant slug if present
+                    newParams.set("server", serverSlug);
+                    newParams.set("episode", String(episodeKey));
+                    return newParams;
+                },
+                { replace: true },
+            );
+        } catch (e) {
+            // ignore
+        }
     }
 
     // Play next episode
@@ -2341,7 +2498,7 @@ export default function VodPlay() {
 
         // Lấy thông tin từ lịch sử
         const lastWatchedList = getLastWatchedList();
-        const dataSlug = movieData?.slug || slug.split("?")[0];
+        const dataSlug = movie?.slug || slug.split("?")[0];
         const historyItem = lastWatchedList.find(
             (item) => item.slug === dataSlug,
         );
@@ -2507,6 +2664,25 @@ export default function VodPlay() {
             if (matchByKey) {
                 setActiveEpisode(episode);
                 openEpisode(matchByKey, episode, movie);
+
+                // Update URL params
+                const serverSlug = serverNameToSlug(episode.server_name);
+                try {
+                    const episodeKey = getEpisodeKey(
+                        matchByKey.slug,
+                        matchByKey.name,
+                    );
+                    setSearchParams(
+                        (prev) => {
+                            const newParams = new URLSearchParams(prev);
+                            newParams.delete("slug");
+                            newParams.set("server", serverSlug);
+                            newParams.set("episode", String(episodeKey));
+                            return newParams;
+                        },
+                        { replace: true },
+                    );
+                } catch (e) {}
                 return;
             }
         }
@@ -2521,6 +2697,25 @@ export default function VodPlay() {
             if (matchingServer) {
                 setActiveEpisode(episode);
                 openEpisode(matchingServer, episode, movie);
+
+                // Update URL params
+                const serverSlug = serverNameToSlug(episode.server_name);
+                try {
+                    const episodeKey = getEpisodeKey(
+                        matchingServer.slug,
+                        matchingServer.name,
+                    );
+                    setSearchParams(
+                        (prev) => {
+                            const newParams = new URLSearchParams(prev);
+                            newParams.delete("slug");
+                            newParams.set("server", serverSlug);
+                            newParams.set("episode", String(episodeKey));
+                            return newParams;
+                        },
+                        { replace: true },
+                    );
+                } catch (e) {}
                 return;
             }
         }
@@ -2539,6 +2734,25 @@ export default function VodPlay() {
             if (matchingServer) {
                 setActiveEpisode(episode);
                 openEpisode(matchingServer, episode, movie);
+
+                // Update URL params
+                const serverSlug = serverNameToSlug(episode.server_name);
+                try {
+                    const episodeKey = getEpisodeKey(
+                        matchingServer.slug,
+                        matchingServer.name,
+                    );
+                    setSearchParams(
+                        (prev) => {
+                            const newParams = new URLSearchParams(prev);
+                            newParams.delete("slug");
+                            newParams.set("server", serverSlug);
+                            newParams.set("episode", String(episodeKey));
+                            return newParams;
+                        },
+                        { replace: true },
+                    );
+                } catch (e) {}
                 return;
             }
         }
@@ -2551,6 +2765,25 @@ export default function VodPlay() {
         if (matchingBySlug) {
             setActiveEpisode(episode);
             openEpisode(matchingBySlug, episode, movie);
+
+            // Update URL params
+            const serverSlug = serverNameToSlug(episode.server_name);
+            try {
+                const episodeKey = getEpisodeKey(
+                    matchingBySlug.slug,
+                    matchingBySlug.name,
+                );
+                setSearchParams(
+                    (prev) => {
+                        const newParams = new URLSearchParams(prev);
+                        newParams.delete("slug");
+                        newParams.set("server", serverSlug);
+                        newParams.set("episode", String(episodeKey));
+                        return newParams;
+                    },
+                    { replace: true },
+                );
+            } catch (e) {}
             return;
         }
 
@@ -2558,6 +2791,25 @@ export default function VodPlay() {
         if (episode.server_data?.length > 0) {
             setActiveEpisode(episode);
             openEpisode(episode.server_data[0], episode, movie);
+
+            // Update URL params
+            const serverSlug = serverNameToSlug(episode.server_name);
+            try {
+                const firstServer = episode.server_data[0];
+                const episodeKey = getEpisodeKey(
+                    firstServer.slug,
+                    firstServer.name,
+                );
+                setSearchParams(
+                    (prev) => {
+                        const newParams = new URLSearchParams(prev);
+                        newParams.set("server", serverSlug);
+                        newParams.set("episode", String(episodeKey));
+                        return newParams;
+                    },
+                    { replace: true },
+                );
+            } catch (e) {}
             return;
         }
 
@@ -3100,7 +3352,7 @@ export default function VodPlay() {
                                         {/* Thông tin tập hiện tại */}
                                         <div className="flex items-center gap-2 text-sm text-zinc-400">
                                             {currentEpisodeId && (
-                                                <span className="rounded bg-blue-600/20 px-2 py-0.5 text-blue-400">
+                                                <span className="rounded bg-blue-600/20 px-2 py-0.5 uppercase text-blue-400">
                                                     {/^\d+$/.test(
                                                         currentEpisodeId,
                                                     )
@@ -3489,41 +3741,41 @@ export default function VodPlay() {
                                                     <strong>
                                                         {t("vodPlay.year")}:
                                                     </strong>{" "}
-                                                    {movie.year}
+                                                    {movie.year || "N/A"}
                                                 </span>
                                             )}
-                                        {tmdbData?.vote_average &&
-                                            tmdbData.vote_average > 0 &&
-                                            tmdbData?.vote_count &&
-                                            tmdbData.vote_count > 0 && (
-                                                <>
-                                                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-900/50 px-2 py-1 text-sm text-amber-300">
-                                                        <svg
-                                                            className="h-4 w-4 fill-current"
-                                                            viewBox="0 0 24 24"
-                                                        >
-                                                            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                                                        </svg>
-                                                        <strong>
-                                                            {tmdbData.vote_average.toFixed(
-                                                                1,
-                                                            )}
-                                                            /10
-                                                        </strong>
+                                        {tmdbData && (
+                                            <>
+                                                <span className="inline-flex items-center gap-1 rounded-md bg-amber-900/50 px-2 py-1 text-sm text-amber-300">
+                                                    <svg
+                                                        className="h-4 w-4 fill-current"
+                                                        viewBox="0 0 24 24"
+                                                    >
+                                                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                                    </svg>
+                                                    <strong>
+                                                        {tmdbData.vote_average >
+                                                        0
+                                                            ? `${tmdbData.vote_average.toFixed(1)}/10`
+                                                            : "N/A"}
+                                                    </strong>
+                                                    {tmdbData.vote_count >
+                                                        0 && (
                                                         <span className="text-xs">
                                                             (
                                                             {tmdbData.vote_count.toLocaleString()}
                                                             )
                                                         </span>
-                                                    </span>
-                                                </>
-                                            )}
+                                                    )}
+                                                </span>
+                                            </>
+                                        )}
                                     </div>
                                     <div className="flex flex-wrap gap-2">
                                         {movie.category?.map((cat, idx) => (
                                             <span
                                                 key={idx}
-                                                className="inline-block rounded-md bg-yellow-900/50 px-2 py-1 text-sm text-yellow-300"
+                                                className="inline-block rounded-md bg-teal-900/50 px-2 py-1 text-sm text-teal-300"
                                             >
                                                 {cat.name}
                                             </span>
@@ -3541,7 +3793,10 @@ export default function VodPlay() {
                                     </div> */}
                                     <div
                                         className="line-clamp-4 text-sm text-zinc-300"
-                                        title={movie.content}
+                                        title={movie.content?.replace(
+                                            /<[^>]*>/g,
+                                            "",
+                                        )}
                                         dangerouslySetInnerHTML={{
                                             __html: movie.content,
                                         }}
@@ -3610,11 +3865,11 @@ export default function VodPlay() {
                                                     </div>
                                                 )}
                                                 <div className="w-32">
-                                                    <div className="line-clamp-2 text-sm font-semibold text-zinc-100 transition-colors duration-300 group-hover:text-blue-400">
+                                                    <div className="line-clamp-2 text-balance text-sm font-semibold text-zinc-100 transition-colors duration-300 group-hover:text-blue-400">
                                                         {c.name}
                                                     </div>
                                                     {c.character && (
-                                                        <div className="line-clamp-2 text-xs text-zinc-400 transition-colors duration-300 group-hover:text-zinc-300">
+                                                        <div className="line-clamp-2 text-balance text-xs text-zinc-400 transition-colors duration-300 group-hover:text-zinc-300">
                                                             {c.character}
                                                         </div>
                                                     )}

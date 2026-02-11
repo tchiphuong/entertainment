@@ -11,16 +11,20 @@ export const LANGUAGES = [
     { code: "en", name: "English", flag: "🇺🇸" },
 ];
 
+// Tắt sponsorship message của i18next trong dev
+i18n.options.ignoreJSONStructure = false;
+
 // Cấu hình i18n
 i18n.use(LanguageDetector) // Tự động detect ngôn ngữ từ browser
     .use(initReactI18next) // Tích hợp với React
     .init({
+        logSpam: false, // Tắt sponsorship/promotional messages
         resources: {
             vi: { translation: vi },
             en: { translation: en },
         },
         fallbackLng: "vi", // Ngôn ngữ mặc định
-        debug: import.meta.env.DEV, // Chỉ debug trong development
+        debug: false, // Tắt debug log
 
         interpolation: {
             escapeValue: false, // React đã tự escape XSS

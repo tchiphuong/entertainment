@@ -120,6 +120,7 @@
         "country": "Quốc gia",
         "language": "Ngôn ngữ",
         "duration": "Thời lượng",
-        "tmdb": "TMDB"
+        "tmdb": "TMDB",
+        "watchNow": "Xem ngay"
     }
 }
