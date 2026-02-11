@@ -1909,10 +1909,21 @@ export default function VodPlay() {
             .querySelector(".jw-controlbar");
         if (!controlbar) return;
 
+        // Prevent duplicates
+        if (controlbar.querySelector('[aria-label="Tua lùi 10 giây"]')) return;
+
+        // Hide default rewind/forward buttons
+        const defaults = controlbar.querySelectorAll(
+            ".jw-icon-rewind, .jw-icon-forward, .jw-icon-next",
+        );
+        defaults.forEach((btn) => {
+            btn.style.setProperty("display", "none", "important");
+        });
+
         // Nút tua lùi 10s - tạo riêng biệt để khớp với structure JWPlayer
         const rewindBtn = document.createElement("div");
         rewindBtn.className =
-            "jw-icon jw-icon-inline jw-button-color jw-reset jw-icon-rewind";
+            "jw-icon jw-icon-inline jw-button-color jw-reset jw-icon-rewind jw-custom-rewind";
         rewindBtn.setAttribute("role", "button");
         rewindBtn.setAttribute("tabindex", "0");
         rewindBtn.setAttribute("aria-label", "Tua lùi 10 giây");
@@ -1932,7 +1943,7 @@ export default function VodPlay() {
         // Nút tua tiến 10s - tạo riêng biệt để khớp với structure JWPlayer
         const forwardBtn = document.createElement("div");
         forwardBtn.className =
-            "jw-icon jw-icon-inline jw-button-color jw-reset jw-icon-forward";
+            "jw-icon jw-icon-inline jw-button-color jw-reset jw-icon-forward jw-custom-forward";
         forwardBtn.setAttribute("role", "button");
         forwardBtn.setAttribute("tabindex", "0");
         forwardBtn.setAttribute("aria-label", "Tua tiến 10 giây");
@@ -1949,6 +1960,21 @@ export default function VodPlay() {
             const duration = player.getDuration();
             player.seek(Math.min(duration, currentTime + 10));
         };
+
+        // Inject CSS to hide default buttons
+        // Use a unique ID for the style tag to avoid duplication if function runs multiple times
+        const styleId = "jw-custom-controls-style";
+        if (!document.getElementById(styleId)) {
+            const style = document.createElement("style");
+            style.id = styleId;
+            style.textContent = `
+                .jw-icon-rewind:not(.jw-custom-rewind),
+                .jw-icon-forward:not(.jw-custom-forward) {
+                    display: none !important;
+                }
+            `;
+            document.head.appendChild(style);
+        }
 
         // Tìm vị trí để insert (sau nút play/pause)
         const playButton = controlbar.querySelector(".jw-icon-playback");
@@ -2176,18 +2202,6 @@ export default function VodPlay() {
                     }
 
                     // Ẩn nút seek mặc định của JWPlayer (nếu có)
-                    const container = player.getContainer();
-                    if (container) {
-                        // Ẩn các nút rewind/forward mặc định của JWPlayer
-                        const style = document.createElement("style");
-                        style.textContent = `
-                            .jw-icon-rewind:not(.jw-icon-forward):not([aria-label="Tua lùi 10 giây"]),
-                            .jw-icon-next:not([aria-label="Tua tiến 10 giây"]) {
-                                display: none !important;
-                            }
-                        `;
-                        container.appendChild(style);
-                    }
                 });
 
                 let lastSavedTime = 0;
@@ -3250,7 +3264,7 @@ export default function VodPlay() {
             )}
             {movie && (
                 <>
-                    <main className="container mx-auto flex h-full flex-col gap-4 p-4">
+                    <main className="container mx-auto flex h-full flex-col gap-4 p-4 lg:px-24">
                         {/* Breadcrumb Navigation with Actions */}
                         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                             <nav className="text-sm text-zinc-400">
