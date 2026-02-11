@@ -3341,9 +3341,9 @@ export default function VodPlay() {
                                 {activeEpisode &&
                                     activeEpisode.server_data?.length > 0 && (
                                         <div
-                                            className={`grid h-fit auto-rows-max grid-cols-4 items-start gap-4 overflow-y-auto p-4 transition-all sm:grid-cols-6 xl:grid-cols-12 ${
+                                            className={`grid h-fit auto-rows-max grid-cols-4 items-start gap-4 overflow-y-auto p-4 transition-all sm:grid-cols-6 ${
                                                 isTheaterMode
-                                                    ? "max-h-116 lg:grid-cols-8"
+                                                    ? "max-h-116 lg:grid-cols-8 xl:grid-cols-12"
                                                     : "max-h-116 lg:h-0 lg:max-h-none lg:grow lg:grid-cols-3"
                                             }`}
                                         >
