@@ -3436,7 +3436,7 @@ export default function VodPlay() {
                                     </div>
 
                                     {/* Hàng 2: Các switch settings */}
-                                    <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+                                    <div className="flex flex-wrap items-center justify-end gap-2">
                                         {/* Switch bỏ qua intro + input */}
                                         <div className="flex items-center gap-2">
                                             <div
