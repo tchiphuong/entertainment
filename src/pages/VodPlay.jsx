@@ -3493,7 +3493,7 @@ export default function VodPlay() {
                                                     <input
                                                         type="number"
                                                         min="0"
-                                                        max="300"
+                                                        max="3000"
                                                         value={introDuration}
                                                         onChange={(e) => {
                                                             const value =

@@ -295,6 +295,19 @@ function useLocalStorage(key, initial) {
 
 export default function Vods() {
     const { t } = useTranslation();
+    const [copiedMovieSlug, setCopiedMovieSlug] = useState(null);
+
+    const handleCopyLink = useCallback(async (slug) => {
+        const link = `${window.location.origin}/entertainment/vods/play/${slug}`;
+        try {
+            await navigator.clipboard.writeText(link);
+            setCopiedMovieSlug(slug);
+            const timer = setTimeout(() => setCopiedMovieSlug(null), 2000);
+            return () => clearTimeout(timer);
+        } catch (err) {
+            console.error("Failed to copy link:", err);
+        }
+    }, []);
 
     // Define tabs với SVG icons
     const TABS = [
@@ -2739,11 +2752,16 @@ export default function Vods() {
                                                         e,
                                                     );
                                                 }}
-                                                className={`flex items-center justify-center gap-1.5 rounded-full px-3 py-2 text-xs font-semibold transition-colors ${
+                                                className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
                                                     isMovieFavorited(movie.slug)
                                                         ? "bg-red-500/20 text-red-400 ring-1 ring-red-500/30 hover:bg-red-500/30"
                                                         : "bg-zinc-700/60 text-zinc-300 hover:bg-zinc-600/60"
                                                 }`}
+                                                title={
+                                                    isMovieFavorited(movie.slug)
+                                                        ? t("vodPlay.liked")
+                                                        : t("vodPlay.like")
+                                                }
                                             >
                                                 <svg
                                                     className="h-4 w-4"
@@ -2764,9 +2782,69 @@ export default function Vods() {
                                                         d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
                                                     />
                                                 </svg>
-                                                {isMovieFavorited(movie.slug)
-                                                    ? t("vodPlay.liked")
-                                                    : t("vodPlay.like")}
+                                            </button>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    handleCopyLink(movie.slug);
+                                                }}
+                                                className={`flex h-8 w-8 items-center justify-center rounded-full bg-zinc-700/60 text-zinc-300 transition-colors hover:bg-zinc-600/60 ${
+                                                    copiedMovieSlug ===
+                                                    movie.slug
+                                                        ? "!bg-green-500/20 !text-green-400 ring-1 ring-green-500/30"
+                                                        : ""
+                                                }`}
+                                                title={
+                                                    copiedMovieSlug ===
+                                                    movie.slug
+                                                        ? "Đã sao chép"
+                                                        : "Sao chép liên kết"
+                                                }
+                                            >
+                                                {copiedMovieSlug ===
+                                                movie.slug ? (
+                                                    <svg
+                                                        className="h-4 w-4"
+                                                        fill="none"
+                                                        viewBox="0 0 24 24"
+                                                        stroke="currentColor"
+                                                        strokeWidth={2}
+                                                    >
+                                                        <path
+                                                            strokeLinecap="round"
+                                                            strokeLinejoin="round"
+                                                            d="M5 13l4 4L19 7"
+                                                        />
+                                                    </svg>
+                                                ) : (
+                                                    <svg
+                                                        className="h-4 w-4"
+                                                        viewBox="0 0 32 32"
+                                                        fill="none"
+                                                    >
+                                                        <rect
+                                                            x="13"
+                                                            y="9"
+                                                            width="14"
+                                                            height="18"
+                                                            stroke="currentColor"
+                                                            strokeWidth={2}
+                                                            strokeMiterlimit={
+                                                                10
+                                                            }
+                                                        />
+                                                        <polyline
+                                                            points="11,23 5,23 5,5 19,5 19,7"
+                                                            fill="none"
+                                                            stroke="currentColor"
+                                                            strokeWidth={2}
+                                                            strokeMiterlimit={
+                                                                10
+                                                            }
+                                                        />
+                                                    </svg>
+                                                )}
                                             </button>
                                         </div>
                                     </div>
