@@ -36,6 +36,7 @@
 		"react-dom": "^18.2.0",
 		"react-i18next": "^16.5.4",
 		"react-router-dom": "^6.14.1",
-		"react-select": "^5.10.2"
+		"react-select": "^5.10.2",
+		"shaka-player": "^5.0.2"
 	}
 }

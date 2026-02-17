@@ -1,32 +1,17 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import shaka from "shaka-player/dist/shaka-player.ui.js";
+import "shaka-player/dist/controls.css";
+import "../styles/youtube-theme.tailwind.css";
 
-// Mock JWPlayer license response để bypass CORS
-const JWPLAYER_LICENSE_MOCK = {
-    canPlayAds: true,
-    canPlayOutstreamAds: false,
-    canUseIdentityScript: false,
-    canUseVPB: false,
-    overrideAdConfig: false,
-};
+const IMAGE_PROXY_PREFIX = "https://external-content.duckduckgo.com/iu/?u=";
 
-// Intercept fetch để bypass JWPlayer CORS
-const originalFetch = window.fetch;
-window.fetch = function (...args) {
-    const url = typeof args[0] === "string" ? args[0] : args[0]?.url;
-
-    // Mock JWPlayer entitlements
-    if (url && url.includes("entitlements.jwplayer.com")) {
-        return Promise.resolve(
-            new Response(JSON.stringify(JWPLAYER_LICENSE_MOCK), {
-                status: 200,
-                headers: { "Content-Type": "application/json" },
-            }),
-        );
-    }
-
-    return originalFetch.apply(this, args);
+const toProxyImageUrl = (rawUrl) => {
+    const url = String(rawUrl || "").trim();
+    if (!url) return null;
+    if (url.startsWith(IMAGE_PROXY_PREFIX)) return url;
+    return `${IMAGE_PROXY_PREFIX}${encodeURIComponent(url)}`;
 };
 
 const fetchChannels = async () => {
@@ -125,14 +110,21 @@ const fetchChannels = async () => {
             const tvgIdMatch = line.match(/tvg-id="([^"]+)"/i);
             const groupMatch = line.match(/group-title="([^"]+)"/i);
 
-            // Parse EXTVLCOPT options (referrer, user-agent, etc.)
+            // Parse EXTVLCOPT options (referrer, user-agent, etc.) và KODIPROP (clearkey, license)
             let referrer = null;
             let userAgent = null;
+            let licenseType = null;
+            let licenseKey = null;
+            let clearKeys = []; // Array of {kid, key} objects
 
-            // Tìm các dòng EXTVLCOPT trước URL
+            // Tìm các dòng EXTVLCOPT và KODIPROP trước URL
             for (let j = i + 1; j < allLines.length; j++) {
                 const optLine = allLines[j];
-                if (!optLine || optLine.startsWith("#EXTINF")) break;
+                // Dòng trống trong playlist có thể xuất hiện giữa metadata, không được break sớm
+                if (!optLine) continue;
+                if (optLine.startsWith("#EXTINF")) break;
+                // Gặp URL thì dừng parse metadata của item hiện tại
+                if (!optLine.startsWith("#")) break;
 
                 if (optLine.startsWith("#EXTVLCOPT:")) {
                     const refMatch = optLine.match(/http-referrer=(.+)$/i);
@@ -142,6 +134,73 @@ const fetchChannels = async () => {
                     const uaMatch = optLine.match(/http-user-agent=(.+)$/i);
                     if (uaMatch) {
                         userAgent = uaMatch[1].trim();
+                    }
+                }
+
+                // Parse KODIPROP cho DRM clearkey
+                if (optLine.startsWith("#KODIPROP:")) {
+                    // License type: clearkey, widevine, etc.
+                    const typeMatch = optLine.match(
+                        /inputstream\.adaptive\.license_type=(.+)$/i,
+                    );
+                    if (typeMatch) {
+                        licenseType = typeMatch[1].trim().toLowerCase();
+                    }
+
+                    // License key - có thể là format "kid:key" hoặc JSON
+                    const keyMatch = optLine.match(
+                        /inputstream\.adaptive\.license_key=(.+)$/i,
+                    );
+                    if (keyMatch) {
+                        licenseKey = keyMatch[1].trim().replace(/^"|"$/g, "");
+
+                        // Parse license key
+                        // Format 1: kid:key (hex format)
+                        // Format 2: {"keys":[{"kty":"oct","k":"...","kid":"..."}],"type":"temporary"}
+                        // Format 3: URL to license server
+
+                        if (
+                            licenseKey.includes(":") &&
+                            !licenseKey.startsWith("http") &&
+                            !licenseKey.startsWith("{")
+                        ) {
+                            // Format kid:key - có thể có nhiều cặp phân cách bởi dấu phẩy
+                            const pairs = licenseKey.split(",");
+                            pairs.forEach((pair) => {
+                                const parts = pair.trim().split(":");
+                                if (parts.length === 2) {
+                                    clearKeys.push({
+                                        kid: parts[0].trim(),
+                                        key: parts[1].trim(),
+                                    });
+                                }
+                            });
+                            console.log(
+                                `Parsed clearkey from m3u8: kid=${clearKeys[clearKeys.length - 1]?.kid}, key=${clearKeys[clearKeys.length - 1]?.key}`,
+                            );
+                        } else if (licenseKey.startsWith("{")) {
+                            // JSON format
+                            try {
+                                const json = JSON.parse(licenseKey);
+                                if (json.keys && Array.isArray(json.keys)) {
+                                    json.keys.forEach((k) => {
+                                        if (k.kid && k.k) {
+                                            // Base64url format - cần decode
+                                            clearKeys.push({
+                                                kid: k.kid,
+                                                key: k.k,
+                                                isBase64: true,
+                                            });
+                                        }
+                                    });
+                                }
+                            } catch (e) {
+                                console.warn(
+                                    "Failed to parse clearkey JSON:",
+                                    e,
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -168,7 +227,9 @@ const fetchChannels = async () => {
             const quality = qualityMatch ? qualityMatch[1].trim() : "Default";
 
             // Xác định type của source
-            const sourceType = url.includes(".mpd") ? "dash" : "hls";
+            const sourceType = url.toLowerCase().includes(".mpd")
+                ? "dash"
+                : "hls";
 
             // Tạo source object
             const source = {
@@ -177,7 +238,18 @@ const fetchChannels = async () => {
                 label: quality, // Dùng quality làm label để phân biệt các source
                 referrer: referrer, // Lưu referrer nếu có
                 userAgent: userAgent, // Lưu user-agent nếu có
+                licenseType: licenseType, // clearkey, widevine, etc.
+                licenseKey: licenseKey, // Raw license key string
+                clearKeys: clearKeys.length > 0 ? clearKeys : null, // Parsed clear keys array
             };
+
+            // Debug log cho các source có DRM
+            if (clearKeys.length > 0) {
+                console.log(
+                    `[M3U8 Parse] Channel "${name}" has clearKeys:`,
+                    clearKeys,
+                );
+            }
 
             // Ưu tiên group theo tvgId, nếu không có thì group theo baseName
             const groupKey = tvgId || baseName;
@@ -196,7 +268,7 @@ const fetchChannels = async () => {
                     id: channels.length + 1,
                     name: baseName, // Dùng base name (không có quality suffix)
                     url,
-                    logo: logoMatch ? logoMatch[1] : null,
+                    logo: toProxyImageUrl(logoMatch ? logoMatch[1] : null),
                     tvgId: tvgId,
                     configSources: [source], // Khởi tạo với source đầu tiên
                 };
@@ -347,6 +419,8 @@ function ChannelScroller({ channels, selectedChannel, onSelectChannel }) {
 
 export default function TV() {
     const { t } = useTranslation();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const urlChannelId = String(searchParams.get("id") || "").trim();
     // Simple toast helper (DOM-based) using Tailwind classes (no inline CSS)
     const showToast = (message, opts = {}) => {
         try {
@@ -423,9 +497,10 @@ export default function TV() {
     const [scheduleError, setScheduleError] = useState(null);
     const [expandedGroups, setExpandedGroups] = useState(new Set()); // Track các group đang mở
     const [epgChannels, setEpgChannels] = useState(new Map()); // Map tvgId -> channel info từ EPG API
-    // Refs for video element and JWPlayer instance
+    // Refs for video element và Shaka
     const videoRef = useRef(null);
-    const playerRef = useRef(null);
+    const shakaPlayerRef = useRef(null); // Ref cho Shaka Player (DASH/MPD)
+    const shakaUiOverlayRef = useRef(null); // Ref cho Shaka UI Overlay
     const scheduleContainerRef = useRef(null);
     const currentChannelRef = useRef(null); // Track channel đang phát để tránh duplicate init
     const hasLoadedChannelsRef = useRef(false); // Track đã load channels chưa để tránh duplicate fetch
@@ -433,6 +508,50 @@ export default function TV() {
     const scheduleCacheRef = useRef(new Map()); // Cache schedule theo channelId, tránh spam API
     const errorCountRef = useRef(0); // Track số lần lỗi liên tiếp
     const triedSourcesRef = useRef(new Set()); // Track các source đã thử
+    const isSyncingUrlRef = useRef(false); // Chặn loop khi đồng bộ state <-> URL
+
+    // Helper: lấy id dùng cho URL query param
+    const getChannelParamId = (channel) => {
+        if (!channel) return "";
+        if (channel.tvgId) return String(channel.tvgId).trim();
+        if (channel.id != null) return `ch-${String(channel.id).trim()}`;
+        return "";
+    };
+
+    // Helper: tìm channel theo id từ URL
+    const findChannelByParamId = (allChannels, paramId) => {
+        const normalizedParam = String(paramId || "")
+            .trim()
+            .toLowerCase();
+        if (!normalizedParam) return null;
+
+        // Ưu tiên match theo tvgId trước
+        const byTvgId = allChannels.find((channel) => {
+            if (!channel.tvgId) return false;
+            return (
+                String(channel.tvgId).trim().toLowerCase() === normalizedParam
+            );
+        });
+        if (byTvgId) return byTvgId;
+
+        // Hỗ trợ id nội bộ theo format ch-{id}
+        if (normalizedParam.startsWith("ch-")) {
+            const numericId = normalizedParam.slice(3);
+            const byInternalId = allChannels.find(
+                (channel) =>
+                    String(channel.id).trim().toLowerCase() === numericId,
+            );
+            if (byInternalId) return byInternalId;
+        }
+
+        // Fallback cũ: cho phép id numeric thuần
+        return (
+            allChannels.find(
+                (channel) =>
+                    String(channel.id).trim().toLowerCase() === normalizedParam,
+            ) || null
+        );
+    };
 
     // --- LOAD EPG SUPPORTED CHANNELS ON MOUNT ---
     useEffect(() => {
@@ -493,10 +612,19 @@ export default function TV() {
                 // Mở tất cả groups mặc định
                 setExpandedGroups(new Set(data.map((g) => g.name)));
 
-                // Tự động chọn kênh đầu tiên nếu có
-                if (data && data.length > 0 && data[0].channels.length > 0) {
-                    const firstChannel = data[0].channels[0];
-                    setSelectedChannel(firstChannel);
+                // Tự động chọn kênh từ URL param id trước, nếu không có thì chọn kênh đầu tiên
+                if (data && data.length > 0) {
+                    const allChannels = data.flatMap((group) => group.channels);
+                    const channelFromParam = findChannelByParamId(
+                        allChannels,
+                        urlChannelId,
+                    );
+
+                    if (channelFromParam) {
+                        setSelectedChannel(channelFromParam);
+                    } else if (allChannels.length > 0) {
+                        setSelectedChannel(allChannels[0]);
+                    }
                 }
             } catch (err) {
                 console.error("Lỗi tải kênh:", err);
@@ -508,12 +636,420 @@ export default function TV() {
         loadChannels();
     }, []);
 
+    // Đồng bộ từ URL param id -> selectedChannel (khi người dùng sửa URL)
+    useEffect(() => {
+        if (!groups || groups.length === 0) return;
+
+        // Bỏ qua 1 lượt khi URL vừa được update từ state để tránh loop
+        if (isSyncingUrlRef.current) {
+            isSyncingUrlRef.current = false;
+            return;
+        }
+
+        if (!urlChannelId) return;
+
+        const allChannels = groups.flatMap((group) => group.channels);
+        const matchedChannel = findChannelByParamId(allChannels, urlChannelId);
+
+        if (matchedChannel && matchedChannel.id !== selectedChannel?.id) {
+            setSelectedChannel(matchedChannel);
+        }
+    }, [groups, urlChannelId]);
+
+    // Đồng bộ selectedChannel -> URL param id
+    useEffect(() => {
+        if (!selectedChannel) return;
+
+        const currentId = String(urlChannelId || "")
+            .trim()
+            .toLowerCase();
+        const nextId = getChannelParamId(selectedChannel);
+        const nextIdNormalized = String(nextId || "")
+            .trim()
+            .toLowerCase();
+        if (!nextIdNormalized || currentId === nextIdNormalized) return;
+
+        isSyncingUrlRef.current = true;
+        const nextParams = new URLSearchParams(window.location.search);
+        nextParams.set("id", nextId);
+        setSearchParams(nextParams, { replace: true });
+    }, [selectedChannel?.id, urlChannelId, setSearchParams]);
+
     // Ref để lưu danh sách sources đã filter cho channel hiện tại
     const currentSourcesRef = useRef([]);
     const currentSourceIndexRef = useRef(0);
 
-    // Hàm helper để setup player với source cụ thể
-    const setupPlayerWithSource = (sourceIndex) => {
+    // Hàm destroy tất cả player instances của Shaka
+    const destroyAllPlayers = async () => {
+        // Destroy Shaka UI Overlay
+        if (shakaUiOverlayRef.current) {
+            try {
+                shakaUiOverlayRef.current.destroy();
+                shakaUiOverlayRef.current = null;
+            } catch (e) {
+                console.warn("Error destroying Shaka UI Overlay:", e);
+            }
+        }
+
+        // Destroy Shaka Player
+        if (shakaPlayerRef.current) {
+            try {
+                await shakaPlayerRef.current.destroy();
+                shakaPlayerRef.current = null;
+            } catch (e) {
+                console.warn("Error destroying Shaka Player:", e);
+            }
+        }
+    };
+
+    // Convert hex string -> base64url (không padding)
+    const hexToBase64Url = (hexValue) => {
+        try {
+            const normalizedHex = String(hexValue || "")
+                .replace(/[^a-fA-F0-9]/g, "")
+                .toLowerCase();
+            if (!normalizedHex || normalizedHex.length % 2 !== 0) return "";
+
+            const bytes = normalizedHex
+                .match(/.{1,2}/g)
+                .map((part) => parseInt(part, 16));
+            const binary = String.fromCharCode(...bytes);
+            return btoa(binary)
+                .replace(/\+/g, "-")
+                .replace(/\//g, "_")
+                .replace(/=+$/g, "");
+        } catch (e) {
+            return "";
+        }
+    };
+
+    // Convert base64url string -> hex (cho drm.clearKeys cần hex)
+    const base64UrlToHex = (b64url) => {
+        try {
+            let b64 = String(b64url || "")
+                .replace(/-/g, "+")
+                .replace(/_/g, "/");
+            // Thêm padding nếu thiếu
+            while (b64.length % 4) b64 += "=";
+            const binary = atob(b64);
+            return Array.from(binary, (c) =>
+                c.charCodeAt(0).toString(16).padStart(2, "0"),
+            ).join("");
+        } catch (e) {
+            return "";
+        }
+    };
+
+    // Hàm setup Shaka Player cho DASH/MPD
+    const setupShakaPlayer = async (
+        source,
+        sourceIndex,
+        clearKeyMode = "hex",
+    ) => {
+        console.log(`[Shaka Setup] Source ${sourceIndex}:`, {
+            file: source.file,
+            licenseType: source.licenseType,
+            clearKeys: source.clearKeys,
+            clearKeyMode,
+        });
+
+        const sources = currentSourcesRef.current;
+        const playerDiv = document.getElementById("tv-player");
+        if (!playerDiv) return;
+
+        // Clear container và tạo wrapper cho Shaka UI
+        playerDiv.innerHTML = "";
+
+        const themeWrapper = document.createElement("div");
+        themeWrapper.className = "youtube-theme h-full w-full";
+
+        const uiContainer = document.createElement("div");
+        uiContainer.className = "shaka-video-container h-full w-full";
+
+        const video = document.createElement("video");
+        video.id = "shaka-video";
+        video.className = "h-full w-full";
+        video.autoplay = true;
+        video.playsInline = true;
+
+        uiContainer.appendChild(video);
+        themeWrapper.appendChild(uiContainer);
+        playerDiv.appendChild(themeWrapper);
+
+        // Khởi tạo Shaka Player
+        const player = new shaka.Player(video);
+        shakaPlayerRef.current = player;
+
+        // Khởi tạo Shaka UI Overlay để áp theme controls
+        const uiOverlay = new shaka.ui.Overlay(player, uiContainer, video);
+        shakaUiOverlayRef.current = uiOverlay;
+
+        uiOverlay.configure({
+            controlPanelElements: [
+                "play_pause",
+                "mute",
+                "volume",
+                "time_and_duration",
+                "spacer",
+                "overflow_menu",
+                "fullscreen",
+            ],
+            overflowMenuButtons: [
+                "quality",
+                "language",
+                "captions",
+                "playback_rate",
+                "picture_in_picture",
+            ],
+            seekBarColors: {
+                base: "rgba(255,255,255,.2)",
+                buffered: "rgba(255,255,255,.4)",
+                played: "rgb(255,0,0)",
+            },
+        });
+
+        // Cấu hình DRM clearkey nếu có
+        // Retry chain: hex -> server -> none -> next source
+        // drm.clearKeys luôn cần hex string; server mode dùng base64url JSON
+        if (source.clearKeys && source.clearKeys.length > 0) {
+            try {
+                if (clearKeyMode === "none") {
+                    // Mode 3: Bỏ DRM, phát trực tiếp (stream có thể không mã hóa thật)
+                    console.log("[Shaka DRM] Bỏ qua DRM config (mode: none)");
+                } else if (clearKeyMode === "server") {
+                    // Mode 2: Tạo ClearKey license server qua data URI
+                    // Bypass vấn đề manifest khai báo Widevine nhưng thực tế dùng ClearKey
+                    const base64Keys = source.clearKeys
+                        .map((ck) => {
+                            // Chuyển về base64url cho JSON format
+                            let kidB64, keyB64;
+                            if (ck.isBase64) {
+                                kidB64 = String(ck.kid || "");
+                                keyB64 = String(ck.key || "");
+                            } else {
+                                const kidHex = String(ck.kid || "")
+                                    .replace(/[^a-fA-F0-9]/g, "")
+                                    .toLowerCase();
+                                const keyHex = String(ck.key || "")
+                                    .replace(/[^a-fA-F0-9]/g, "")
+                                    .toLowerCase();
+                                kidB64 = hexToBase64Url(kidHex);
+                                keyB64 = hexToBase64Url(keyHex);
+                            }
+                            return { kty: "oct", k: keyB64, kid: kidB64 };
+                        })
+                        .filter((k) => k.k && k.kid);
+
+                    const licenseJson = JSON.stringify({
+                        keys: base64Keys,
+                        type: "temporary",
+                    });
+                    const licenseDataUri = `data:application/json;base64,${btoa(licenseJson)}`;
+
+                    player.configure({
+                        drm: {
+                            servers: {
+                                "org.w3c.clearkey": licenseDataUri,
+                            },
+                        },
+                    });
+                    console.log(
+                        "[Shaka DRM] Configured ClearKey license server (data URI):",
+                        base64Keys,
+                    );
+                } else {
+                    // Mode 1 (hex): drm.clearKeys - Shaka luôn yêu cầu hex string
+                    const clearKeyConfig = {};
+
+                    source.clearKeys.forEach((ck) => {
+                        let kidHex, keyHex;
+                        if (ck.isBase64) {
+                            // Base64url -> hex (ví dụ: Dreamworks JSON format)
+                            kidHex = base64UrlToHex(ck.kid);
+                            keyHex = base64UrlToHex(ck.key);
+                        } else {
+                            // Hex trực tiếp, loại bỏ ký tự không hợp lệ và đảm bảo chiều dài chẵn
+                            kidHex = String(ck.kid || "")
+                                .replace(/[^a-fA-F0-9]/g, "")
+                                .toLowerCase();
+                            keyHex = String(ck.key || "")
+                                .replace(/[^a-fA-F0-9]/g, "")
+                                .toLowerCase();
+                        }
+                        // Đảm bảo chiều dài chẵn (Shaka yêu cầu string hex even-length)
+                        if (kidHex.length % 2 !== 0) kidHex = "0" + kidHex;
+                        if (keyHex.length % 2 !== 0) keyHex = "0" + keyHex;
+
+                        if (kidHex && keyHex) {
+                            clearKeyConfig[kidHex] = keyHex;
+                        }
+                    });
+
+                    player.configure({
+                        drm: {
+                            clearKeys: clearKeyConfig,
+                        },
+                    });
+                    console.log(
+                        "[Shaka DRM] Configured clearKeys (hex):",
+                        clearKeyConfig,
+                    );
+                }
+            } catch (e) {
+                console.warn("Error configuring clearKeys:", e);
+            }
+        }
+
+        // Cấu hình network request filters
+        if (source.referrer || source.userAgent) {
+            const networkingEngine = player.getNetworkingEngine();
+            if (networkingEngine) {
+                networkingEngine.registerRequestFilter((type, request) => {
+                    // Browser chặn set User-Agent/Referer bằng JS.
+                    // Không set 2 header này để tránh request fail ngầm khi play segment.
+                });
+                console.log("Shaka source has extra network hints:", {
+                    referrer: source.referrer,
+                    userAgent: source.userAgent,
+                });
+                console.warn(
+                    "Browser không cho phép set trực tiếp Referer/User-Agent từ JS. Nếu nguồn bắt buộc 2 header này thì cần proxy server.",
+                );
+            }
+        }
+
+        // Error handler cho Shaka
+        player.addEventListener("error", (event) => {
+            const error = event.detail;
+            console.error(
+                `Shaka Player error (source ${sourceIndex + 1}):`,
+                error,
+            );
+            console.error("Shaka error detail:", {
+                code: error?.code,
+                category: error?.category,
+                severity: error?.severity,
+                data: error?.data,
+                message: error?.message,
+            });
+
+            // Retry cùng source với clear key mode khác khi dính lỗi DRM 6008
+            // Chain: hex -> server -> none -> next source
+            if (
+                error?.code === 6008 &&
+                source.licenseType === "clearkey" &&
+                Array.isArray(source.clearKeys) &&
+                source.clearKeys.length > 0
+            ) {
+                const nextMode = {
+                    hex: "server",
+                    server: "none",
+                };
+                const retry = nextMode[clearKeyMode];
+                if (retry) {
+                    showToast(`DRM 6008: thử lại mode "${retry}"...`, {
+                        type: "warn",
+                        duration: 2500,
+                    });
+                    setTimeout(
+                        () => setupShakaPlayer(source, sourceIndex, retry),
+                        300,
+                    );
+                    return;
+                }
+                // Đã thử hết 3 modes, chuyển sang source tiếp theo
+            }
+
+            // Thử source tiếp theo
+            const nextIndex = sourceIndex + 1;
+            if (nextIndex < sources.length) {
+                showToast(
+                    `Nguồn ${sourceIndex + 1} lỗi, đang thử nguồn ${nextIndex + 1}...`,
+                    { type: "warn", duration: 2000 },
+                );
+                setTimeout(() => setupPlayerWithSource(nextIndex), 500);
+            } else {
+                showToast(
+                    `Không thể phát kênh ${selectedChannel.name}. Mã lỗi Shaka: ${error?.code || "unknown"}.`,
+                    { type: "error", duration: 8000 },
+                );
+            }
+        });
+
+        try {
+            // Load manifest
+            await player.load(source.file);
+            console.log(`Shaka Player loaded: ${source.file}`);
+
+            if (sourceIndex > 0) {
+                showToast(
+                    `Đang phát từ nguồn ${sourceIndex + 1}/${sources.length}: ${source.label}`,
+                    { type: "info", duration: 3000 },
+                );
+            }
+        } catch (error) {
+            console.error(
+                `Shaka Player load error (source ${sourceIndex + 1}):`,
+                error,
+            );
+            console.error("Shaka load error detail:", {
+                code: error?.code,
+                category: error?.category,
+                severity: error?.severity,
+                data: error?.data,
+                message: error?.message,
+            });
+
+            // Retry cùng source với clear key mode khác khi dính lỗi DRM (6008 hoặc SyntaxError hex)
+            // Chain: hex -> server -> none -> next source
+            const isDrmError =
+                error?.code === 6008 ||
+                (error instanceof SyntaxError &&
+                    String(error.message || "").includes("hex"));
+            if (
+                isDrmError &&
+                source.licenseType === "clearkey" &&
+                Array.isArray(source.clearKeys) &&
+                source.clearKeys.length > 0
+            ) {
+                const nextMode = {
+                    hex: "server",
+                    server: "none",
+                };
+                const retry = nextMode[clearKeyMode];
+                if (retry) {
+                    showToast(`DRM lỗi: thử lại mode "${retry}"...`, {
+                        type: "warn",
+                        duration: 2500,
+                    });
+                    setTimeout(
+                        () => setupShakaPlayer(source, sourceIndex, retry),
+                        300,
+                    );
+                    return;
+                }
+                // Đã thử hết 3 modes, chuyển sang source tiếp theo
+            }
+
+            // Thử source tiếp theo
+            const nextIndex = sourceIndex + 1;
+            if (nextIndex < sources.length) {
+                showToast(
+                    `Nguồn ${sourceIndex + 1} lỗi, đang thử nguồn ${nextIndex + 1}...`,
+                    { type: "warn", duration: 2000 },
+                );
+                setTimeout(() => setupPlayerWithSource(nextIndex), 500);
+            } else {
+                showToast(
+                    `Không thể phát kênh ${selectedChannel.name}. Mã lỗi Shaka: ${error?.code || "unknown"}.`,
+                    { type: "error", duration: 8000 },
+                );
+            }
+        }
+    };
+
+    // Hàm helper để setup player với source cụ thể (Shaka-only)
+    const setupPlayerWithSource = async (sourceIndex) => {
         const sources = currentSourcesRef.current;
         if (sourceIndex >= sources.length) {
             // Đã thử hết tất cả sources
@@ -524,112 +1060,63 @@ export default function TV() {
             return;
         }
 
-        const source = sources[sourceIndex];
+        const rawSource = sources[sourceIndex] || {};
+        const source = {
+            ...rawSource,
+            file: rawSource.file || "",
+            label: rawSource.label || "Default",
+            referrer: rawSource.referrer ?? null,
+            userAgent: rawSource.userAgent ?? null,
+            licenseType: rawSource.licenseType ?? null,
+            licenseKey: rawSource.licenseKey ?? null,
+            clearKeys: Array.isArray(rawSource.clearKeys)
+                ? rawSource.clearKeys
+                : null,
+        };
+
+        if (!source.file) {
+            showToast("Source không hợp lệ: thiếu URL phát", {
+                type: "error",
+                duration: 5000,
+            });
+            return;
+        }
+
         currentSourceIndexRef.current = sourceIndex;
         triedSourcesRef.current.add(sourceIndex);
 
-        // Destroy old player
-        if (playerRef.current) {
-            try {
-                playerRef.current.remove();
-                playerRef.current = null;
-            } catch (e) {
-                console.warn("Error removing old player:", e);
-            }
-        }
+        // Destroy old players
+        await destroyAllPlayers();
 
         const playerDiv = document.getElementById("tv-player");
         if (!playerDiv) return;
-        playerDiv.innerHTML = "";
 
-        const playlistItem = {
-            title: selectedChannel.name,
-            file: source.file,
-            type: source.file.includes(".mpd") ? "dash" : "hls",
-        };
-
-        const playerConfig = {
-            playlist: [playlistItem],
-            width: "100%",
-            aspectratio: "16:9",
-            controls: true,
-            autostart: true,
-            mute: false,
-            playsinline: true,
-            primary: "html5",
-        };
-
-        const player = window.jwplayer("tv-player").setup(playerConfig);
-        playerRef.current = player;
-
-        player.on("ready", () => {
-            try {
-                addCustomControls(player);
-                if (sourceIndex > 0) {
-                    showToast(
-                        `Đang phát từ nguồn ${sourceIndex + 1}/${sources.length}: ${source.label}`,
-                        { type: "info", duration: 3000 },
-                    );
-                }
-            } catch (e) {
-                console.warn("Error adding custom controls:", e);
-            }
-        });
-
-        player.on("setupError", (err) => {
-            console.error(
-                `JWPlayer setup error (source ${sourceIndex + 1}):`,
-                err,
-            );
-            // Thử source tiếp theo
+        // Dùng Shaka cho tất cả nguồn (HLS + DASH)
+        if (!shaka.Player.isBrowserSupported()) {
             const nextIndex = sourceIndex + 1;
             if (nextIndex < sources.length) {
                 showToast(
-                    `Nguồn ${sourceIndex + 1} lỗi, đang thử nguồn ${nextIndex + 1}...`,
+                    `Nguồn ${sourceIndex + 1} không hỗ trợ, đang thử nguồn ${nextIndex + 1}...`,
                     { type: "warn", duration: 2000 },
                 );
                 setTimeout(() => setupPlayerWithSource(nextIndex), 500);
             } else {
                 showToast(
-                    `Không thể phát kênh ${selectedChannel.name}. Đã thử ${sources.length} nguồn.`,
+                    "Trình duyệt không hỗ trợ Shaka Player. Vui lòng dùng Chrome, Firefox hoặc Edge.",
                     { type: "error", duration: 8000 },
                 );
             }
-        });
+            return;
+        }
 
-        player.on("error", (err) => {
-            console.error(
-                `JWPlayer playback error (source ${sourceIndex + 1}):`,
-                err,
-            );
-            // Thử source tiếp theo
-            const nextIndex = sourceIndex + 1;
-            if (nextIndex < sources.length) {
-                showToast(
-                    `Nguồn ${sourceIndex + 1} lỗi, đang thử nguồn ${nextIndex + 1}...`,
-                    { type: "warn", duration: 2000 },
-                );
-                setTimeout(() => setupPlayerWithSource(nextIndex), 500);
-            } else {
-                showToast(
-                    `Không thể phát kênh ${selectedChannel.name}. Đã thử ${sources.length} nguồn.`,
-                    { type: "error", duration: 8000 },
-                );
-            }
-        });
+        shaka.polyfill.installAll();
+        await setupShakaPlayer(source, sourceIndex);
     };
 
     // --- LOAD CHANNEL KHI selectedChannel THAY ĐỔI ---
     useEffect(() => {
         const loadChannel = async () => {
             if (!selectedChannel) return;
-
-            // Check if JWPlayer is loaded
-            if (!window.jwplayer) {
-                console.error("JWPlayer chưa được load!");
-                showToast("JWPlayer chưa được load", { type: "error" });
-                return;
-            }
 
             // Track current channel
             currentChannelRef.current = selectedChannel;
@@ -640,16 +1127,6 @@ export default function TV() {
             currentSourceIndexRef.current = 0;
 
             try {
-                // Destroy old player instance
-                if (playerRef.current) {
-                    try {
-                        playerRef.current.remove();
-                        playerRef.current = null;
-                    } catch (e) {
-                        console.warn("Error removing old player:", e);
-                    }
-                }
-
                 // Wait for container to be ready
                 const playerDiv = document.getElementById("tv-player");
                 if (!playerDiv) {
@@ -658,6 +1135,9 @@ export default function TV() {
 
                 // Clear container
                 playerDiv.innerHTML = "";
+
+                // Destroy existing players trước khi setup mới
+                await destroyAllPlayers();
 
                 // Nếu có configSources, build sources array và dùng logic retry
                 if (
@@ -700,6 +1180,22 @@ export default function TV() {
                     };
 
                     filteredSources.sort((a, b) => {
+                        const aIsDash = a.file.toLowerCase().includes(".mpd");
+                        const bIsDash = b.file.toLowerCase().includes(".mpd");
+                        const aHasKeys =
+                            a.licenseType === "clearkey" &&
+                            Array.isArray(a.clearKeys) &&
+                            a.clearKeys.length > 0;
+                        const bHasKeys =
+                            b.licenseType === "clearkey" &&
+                            Array.isArray(b.clearKeys) &&
+                            b.clearKeys.length > 0;
+
+                        // Ưu tiên DASH có clear keys để tránh chọn nhầm source không đủ metadata DRM
+                        if (aIsDash && bIsDash && aHasKeys !== bHasKeys) {
+                            return bHasKeys ? 1 : -1;
+                        }
+
                         return getQuality(b.label) - getQuality(a.label);
                     });
 
@@ -718,12 +1214,17 @@ export default function TV() {
                         {
                             file: selectedChannel.url,
                             label: "Default",
+                            referrer: null,
+                            userAgent: null,
+                            licenseType: null,
+                            licenseKey: null,
+                            clearKeys: null,
                         },
                     ];
                     setupPlayerWithSource(0);
                 }
             } catch (error) {
-                console.error("Failed to setup JWPlayer:", error);
+                console.error("Failed to setup Shaka Player:", error);
                 showToast(
                     `Lỗi tải kênh: ${error.message || "Không rõ nguyên nhân"}`,
                     { type: "error", duration: 6000 },
@@ -735,14 +1236,9 @@ export default function TV() {
 
         // Cleanup khi unmount
         return () => {
-            try {
-                if (playerRef.current) {
-                    playerRef.current.remove();
-                    playerRef.current = null;
-                }
-            } catch (e) {
+            destroyAllPlayers().catch((e) => {
                 console.error("Cleanup error:", e);
-            }
+            });
         };
     }, [selectedChannel]);
 
@@ -995,71 +1491,6 @@ export default function TV() {
         return Math.round(((now - s) / (e - s)) * 100);
     };
 
-    // Add custom rewind/forward buttons to JWPlayer
-    function addCustomControls(player) {
-        const controlbar = player
-            .getContainer()
-            .querySelector(".jw-controlbar");
-        if (!controlbar) return;
-
-        // Nút tua lùi 10s
-        const rewindBtn = document.createElement("div");
-        rewindBtn.className =
-            "jw-icon jw-icon-inline jw-button-color jw-reset jw-icon-rewind";
-        rewindBtn.setAttribute("role", "button");
-        rewindBtn.setAttribute("tabindex", "0");
-        rewindBtn.setAttribute("aria-label", "Tua lùi 10 giây");
-        rewindBtn.title = "Tua lùi 10 giây";
-        rewindBtn.style.cssText = "cursor: pointer;";
-        rewindBtn.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-                <path d="M11.99 5V1l-5 5 5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6h-2c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-                <text x="12" y="16" text-anchor="middle" font-size="7" font-weight="bold" fill="currentColor">10</text>
-            </svg>
-        `;
-        rewindBtn.onclick = () => {
-            const currentTime = player.getPosition();
-            player.seek(Math.max(0, currentTime - 10));
-        };
-
-        // Nút tua tiến 10s
-        const forwardBtn = document.createElement("div");
-        forwardBtn.className =
-            "jw-icon jw-icon-inline jw-button-color jw-reset jw-icon-forward";
-        forwardBtn.setAttribute("role", "button");
-        forwardBtn.setAttribute("tabindex", "0");
-        forwardBtn.setAttribute("aria-label", "Tua tiến 10 giây");
-        forwardBtn.title = "Tua tiến 10 giây";
-        forwardBtn.style.cssText = "cursor: pointer;";
-        forwardBtn.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-                <path d="M12 5V1l5 5-5 5V7c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6h2c0 4.42-3.58 8-8 8s-8-3.58-8-8 3.58-8 8-8z"/>
-                <text x="12" y="16" text-anchor="middle" font-size="7" font-weight="bold" fill="currentColor">10</text>
-            </svg>
-        `;
-        forwardBtn.onclick = () => {
-            const currentTime = player.getPosition();
-            const duration = player.getDuration();
-            player.seek(Math.min(duration, currentTime + 10));
-        };
-
-        // Tìm vị trí để insert (sau nút play/pause)
-        const playButton = controlbar.querySelector(".jw-icon-playback");
-        if (playButton && playButton.parentElement) {
-            playButton.parentElement.insertBefore(
-                rewindBtn,
-                playButton.nextSibling,
-            );
-            playButton.parentElement.insertBefore(
-                forwardBtn,
-                rewindBtn.nextSibling,
-            );
-        } else {
-            controlbar.insertBefore(rewindBtn, controlbar.firstChild);
-            controlbar.insertBefore(forwardBtn, rewindBtn.nextSibling);
-        }
-    }
-
     const handleSelectChannel = (channel) => {
         setSelectedChannel(channel);
     };
@@ -1310,7 +1741,7 @@ export default function TV() {
                                                         {start} — {end}
                                                     </div>
                                                     <div className="flex-1">
-                                                        <div className="flex items-center justify-between gap-2">
+                                                        <div className="flex items-start justify-between gap-2">
                                                             <div className="line-clamp-2 text-sm font-medium">
                                                                 {item.title ||
                                                                     item.name ||
@@ -1318,7 +1749,7 @@ export default function TV() {
                                                                     "Không rõ"}
                                                             </div>
                                                             {current && (
-                                                                <div className="rounded-full bg-red-600/20 px-2 py-0.5 text-xs text-red-300">
+                                                                <div className="text-nowrap rounded-full bg-red-600/20 px-2 py-0.5 text-xs text-red-300">
                                                                     Đang phát
                                                                 </div>
                                                             )}

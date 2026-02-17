@@ -1,0 +1,332 @@
+@reference "../../css/tailwind.css";
+
+@layer components {
+    .youtube-theme {
+        font-family: "Inter", sans-serif;
+    }
+
+    .youtube-theme .shaka-bottom-controls {
+        @apply w-full p-0;
+        padding-bottom: 0;
+        z-index: 1;
+    }
+
+    .youtube-theme .shaka-bottom-controls {
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-orient: vertical;
+        -webkit-box-direction: normal;
+        -ms-flex-direction: column;
+        flex-direction: column;
+    }
+
+    .youtube-theme .shaka-ad-controls {
+        -webkit-box-ordinal-group: 2;
+        -ms-flex-order: 1;
+        order: 1;
+    }
+
+    .youtube-theme .shaka-controls-button-panel {
+        -webkit-box-ordinal-group: 3;
+        -ms-flex-order: 2;
+        order: 2;
+        @apply h-10 px-2.5;
+    }
+
+    .youtube-theme .shaka-range-container {
+        margin: 4px 10px;
+        top: 0;
+    }
+
+    .youtube-theme .shaka-small-play-button {
+        -webkit-box-ordinal-group: -2;
+        -ms-flex-order: -3;
+        order: -3;
+    }
+
+    .youtube-theme .shaka-mute-button {
+        -webkit-box-ordinal-group: -1;
+        -ms-flex-order: -2;
+        order: -2;
+    }
+
+    .youtube-theme .shaka-controls-button-panel > * {
+        @apply m-0 h-10 px-2 py-1 text-zinc-200;
+    }
+
+    .youtube-theme .shaka-controls-button-panel > *:focus {
+        @apply text-white outline-none;
+        -webkit-box-shadow: inset 0 0 0 2px rgba(27, 127, 204, 0.8);
+        box-shadow: inset 0 0 0 2px rgba(27, 127, 204, 0.8);
+    }
+
+    .youtube-theme .shaka-controls-button-panel > *:hover {
+        @apply text-white;
+    }
+
+    .youtube-theme .shaka-controls-button-panel .shaka-volume-bar-container {
+        position: relative;
+        z-index: 10;
+        left: -1px;
+        -webkit-box-ordinal-group: 0;
+        -ms-flex-order: -1;
+        order: -1;
+        opacity: 0;
+        width: 0;
+        -webkit-transition: width 0.2s cubic-bezier(0.4, 0, 1, 1);
+        transition: width 0.2s cubic-bezier(0.4, 0, 1, 1);
+        height: 3px;
+        padding: 0;
+    }
+
+    .youtube-theme
+        .shaka-controls-button-panel
+        .shaka-volume-bar-container:hover,
+    .youtube-theme
+        .shaka-controls-button-panel
+        .shaka-volume-bar-container:focus {
+        display: block;
+        width: 50px;
+        opacity: 1;
+        padding: 0 6px;
+    }
+
+    .youtube-theme .shaka-mute-button:hover + div {
+        opacity: 1;
+        width: 50px;
+        padding: 0 6px;
+    }
+
+    .youtube-theme .shaka-current-time {
+        @apply px-2.5 text-xs;
+    }
+
+    .youtube-theme .shaka-seek-bar-container {
+        height: 3px;
+        position: relative;
+        top: -1px;
+        border-radius: 0;
+        margin-bottom: 0;
+    }
+
+    .youtube-theme .shaka-seek-bar-container .shaka-range-element {
+        opacity: 0;
+    }
+
+    .youtube-theme .shaka-seek-bar-container:hover {
+        height: 5px;
+        top: 0;
+        cursor: pointer;
+    }
+
+    .youtube-theme .shaka-seek-bar-container:hover .shaka-range-element {
+        opacity: 1;
+        cursor: pointer;
+    }
+
+    .youtube-theme
+        .shaka-seek-bar-container
+        input[type="range"]::-webkit-slider-thumb {
+        background: #ff0000;
+        cursor: pointer;
+    }
+
+    .youtube-theme
+        .shaka-seek-bar-container
+        input[type="range"]::-moz-range-thumb {
+        background: #ff0000;
+        cursor: pointer;
+    }
+
+    .youtube-theme .shaka-seek-bar-container input[type="range"]::-ms-thumb {
+        background: #ff0000;
+        cursor: pointer;
+    }
+
+    .youtube-theme .shaka-video-container * {
+        font-family: "Inter", sans-serif;
+    }
+
+    .youtube-theme .shaka-video-container .material-icons-round {
+        font-family: inherit;
+    }
+
+    .youtube-theme .shaka-overflow-menu,
+    .youtube-theme .shaka-settings-menu {
+        @apply rounded-sm py-2;
+        background: rgba(28, 28, 28, 0.9);
+        text-shadow: 0 0 2px rgb(0 0 0 / 50%);
+        -webkit-transition: opacity 0.1s cubic-bezier(0, 0, 0.2, 1);
+        transition: opacity 0.1s cubic-bezier(0, 0, 0.2, 1);
+        -moz-user-select: none;
+        -ms-user-select: none;
+        -webkit-user-select: none;
+        right: 10px;
+        bottom: 50px;
+        min-width: 200px;
+    }
+
+    .youtube-theme .shaka-settings-menu {
+        padding: 0 0 8px;
+    }
+
+    .youtube-theme .shaka-settings-menu button {
+        @apply text-xs;
+    }
+
+    .youtube-theme .shaka-settings-menu button span {
+        margin-left: 33px;
+        font-size: 13px;
+    }
+
+    .youtube-theme .shaka-settings-menu button[aria-selected="true"] {
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+    }
+
+    .youtube-theme .shaka-settings-menu button[aria-selected="true"] span {
+        -webkit-box-ordinal-group: 3;
+        -ms-flex-order: 2;
+        order: 2;
+        margin-left: 0;
+    }
+
+    .youtube-theme .shaka-settings-menu button[aria-selected="true"] i {
+        -webkit-box-ordinal-group: 2;
+        -ms-flex-order: 1;
+        order: 1;
+        @apply text-lg;
+        padding-left: 5px;
+    }
+
+    .youtube-theme .shaka-overflow-menu button {
+        @apply p-0;
+    }
+
+    .youtube-theme .shaka-overflow-menu button i {
+        display: none;
+    }
+
+    .youtube-theme
+        .shaka-overflow-menu
+        button
+        .shaka-overflow-button-label-inline {
+        @apply bg-transparent;
+    }
+
+    .youtube-theme .shaka-overflow-menu button .shaka-overflow-button-label {
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-pack: justify;
+        -ms-flex-pack: justify;
+        @apply justify-between;
+        -webkit-box-orient: horizontal;
+        -webkit-box-direction: normal;
+        -ms-flex-direction: row;
+        @apply h-10 flex-row items-center outline-none;
+        cursor: default;
+        -webkit-box-flex: 0;
+        -ms-flex: 0 0 100%;
+        flex: 0 0 100%;
+        background: none;
+    }
+
+    .youtube-theme
+        .shaka-overflow-menu
+        button
+        .shaka-overflow-button-label
+        span {
+        -ms-flex-negative: initial;
+        flex-shrink: initial;
+        padding-left: 15px;
+        font-size: 13px;
+        @apply font-medium;
+        display: -webkit-box;
+        display: -ms-flexbox;
+        display: flex;
+        -webkit-box-align: center;
+        -ms-flex-align: center;
+        @apply items-center;
+    }
+
+    .youtube-theme .shaka-overflow-menu span + span {
+        @apply pr-2 text-white;
+        font-weight: 400 !important;
+        font-size: 12px !important;
+        padding-left: 0 !important;
+    }
+
+    .youtube-theme .shaka-overflow-menu span + span:after {
+        content: "";
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        vertical-align: middle;
+        background-color: currentColor;
+        mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z'/%3E%3C/svg%3E");
+        mask-size: contain;
+        mask-repeat: no-repeat;
+        -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z'/%3E%3C/svg%3E");
+        -webkit-mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+    }
+
+    .youtube-theme .shaka-overflow-menu .shaka-pip-button span + span {
+        padding-right: 15px !important;
+    }
+
+    .youtube-theme .shaka-overflow-menu .shaka-pip-button span + span:after {
+        content: "";
+    }
+
+    .youtube-theme .shaka-back-to-overflow-button {
+        @apply h-10 py-2 text-xs text-zinc-200;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .youtube-theme .shaka-back-to-overflow-button .material-icons-round {
+        @apply text-sm;
+        padding-right: 10px;
+    }
+
+    .youtube-theme .shaka-back-to-overflow-button span {
+        margin-left: 3px !important;
+    }
+
+    .youtube-theme .shaka-overflow-menu button:hover,
+    .youtube-theme .shaka-settings-menu button:hover {
+        @apply cursor-pointer bg-white/10;
+    }
+
+    .youtube-theme .shaka-overflow-menu button:hover label,
+    .youtube-theme .shaka-settings-menu button:hover label {
+        cursor: pointer;
+    }
+
+    .youtube-theme .shaka-overflow-menu button:focus,
+    .youtube-theme .shaka-settings-menu button:focus {
+        @apply border-0 bg-white/10 outline-none;
+    }
+
+    .youtube-theme .shaka-overflow-menu button,
+    .youtube-theme .shaka-settings-menu button {
+        @apply text-zinc-200;
+    }
+
+    .youtube-theme .shaka-captions-off {
+        @apply text-zinc-400;
+    }
+
+    .youtube-theme .shaka-overflow-menu-button {
+        @apply mr-1 text-lg;
+    }
+
+    .youtube-theme .shaka-fullscreen-button:hover {
+        font-size: 25px;
+        -webkit-transition: font-size 0.1s cubic-bezier(0, 0, 0.2, 1);
+        transition: font-size 0.1s cubic-bezier(0, 0, 0.2, 1);
+    }
+}
