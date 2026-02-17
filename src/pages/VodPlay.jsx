@@ -3500,7 +3500,7 @@ export default function VodPlay() {
                                                                 Math.max(
                                                                     0,
                                                                     Math.min(
-                                                                        300,
+                                                                        3000,
                                                                         parseInt(
                                                                             e
                                                                                 .target
