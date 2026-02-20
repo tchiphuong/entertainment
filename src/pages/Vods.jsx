@@ -414,6 +414,11 @@ export default function Vods() {
     const [isFavoritesOpen, setIsFavoritesOpen] = useState(false); // Track khi mở modal yêu thích
     const [favorites, setFavorites] = useLocalStorage("favorites", []); // Danh sách yêu thích
     const [isFilterOpen, setIsFilterOpen] = useState(false); // Track khi mở modal filter
+
+    // States for holding temporary filter selections before hitting Apply
+    const [tempCountry, setTempCountry] = useState(country);
+    const [tempCategory, setTempCategory] = useState(category);
+
     const navigate = useNavigate();
     const { currentUser } = useAuth();
 
@@ -555,7 +560,7 @@ export default function Vods() {
                 source,
             };
 
-            // Fetch ngay khi state thay đổi
+            // Build chung params rồi tùy chỉnh theo trường hợp
             const params = {
                 page: currentPage,
                 limit: 12,
@@ -565,6 +570,16 @@ export default function Vods() {
 
             if (searchKeyword.trim() !== "") {
                 params.keyword = searchKeyword;
+            }
+            if (category.trim() !== "") {
+                params.category = category;
+            }
+            if (country.trim() !== "") {
+                params.country = country;
+            }
+
+            if (searchKeyword.trim() !== "") {
+                // Khi có từ khóa, gọi endpoint "search" để tận dụng khả năng lọc
                 if (source === SOURCES.SOURCE_C) {
                     fetchSourceCData({ ...params, type: "search" });
                 } else if (source === SOURCES.SOURCE_K) {
@@ -579,8 +594,7 @@ export default function Vods() {
                     fetchSourceOData({ ...sourceOParams, type: "search" });
                 }
             } else if (category.trim() !== "") {
-                // Ưu tiên category nếu có
-                params.category = category;
+                // Chỉ có category (và có thể country) mà không có keyword
                 if (source === SOURCES.SOURCE_C) {
                     fetchSourceCData({ ...params, type: "category" });
                 } else if (source === SOURCES.SOURCE_K) {
@@ -595,29 +609,25 @@ export default function Vods() {
                     fetchSourceOData({ ...sourceOParams, type: "category" });
                 }
             } else {
-                // Nếu country rỗng, fetch danh sách phim mới
+                // Không có keyword hoặc category – chỉ filter theo country hoặc lấy mặc định
                 const effectiveCountry = country || "viet-nam";
 
                 if (source === SOURCES.SOURCE_C) {
                     const paramsSourceC = {
                         page: params.page || 1,
                         limit: 12,
-                    };
-                    fetchSourceCData({
-                        ...paramsSourceC,
                         country: effectiveCountry,
-                    });
+                    };
+                    fetchSourceCData(paramsSourceC);
                 } else if (source === SOURCES.SOURCE_K) {
                     fetchSourceKData({ ...params, country: effectiveCountry });
                 } else if (source === SOURCES.SOURCE_O) {
                     const paramsSourceO = {
                         page: params.page || 1,
                         limit: 12,
-                    };
-                    fetchSourceOData({
-                        ...paramsSourceO,
                         country: effectiveCountry,
-                    });
+                    };
+                    fetchSourceOData(paramsSourceO);
                 }
             }
         }
@@ -763,12 +773,23 @@ export default function Vods() {
             let basePath;
             if (isSearch) {
                 basePath = `tim-kiem?keyword=${encodeURIComponent(params.keyword || "")}`;
+                // thêm filter nếu có
+                if (params.category) {
+                    basePath += `&category=${encodeURIComponent(params.category)}`;
+                }
+                if (params.country) {
+                    basePath += `&country=${encodeURIComponent(params.country)}`;
+                }
             } else if (isCategory) {
                 basePath = `danh-sach/${params.category || ""}`;
+                if (params.country) {
+                    basePath += `?country=${encodeURIComponent(params.country)}`;
+                }
             } else {
                 basePath = `quoc-gia/${params.country || "viet-nam"}`;
             }
-            const fullUrl = `${CONFIG.APP_DOMAIN_SOURCE_O}/v1/api/${basePath}${qs ? `${isSearch ? "&" : "?"}${qs}` : ""}`;
+            const separator = basePath.includes("?") ? "&" : "?";
+            const fullUrl = `${CONFIG.APP_DOMAIN_SOURCE_O}/v1/api/${basePath}${qs ? `${separator}${qs}` : ""}`;
             const res = await fetch(fullUrl);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const json = await res.json();
@@ -796,16 +817,24 @@ export default function Vods() {
         setIsLoading(true);
         setIsSearching(false);
         try {
-            // Build query string - loại bỏ type và category khỏi params
+            // Build query string - chỉ loại bỏ thuộc tính `type` (endpoint sẽ xử lý category/country nếu cần)
             const queryParams = { ...params };
             delete queryParams.type;
-            delete queryParams.category;
-            delete queryParams.country;
 
             queryParams.sort_field = "modified.time";
             queryParams.sort_type = "desc";
 
-            const qs = buildQuery(queryParams);
+            let qs;
+            // nếu là category mode thì không cần gửi category/country trong query vì đã nằm trong path,
+            // nhưng không ảnh hưởng nếu vẫn gửi, nên chỉ loại bỏ trong trường hợp này để tránh trùng lặp
+            if (params.type === "category") {
+                const qp = { ...queryParams };
+                delete qp.category;
+                qs = buildQuery(qp);
+            } else {
+                qs = buildQuery(queryParams);
+            }
+
             let endpoint;
             if (params.type === "search") {
                 endpoint = "tim-kiem";
@@ -814,7 +843,8 @@ export default function Vods() {
             } else {
                 endpoint = `quoc-gia/${params.country || "viet-nam"}`;
             }
-            const fullUrl = `${CONFIG.APP_DOMAIN_SOURCE_K}/v1/api/${endpoint}?${qs}`;
+            const separator = endpoint.includes("?") ? "&" : "?";
+            const fullUrl = `${CONFIG.APP_DOMAIN_SOURCE_K}/v1/api/${endpoint}${qs ? `${separator}${qs}` : ""}`;
             const res = await fetch(fullUrl);
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -845,7 +875,14 @@ export default function Vods() {
         setIsLoading(true);
         setIsSearching(false);
         try {
-            const qs = buildQuery(params);
+            // nếu là category thì không muốn có "country" lặp lại trong query string vì
+            // đã gắn vào endpoint phía trên
+            let queryParams = { ...params };
+            delete queryParams.type;
+            if (params.type === "category") {
+                delete queryParams.category;
+            }
+            const qs = buildQuery(queryParams);
             let endpoint;
             if (params.type === "search") {
                 endpoint = "search";
@@ -854,7 +891,8 @@ export default function Vods() {
             } else {
                 endpoint = `quoc-gia/${params.country || "viet-nam"}`;
             }
-            const fullUrl = `${CONFIG.APP_DOMAIN_SOURCE_C}/api/films/${endpoint}?${qs}`;
+            const separator = endpoint.includes("?") ? "&" : "?";
+            const fullUrl = `${CONFIG.APP_DOMAIN_SOURCE_C}/api/films/${endpoint}${qs ? `${separator}${qs}` : ""}`;
             const result = await fetchFromUrl(fullUrl);
             const { items, totalPages, cat } = result;
             let normalizedItems = items.map((it) =>
@@ -1445,7 +1483,11 @@ export default function Vods() {
                         {/* Right: User Actions */}
                         <div className="flex items-center justify-end gap-2 md:gap-4">
                             <button
-                                onClick={() => setIsFilterOpen(true)}
+                                onClick={() => {
+                                    setTempCountry(country);
+                                    setTempCategory(category);
+                                    setIsFilterOpen(true);
+                                }}
                                 className="relative rounded-full p-2 text-zinc-400 transition-colors hover:bg-zinc-700 hover:text-zinc-200"
                                 aria-label={t("common.filter")}
                             >
@@ -1614,20 +1656,18 @@ export default function Vods() {
 
                                             const selectedCountry =
                                                 countryOptions.find(
-                                                    (o) => o.value === country,
+                                                    (o) =>
+                                                        o.value === tempCountry,
                                                 ) || null;
 
                                             return (
                                                 <Combobox
                                                     value={selectedCountry} // null fallback để tránh controlled -> uncontrolled
                                                     onChange={(item) => {
-                                                        // item là object {label, value}, xử lý lấy value để lưu state
-                                                        setCountry(
+                                                        // item là object {label, value}, xử lý lấy value để lưu temporary state
+                                                        setTempCountry(
                                                             item?.value || "",
                                                         );
-                                                        setCurrentPage(1);
-                                                        setSearchKeyword("");
-                                                        setCategory("");
                                                     }}
                                                     onClose={() =>
                                                         setCountryQuery("")
@@ -1775,19 +1815,18 @@ export default function Vods() {
 
                                             const selectedCategory =
                                                 categoryOptions.find(
-                                                    (o) => o.value === category,
+                                                    (o) =>
+                                                        o.value ===
+                                                        tempCategory,
                                                 ) || null;
 
                                             return (
                                                 <Combobox
                                                     value={selectedCategory}
                                                     onChange={(option) => {
-                                                        setCategory(
+                                                        setTempCategory(
                                                             option?.value || "",
                                                         );
-                                                        setCurrentPage(1);
-                                                        setCountry("");
-                                                        setSearchKeyword("");
                                                     }}
                                                     onClose={() =>
                                                         setCategoryQuery("")
@@ -1895,16 +1934,20 @@ export default function Vods() {
                             <div className="flex gap-3 border-t border-zinc-700 bg-zinc-900 px-6 py-3">
                                 <button
                                     onClick={() => {
-                                        setCountry("");
-                                        setCategory("");
-                                        setCurrentPage(1);
+                                        setTempCountry("");
+                                        setTempCategory("");
                                     }}
                                     className="flex-1 rounded-full border border-zinc-600 bg-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:bg-zinc-600"
                                 >
                                     {t("vods.clearFilter")}
                                 </button>
                                 <button
-                                    onClick={() => setIsFilterOpen(false)}
+                                    onClick={() => {
+                                        setCountry(tempCountry);
+                                        setCategory(tempCategory);
+                                        setCurrentPage(1);
+                                        setIsFilterOpen(false);
+                                    }}
                                     className="flex-1 rounded-full bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-600"
                                 >
                                     {t("common.apply")}
