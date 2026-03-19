@@ -1,4 +1,13 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@100..900&family=Dancing+Script:wght@400..700&display=swap");
+
+.font-soft {
+    font-family: "Outfit", sans-serif !important;
+}
+
+.font-handwriting {
+    font-family: "Dancing Script", cursive !important;
+}
 
 /* Tooltip fade-in animation */
 @keyframes fadeIn {
@@ -96,6 +105,12 @@
 
 .react-select__single-value {
     @apply text-zinc-100;
+}
+
+@layer utilities {
+    .mask-linear-b {
+        mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
+    }
 }
 
 .react-select__indicator-separator {

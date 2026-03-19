@@ -10,7 +10,7 @@ import { db } from "./firebase";
 /**
  * Dedupe history array theo slug, merge episodes và giữ position cao nhất
  */
-function dedupeHistory(rawHistory) {
+export function dedupeHistory(rawHistory) {
     if (!Array.isArray(rawHistory)) return [];
 
     const dedupeMap = new Map();

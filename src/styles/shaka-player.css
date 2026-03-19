@@ -1,0 +1,151 @@
+@reference "../../css/tailwind.css";
+
+@layer components {
+    .youtube-theme {
+        font-family: "Inter", "Outfit", sans-serif;
+    }
+
+    /* Glassmorphism for Bottom Controls */
+    .youtube-theme .shaka-bottom-controls {
+        @apply invisible w-full p-4 opacity-0;
+        background: linear-gradient(
+            to top,
+            rgba(0, 0, 0, 0.8) 0%,
+            rgba(0, 0, 0, 0.4) 50%,
+            transparent 100%
+        );
+        width: 100% !important;
+        z-index: 1;
+        transition: all 0.3s ease;
+    }
+
+    .youtube-theme
+        .shaka-controls-container[shown="true"]
+        .shaka-bottom-controls {
+        @apply visible opacity-100;
+    }
+
+    .youtube-theme .shaka-controls-container {
+        @apply flex flex-col justify-end;
+        transition: opacity 0.3s ease-in-out;
+    }
+
+    .youtube-theme .shaka-controls-container[shown="false"] {
+        @apply opacity-0! invisible cursor-none;
+    }
+
+    .youtube-theme .shaka-controls-container[shown="false"] * {
+        @apply pointer-events-none!;
+    }
+
+    .youtube-theme
+        .shaka-controls-container[shown="false"]
+        .shaka-bottom-controls {
+        @apply opacity-0! invisible;
+    }
+
+    .youtube-theme .shaka-controls-button-panel {
+        @apply flex h-12 items-center gap-1 px-2;
+        order: 2;
+    }
+
+    /* Premium Buttons */
+    .youtube-theme .shaka-controls-button-panel > * {
+        @apply m-0 flex h-10 w-10 items-center justify-center rounded-full text-white/80 transition-all duration-200;
+        background: transparent;
+        font-family: "Material Icons Round", sans-serif;
+    }
+
+    .youtube-theme .shaka-controls-button-panel > *:hover {
+        @apply scale-110 bg-white/10 text-white;
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+    }
+
+    .youtube-theme .shaka-controls-button-panel .shaka-current-time {
+        @apply w-auto px-3 text-sm font-medium tracking-tight text-white/70;
+    }
+
+    /* Seek Bar High-End Design */
+    /* Only keep order to ensure Shaka layout */
+    .youtube-theme .shaka-seek-bar-container {
+        @apply order-1;
+    }
+
+    /* Volume Bar Design */
+    .youtube-theme .shaka-volume-bar-container {
+        @apply relative h-1 rounded-full bg-white/20 transition-all duration-300;
+        width: 0;
+        opacity: 0;
+    }
+
+    .youtube-theme .shaka-mute-button:hover + .shaka-volume-bar-container,
+    .youtube-theme .shaka-volume-bar-container:hover {
+        @apply ml-2 w-20 px-0 opacity-100;
+    }
+
+    .youtube-theme .shaka-volume-bar-container .shaka-range-element {
+        @apply appearance-none bg-white/20;
+    }
+
+    /* Buffered and background part of volume */
+    .youtube-theme .shaka-volume-bar-container .shaka-all-and-buffered-bar {
+        @apply bg-white/20! opacity-100!;
+    }
+
+    /* Menu Styling - Glassmorphism */
+    .youtube-theme .shaka-overflow-menu,
+    .youtube-theme .shaka-settings-menu {
+        @apply rounded-2xl p-2 shadow-2xl transition-all duration-300;
+        background: rgba(15, 15, 15, 0.85);
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        bottom: 70px;
+        right: 20px;
+        min-width: 260px;
+    }
+
+    .youtube-theme .shaka-overflow-menu button,
+    .youtube-theme .shaka-settings-menu button {
+        @apply flex h-11 w-full items-center rounded-xl px-4 text-sm font-medium text-white/80 transition-colors;
+        background: transparent;
+    }
+
+    .youtube-theme .shaka-overflow-menu button:hover,
+    .youtube-theme .shaka-settings-menu button:hover {
+        @apply bg-white/10 text-white;
+    }
+
+    .youtube-theme .shaka-settings-menu button[aria-selected="true"] i {
+        @apply mr-2 text-red-400;
+        font-size: 1.2rem;
+    }
+
+    .youtube-theme .shaka-overflow-button-label {
+        @apply flex w-full items-center justify-between;
+    }
+
+    .youtube-theme .shaka-overflow-button-label span:last-child {
+        @apply rounded-md px-2 py-0.5 text-xs font-bold text-red-400;
+    }
+
+    /* Play/Pause Center Button Overlay (Optional Enhancement) */
+    .youtube-theme .shaka-play-button-container {
+        @apply flex items-center justify-center;
+    }
+
+    .youtube-theme .shaka-play-button-container .shaka-play-button {
+        @apply text-white/90 transition-transform duration-300;
+        filter: drop-shadow(0 0 20px rgba(0, 0, 0, 0.5));
+    }
+
+    .youtube-theme .shaka-play-button-container .shaka-play-button:hover {
+        @apply scale-110 text-white;
+    }
+
+    /* Hide Seek Bar if seeking is not available (Live TV often has no DVR) */
+    .youtube-theme
+        .shaka-controls-container:not([can-seek="true"])
+        .shaka-seek-bar-container {
+        @apply opacity-30; /* Dim it instead of hiding to prevent jumpy layout */
+    }
+}

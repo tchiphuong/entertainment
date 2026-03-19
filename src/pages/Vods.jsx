@@ -2835,7 +2835,7 @@ export default function Vods() {
                                                 className={`flex h-8 w-8 items-center justify-center rounded-full bg-zinc-700/60 text-zinc-300 transition-colors hover:bg-zinc-600/60 ${
                                                     copiedMovieSlug ===
                                                     movie.slug
-                                                        ? "!bg-green-500/20 !text-green-400 ring-1 ring-green-500/30"
+                                                        ? "bg-green-500/20! text-green-400! ring-1 ring-green-500/30"
                                                         : ""
                                                 }`}
                                                 title={

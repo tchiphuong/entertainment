@@ -222,6 +222,7 @@ export default function Home() {
                         <div className="flex items-center gap-2 border-b border-zinc-700 bg-zinc-700/50 px-4 py-2">
                             {match.tournament.logo && (
                                 <img
+                                    loading="lazy"
                                     src={match.tournament.logo}
                                     alt={match.tournament.name}
                                     className="h-7 w-7 shrink-0 object-contain"
@@ -255,6 +256,7 @@ export default function Home() {
                                 <div className="flex min-w-0 flex-1 items-center gap-3">
                                     {match.home?.logo && (
                                         <img
+                                            loading="lazy"
                                             src={match.home.logo}
                                             alt={match.home.name}
                                             className="h-10 w-10 shrink-0 object-contain"
@@ -285,6 +287,7 @@ export default function Home() {
                                     <div className="flex min-w-0 flex-1 items-center gap-3">
                                         {match.away.logo && (
                                             <img
+                                                loading="lazy"
                                                 src={match.away.logo}
                                                 alt={match.away.name}
                                                 className="h-10 w-10 shrink-0 object-contain"
@@ -335,6 +338,7 @@ export default function Home() {
                                     <div className="flex items-center gap-2">
                                         {option.logo && (
                                             <img
+                                                loading="lazy"
                                                 src={option.logo}
                                                 alt={option.label}
                                                 className="h-5 w-5 shrink-0 object-contain"
