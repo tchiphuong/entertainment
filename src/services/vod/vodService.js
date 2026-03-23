@@ -1,4 +1,5 @@
 import { SOURCES } from "../../constants/vodConstants";
+import { vodCache } from "../../utils/vodCache";
 
 const CONFIG = {
     APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
@@ -7,32 +8,8 @@ const CONFIG = {
     API_ENDPOINT: import.meta.env.VITE_API_ENDPOINT,
 };
 
-const CACHE_PREFIX = "vod_data_";
-const CACHE_TTL = 3600000; // 1 hour
-
-const getFromCache = (key) => {
-    try {
-        const cached = localStorage.getItem(CACHE_PREFIX + key);
-        if (!cached) return null;
-        const { data, timestamp } = JSON.parse(cached);
-        if (Date.now() - timestamp > CACHE_TTL) {
-            localStorage.removeItem(CACHE_PREFIX + key);
-            return null;
-        }
-        return data;
-    } catch (e) {
-        return null;
-    }
-};
-
-const saveToCache = (key, data) => {
-    try {
-        localStorage.setItem(
-            CACHE_PREFIX + key,
-            JSON.stringify({ data, timestamp: Date.now() }),
-        );
-    } catch (e) {}
-};
+// Logic cache đã được chuyển sang src/utils/vodCache.js
+const { get: getFromCache, set: saveToCache, clear: clearVodCache } = vodCache;
 
 // Normalize movie fields (shared logic)
 const normalizeMovieForSource = (item, source) => {
@@ -55,7 +32,11 @@ const normalizeMovieForSource = (item, source) => {
                 else m.thumb_url = `uploads/movies/${path}`;
             }
         });
-    } else if (source === SOURCES.SOURCE_K || source === SOURCES.SOURCE_C) {
+    } else if (source === SOURCES.SOURCE_C) {
+        // NguonC bị ngược: poster_url là ảnh ngang, thumb_url là ảnh dọc
+        m.poster_url = item.thumb_url;
+        m.thumb_url = item.poster_url;
+    } else if (source === SOURCES.SOURCE_K) {
         m.poster_url = item.poster_url;
         m.thumb_url = item.thumb_url;
     }
@@ -102,38 +83,41 @@ export const fetchSourceData = async (slug, source) => {
         }
 
         const result = { movie: movieData, episodes: episodesData };
-        if (movieData) saveToCache(cacheKey, result);
+        // Negative caching: Lưu cả khi không có movieData để tránh gọi lại API liên tục cho các slug không tồn tại
+        saveToCache(cacheKey, result);
         return result;
     } catch (e) {
         console.error(`Error fetching ${source} data:`, e);
+        // Cache lại lỗi để tránh retry liên tục trong phiên làm việc
+        saveToCache(cacheKey, { movie: null, episodes: [] });
         return null;
     }
 };
 
-export const fetchTMDbData = async (tmdbId, type = "movie", language = "vi-VN") => {
+export const fetchTMDbData = async (
+    tmdbId,
+    type = "movie",
+    language = "vi-VN",
+) => {
     const apiKey = import.meta.env.VITE_TMDB_API_KEY;
     const baseUrl = import.meta.env.VITE_TMDB_BASE_URL;
     const cacheKey = `tmdb_${type}_${tmdbId}_${language}`;
-    
+
     const cached = getFromCache(cacheKey);
     if (cached) return cached;
 
     try {
-        const [detailsRes, creditsRes, imagesRes, videosRes] = await Promise.all([
-            fetch(`${baseUrl}/${type}/${tmdbId}?api_key=${apiKey}&language=${language}`),
-            fetch(`${baseUrl}/${type}/${tmdbId}/credits?api_key=${apiKey}&language=${language}`),
-            fetch(`${baseUrl}/${type}/${tmdbId}/images?api_key=${apiKey}`),
-            fetch(`${baseUrl}/${type}/${tmdbId}/videos?api_key=${apiKey}&language=${language}`)
+        const [detailsRes] = await Promise.all([
+            fetch(
+                `${baseUrl}/${type}/${tmdbId}?api_key=${apiKey}&language=${language}&append_to_response=external_ids,credits,images,videos&include_image_language=vi,null,en`,
+            ),
         ]);
 
-        const [details, credits, images, videos] = await Promise.all([
+        const [details] = await Promise.all([
             detailsRes.ok ? detailsRes.json() : null,
-            creditsRes.ok ? creditsRes.json() : null,
-            imagesRes.ok ? imagesRes.json() : null,
-            videosRes.ok ? videosRes.json() : null
         ]);
 
-        const result = { details, credits, images, videos };
+        const result = { details };
         if (details) saveToCache(cacheKey, result);
         return result;
     } catch (e) {
@@ -142,8 +126,60 @@ export const fetchTMDbData = async (tmdbId, type = "movie", language = "vi-VN") 
     }
 };
 
+export const fetchTMDBSeason = async (
+    tmdbId,
+    seasonNumber,
+    language = "vi-VN",
+) => {
+    const apiKey = import.meta.env.VITE_TMDB_API_KEY;
+    const baseUrl = import.meta.env.VITE_TMDB_BASE_URL;
+    const cacheKey = `tmdb_season_${tmdbId}_${seasonNumber}_${language}`;
+
+    const cached = getFromCache(cacheKey);
+    if (cached) return cached;
+
+    try {
+        const res = await fetch(
+            `${baseUrl}/tv/${tmdbId}/season/${seasonNumber}?api_key=${apiKey}&language=${language}`,
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+        saveToCache(cacheKey, data);
+        return data;
+    } catch (e) {
+        console.error("Error fetching TMDB season data:", e);
+        return null;
+    }
+};
+
+export const fetchFanartLogo = async (imdbId) => {
+    const apiKey = "cfa9dc054d221b8d107f8411cd20b13f"; // Fanart API Key
+    const cacheKey = `fanart_logo_${imdbId}`;
+
+    const cached = getFromCache(cacheKey);
+    if (cached) return cached;
+
+    try {
+        const res = await fetch(
+            `https://webservice.fanart.tv/v3/movies/${imdbId}?api_key=${apiKey}`,
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+        saveToCache(cacheKey, data);
+        return data;
+    } catch (e) {
+        console.error("Error fetching Fanart logo:", e);
+        return null;
+    }
+};
+
 export const vodService = {
     fetchSourceData,
     fetchTMDbData,
+    fetchTMDBSeason,
+    fetchFanartLogo,
     normalizeMovieForSource,
+    getFromCache,
+    saveToCache,
+    clearVodCache,
 };

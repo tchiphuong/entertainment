@@ -19,9 +19,12 @@ import {
     dedupeHistory,
 } from "../../services/firebaseHelpers";
 
+import { useVodContext } from "../../contexts/VodContext";
+
 export default function VodLanding() {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const { openFilter, favorites: rawFavorites } = useVodContext();
     const { currentUser } = useAuth();
     const { sections, heroMovies, loading } = useVodData(CATEGORIES);
     const { getImageUrl, handleImageError } = useImageFallback();
@@ -102,33 +105,10 @@ export default function VodLanding() {
     }, [currentUser?.uid, normalizeLibraryItems]);
 
     useEffect(() => {
-        const loadFavoritesForLanding = async () => {
-            setFavoriteLoading(true);
-            try {
-                let rawFavorites = [];
-                if (currentUser?.uid) {
-                    rawFavorites = await fetchFavoritesFromFirestore(
-                        currentUser.uid,
-                    );
-                } else {
-                    const localFavorites = localStorage.getItem("favorites");
-                    rawFavorites = localFavorites
-                        ? JSON.parse(localFavorites)
-                        : [];
-                }
-
-                const normalizedFavorites = normalizeLibraryItems(rawFavorites);
-                setFavoriteItems(normalizedFavorites);
-            } catch (error) {
-                console.error("Load favorites for landing error:", error);
-                setFavoriteItems([]);
-            } finally {
-                setFavoriteLoading(false);
-            }
-        };
-
-        loadFavoritesForLanding();
-    }, [currentUser?.uid, normalizeLibraryItems]);
+        const normalizedFavorites = normalizeLibraryItems(rawFavorites);
+        setFavoriteItems(normalizedFavorites);
+        setFavoriteLoading(false);
+    }, [rawFavorites, normalizeLibraryItems]);
 
     useEffect(() => {
         document.title = "Entertainment - VOD Hub";
@@ -241,15 +221,22 @@ export default function VodLanding() {
                                     <div className="mb-6 flex flex-wrap items-center gap-3 text-sm font-black uppercase tracking-widest md:gap-4">
                                         {movie.tmdbBranding?.brandLogo && (
                                             <div className="mr-2 flex items-center border-r border-zinc-700 pr-4">
-                                                <img
-                                                    loading="lazy"
-                                                    src={
-                                                        movie.tmdbBranding
-                                                            .brandLogo
-                                                    }
-                                                    alt="Brand Logo"
-                                                    className="h-6 object-contain brightness-0 invert"
-                                                />
+                                                <div className="rounded-xs px-2 py-1 backdrop-blur-md">
+                                                    <img
+                                                        loading="lazy"
+                                                        src={
+                                                            movie.tmdbBranding
+                                                                .brandLogo
+                                                        }
+                                                        alt="Brand Logo"
+                                                        className="h-8 object-contain"
+                                                        style={{
+                                                            filter: "drop-shadow(1px 1px 0 rgba(255,255,255, 0.2)) drop-shadow(-1px -1px 0 rgba(255,255,255, 0.2)) drop-shadow(1px -1px 0 rgba(255,255,255, 0.2)) drop-shadow(-1px 1px 0 rgba(255,255,255, 0.2))",
+                                                            WebkitFilter:
+                                                                "drop-shadow(1px 1px 0 rgba(255,255,255, 0.2)) drop-shadow(-1px -1px 0 rgba(255,255,255, 0.2)) drop-shadow(1px -1px 0 rgba(255,255,255, 0.2)) drop-shadow(-1px 1px 0 rgba(255,255,255, 0.2))",
+                                                        }}
+                                                    />
+                                                </div>
                                             </div>
                                         )}
                                         <div className="flex items-center gap-1.5 rounded-sm bg-red-600 px-2 py-0.5 text-[10px] text-white md:text-xs">
@@ -537,15 +524,6 @@ export default function VodLanding() {
             <footer className="border-t border-zinc-900 bg-zinc-950 px-4 py-24 text-zinc-500 md:px-12 lg:px-20">
                 <div className="mx-auto flex max-w-7xl flex-col justify-between gap-12 md:flex-row">
                     <div className="max-w-sm space-y-6">
-                        <Link
-                            to="/vod"
-                            className="flex items-center gap-1 text-3xl font-black uppercase tracking-tighter text-red-600"
-                        >
-                            <span className="mr-0.5 rounded-sm bg-red-600 px-1.5 text-white">
-                                M
-                            </span>
-                            Hub
-                        </Link>
                         <p className="text-sm font-medium leading-relaxed">
                             {t("footer.description")}
                         </p>
@@ -702,6 +680,19 @@ function MovieRow({
                         className="flex items-center gap-1 text-sm font-bold text-zinc-500 opacity-100 transition-all duration-300 hover:text-red-500 focus:opacity-100 group-hover/title:opacity-100 md:opacity-0"
                     >
                         {t("common.seeMore")}
+                        <svg
+                            className="h-4 w-4"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={3}
+                                d="M9 5l7 7-7 7"
+                            />
+                        </svg>
                     </Link>
                 )}
             </div>

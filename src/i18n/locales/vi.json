@@ -23,7 +23,9 @@
         "noData": "Không có dữ liệu",
         "seeMore": "Xem thêm",
         "seeLess": "Thu gọn",
-        "all": "Tất cả"
+        "all": "Tất cả",
+        "add": "Thêm vào yêu thích",
+        "remove": "Xoá khỏi yêu thích"
     },
     "auth": {
         "welcome": "Chào mừng bạn!",
@@ -99,6 +101,9 @@
         "resultsFor": "Kết quả cho \"{{query}}\"",
         "moviesInYear": "Phim năm {{year}}",
         "filterByYear": "Lọc theo năm",
+        "advancedSearch": "Tìm kiếm nâng cao",
+        "filter": "Bộ lọc",
+        "filterByMultiple": "Lọc theo nguồn, quốc gia, năm & thể loại",
         "voiceoverMovies": "Phim Thuyết Minh",
         "dubbedMovies": "Phim Lồng Tiếng",
         "sub": "PĐ",

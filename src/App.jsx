@@ -10,21 +10,24 @@ import Schedule from "./pages/Schedule";
 import VodLanding from "./pages/vod/Landing";
 import Play from "./pages/vod/Play";
 import Listing from "./pages/vod/Listing";
+import { VodProvider } from "./contexts/VodContext";
 
 export default function App() {
     return (
-        <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/vods" element={<Vods />} />
-            <Route path="/vods/browse" element={<Vods />} />
-            <Route path="/vods/play/:slug" element={<VodPlay />} />
-            <Route path="/vod" element={<VodLanding />} />
-            <Route path="/vod/play/:slug" element={<Play />} />
-            <Route path="/vod/search" element={<Listing />} />
-            <Route path="/vod/country/:country" element={<Listing />} />
-            <Route path="/vod/category/:category" element={<Listing />} />
-            <Route path="/tv" element={<TV />} />
-            <Route path="/schedule" element={<Schedule />} />
-        </Routes>
+        <VodProvider>
+            <Routes>
+                <Route path="/" element={<Home />} />
+                <Route path="/vods" element={<Vods />} />
+                <Route path="/vods/browse" element={<Vods />} />
+                <Route path="/vods/play/:slug" element={<VodPlay />} />
+                <Route path="/vod" element={<VodLanding />} />
+                <Route path="/vod/play/:slug" element={<Play />} />
+                <Route path="/vod/search" element={<Listing />} />
+                <Route path="/vod/country/:country" element={<Listing />} />
+                <Route path="/vod/category/:category" element={<Listing />} />
+                <Route path="/tv" element={<TV />} />
+                <Route path="/schedule" element={<Schedule />} />
+            </Routes>
+        </VodProvider>
     );
 }

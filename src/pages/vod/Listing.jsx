@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
     useParams,
     useNavigate,
@@ -22,7 +22,25 @@ import {
     fetchHistoryFromFirestore,
     fetchFavoritesFromFirestore,
 } from "../../services/firebaseHelpers";
-import { useState } from "react";
+import VodFilterModal from "../../components/vod/VodFilterModal";
+import { useVodContext } from "../../contexts/VodContext";
+
+const generateVisiblePages = (totalPages, currentPage) => {
+    const pages = [];
+    if (totalPages <= 5) {
+        for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+        if (currentPage <= 3) {
+            for (let i = 1; i <= 5; i++) pages.push(i);
+        } else if (currentPage >= totalPages - 2) {
+            for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
+        } else {
+            for (let i = currentPage - 2; i <= currentPage + 2; i++)
+                pages.push(i);
+        }
+    }
+    return pages;
+};
 
 export default function Listing() {
     const { country, category } = useParams();
@@ -35,14 +53,31 @@ export default function Listing() {
     const [favoriteItems, setFavoriteItems] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [favoriteLoading, setFavoriteLoading] = useState(false);
+    const {
+        isFilterOpen,
+        setIsFilterOpen,
+        openFilter,
+        favorites: rawFavorites,
+    } = useVodContext();
 
-    const query = searchParams.get("q") || "";
-    const page = parseInt(searchParams.get("page") || "1");
-    const year = searchParams.get("year") || "";
-    const source = searchParams.get("source") || "source_k";
     const isHistoryCategory = category === "history";
     const isFavoritesCategory = category === "favorites";
     const isLibraryCategory = isHistoryCategory || isFavoritesCategory;
+
+    // Get filters from URL - Use a more robust way to get params
+    const getUrlParam = (name) => {
+        const fromParams = searchParams.get(name);
+        if (fromParams) return fromParams;
+        // Backup: parse directly from window.location in case searchParams is laggy
+        return new URLSearchParams(window.location.search).get(name) || "";
+    };
+
+    const currentQuery = getUrlParam("q");
+    const currentPage = parseInt(getUrlParam("page") || "1");
+    const currentYear = getUrlParam("year");
+    const activeSource = getUrlParam("source") || SOURCES.SOURCE_K;
+    const currentCountry = getUrlParam("country") || country || "";
+    const currentCategory = getUrlParam("category") || category || "";
 
     const normalizeLibraryItems = (rawItems) => {
         return (Array.isArray(rawItems) ? rawItems : [])
@@ -50,13 +85,23 @@ export default function Listing() {
             .map((item) => {
                 const poster =
                     item.poster || item.poster_url || item.thumb_url || "";
-                const server = String(item.server || "").toLowerCase();
 
-                let itemSource = SOURCES.SOURCE_K;
-                if (server.includes(SOURCES.SOURCE_O))
-                    itemSource = SOURCES.SOURCE_O;
-                if (server.includes(SOURCES.SOURCE_C))
-                    itemSource = SOURCES.SOURCE_C;
+                // Ưu tiên dùng trường source có sẵn, nếu không mới đoán từ server
+                let itemSource = item.source;
+                if (!itemSource) {
+                    const server = String(item.server || "").toLowerCase();
+                    itemSource = SOURCES.SOURCE_K;
+                    if (
+                        server.includes(SOURCES.SOURCE_O) ||
+                        server.includes("source_o")
+                    )
+                        itemSource = SOURCES.SOURCE_O;
+                    else if (
+                        server.includes(SOURCES.SOURCE_C) ||
+                        server.includes("source_c")
+                    )
+                        itemSource = SOURCES.SOURCE_C;
+                }
 
                 return {
                     ...item,
@@ -74,128 +119,236 @@ export default function Listing() {
 
     // Determine type and context
     let filterType = t("vods.category");
-    let filterValue = category || country || (query ? t("common.search") : "");
-    let type = filterValue;
+    let filterValue =
+        currentCategory ||
+        currentCountry ||
+        (currentQuery ? t("common.search") : "");
+    let type = "";
     let useV1 = false;
 
     if (isHistoryCategory) {
         filterType = t("vods.category");
         filterValue = t("vods.history");
-        type = "";
-        useV1 = false;
     } else if (isFavoritesCategory) {
         filterType = t("vods.category");
         filterValue = t("vods.favorites");
-        type = "";
-        useV1 = false;
-    } else if (query || year) {
-        filterType = query ? t("common.search") : t("vods.filterByYear");
-        filterValue = query || year;
-        // PhimAPI/Ophim cần dùng endpoint tim-kiem để filter được theo năm
+    } else if (currentQuery) {
+        // Tìm kiếm tổng hợp (Merged Search)
+        filterType = t("common.search");
+        filterValue = currentQuery;
+        type = "tim-kiem"; // Note: Search components use their own searchCategories logic
+        useV1 = true;
+    } else if (currentCategory || currentCountry) {
+        // Lọc theo Danh mục/Quốc gia (Single Source - có thể kèm Year)
+        filterType = currentCategory ? t("vods.category") : t("vods.country");
+        filterValue = currentCategory || currentCountry;
+        type = currentCategory
+            ? `the-loai/${currentCategory}`
+            : `quoc-gia/${currentCountry}`;
+        // NguonC không dùng v1/api prefix
+        useV1 = activeSource !== SOURCES.SOURCE_C;
+    } else if (currentYear) {
+        // Lọc theo Năm (Merged Search - dùng endpoint tìm kiếm)
+        filterType = t("vods.filterByYear");
+        filterValue = currentYear;
         type = "tim-kiem";
         useV1 = true;
-    } else if (country) {
-        filterType = t("vods.country");
-        filterValue = country;
-        type =
-            source === SOURCES.SOURCE_C
-                ? `quoc-gia/${country}`
-                : `quoc-gia/${country}`;
-        useV1 = true;
-    } else if (category) {
-        filterType = t("vods.category");
-        filterValue = category;
-        type =
-            source === SOURCES.SOURCE_C
-                ? `the-loai/${category}`
-                : `the-loai/${category}`;
-        useV1 = true;
-    } else if (year && !query) {
-        filterType = t("vodPlay.year");
-        filterValue = year;
-        type =
-            source === SOURCES.SOURCE_C ? `nam-phat-hanh/${year}` : "tim-kiem";
-        useV1 = true;
     } else {
-        // Mặc định cho trang listing chung (không dùng V1 prefix cho phim mới cập nhật)
+        // Mặc định: Phim mới cập nhật
+        filterType = t("vods.category");
+        filterValue = t("vods.newMovies");
         type = "danh-sach/phim-moi-cap-nhat";
         useV1 = false;
     }
 
     // Mapping for user-friendly titles
-    const displayTitle = query
-        ? t("vods.resultsFor", { query })
-        : year
-          ? t("vods.moviesInYear", { year })
+    const displayTitle = currentQuery
+        ? t("vods.resultsFor", { query: currentQuery })
+        : currentYear
+          ? t("vods.moviesInYear", { year: currentYear })
           : filterValue
             ? filterValue.charAt(0).toUpperCase() +
               filterValue.slice(1).replace(/-/g, " ")
             : t("vods.newMovies");
 
     const finalTitle =
-        query || year ? displayTitle : `${filterType}: ${displayTitle}`;
+        currentQuery || currentYear
+            ? displayTitle
+            : `${filterType}: ${displayTitle}`;
 
-    // Helper to clean params
-    const cleanParams = (p) => {
+    // Helper to clean params - Fix: ensure no empty values go to API
+    const cleanParamsForApi = (p, currentType) => {
         const cleaned = {};
         Object.entries(p).forEach(([k, v]) => {
-            if (v) cleaned[k] = v;
+            // Quy tắc: Nếu đã dùng endpoint chuyên biệt (the-loai, quoc-gia), không gửi lại chính nó trong params
+            if (currentType?.includes("the-loai") && k === "category") return;
+            if (currentType?.includes("quoc-gia") && k === "country") return;
+            if (v && v.toString().trim() !== "") cleaned[k] = v;
         });
         return cleaned;
     };
 
-    // Aggregated data fetching for search
-    const searchCategories =
-        query || (year && !category && !country)
-            ? [
-                  {
-                      id: "source_k",
-                      title: "Source K",
-                      type: "tim-kiem",
-                      source: SOURCES.SOURCE_K,
-                      useV1: true,
-                      page: page,
-                      limit: 24,
-                      params: cleanParams({ keyword: query, year: year }),
-                  },
-                  {
-                      id: "source_o",
-                      title: "Source O",
-                      type: "tim-kiem",
-                      source: SOURCES.SOURCE_O,
-                      useV1: true,
-                      page: page,
-                      limit: 24,
-                      params: cleanParams({ keyword: query, year: year }),
-                  },
-                  {
-                      id: "source_c",
-                      title: "Source C",
-                      // NguonC: Nếu chỉ có year -> dùng endpoint nam-phat-hanh, có query -> dùng search
-                      type: !query && year ? `nam-phat-hanh/${year}` : "search",
-                      source: SOURCES.SOURCE_C,
-                      page: page,
-                      limit: 24,
-                      // NguonC không hỗ trợ param year trong search endpoint
-                      params: query
-                          ? cleanParams({ keyword: query })
-                          : cleanParams({ keyword: query, year: year }),
-                  },
-              ]
-            : isLibraryCategory
-              ? []
-              : [
-                    {
-                        id: "listing",
-                        title: displayTitle,
-                        type: type,
-                        source: source,
-                        useV1: useV1,
-                        page: page,
-                        limit: 24,
-                        params: cleanParams({ year: year, keyword: query }),
-                    },
-                ];
+    // Aggregated data fetching for filters (Search, Year, Category, Country)
+    const handleFilterApply = (newFilters) => {
+        const params = new URLSearchParams(searchParams);
+        if (newFilters.source) params.set("source", newFilters.source);
+        else params.delete("source");
+
+        if (newFilters.country) params.set("country", newFilters.country);
+        else params.delete("country");
+
+        if (newFilters.category) params.set("category", newFilters.category);
+        else params.delete("category");
+
+        if (newFilters.year) params.set("year", newFilters.year);
+        else params.delete("year");
+
+        if (newFilters.keyword !== undefined) {
+          if (newFilters.keyword.trim()) params.set("q", newFilters.keyword.trim());
+          else params.delete("q");
+        }
+
+        params.set("page", "1");
+        setSearchParams(params);
+        setIsFilterOpen(false);
+    };
+
+    const isMergedView =
+        activeSource === "all" || (!activeSource && currentQuery);
+
+    const searchCategories = isMergedView
+        ? [
+              {
+                  id: SOURCES.SOURCE_O,
+                  title: "OPhim",
+                  type: currentCategory
+                      ? `the-loai/${currentCategory}`
+                      : currentCountry
+                        ? `quoc-gia/${currentCountry}`
+                        : currentQuery || currentYear
+                          ? "tim-kiem"
+                          : "danh-sach/phim-moi-cap-nhat",
+                  source: SOURCES.SOURCE_O,
+                  useV1: !!(
+                      currentQuery ||
+                      currentYear ||
+                      currentCategory ||
+                      currentCountry
+                  ),
+                  page: currentPage,
+                  limit: 24,
+                  params: cleanParamsForApi(
+                      {
+                          keyword: currentQuery || currentYear, // KKPhim/OPhim often use keyword for year too in search
+                          year: currentYear,
+                          country: currentCountry,
+                          category: currentCategory,
+                      },
+                      currentCategory
+                          ? `the-loai/${currentCategory}`
+                          : currentCountry
+                            ? `quoc-gia/${currentCountry}`
+                            : "",
+                  ),
+              },
+              {
+                  id: SOURCES.SOURCE_K,
+                  title: "KKPhim",
+                  type: currentCategory
+                      ? `the-loai/${currentCategory}`
+                      : currentCountry
+                        ? `quoc-gia/${currentCountry}`
+                        : currentQuery || currentYear
+                          ? "tim-kiem"
+                          : "danh-sach/phim-moi-cap-nhat",
+                  source: SOURCES.SOURCE_K,
+                  useV1: !!(
+                      currentQuery ||
+                      currentYear ||
+                      currentCategory ||
+                      currentCountry
+                  ),
+                  page: currentPage,
+                  limit: 24,
+                  params: cleanParamsForApi(
+                      {
+                          keyword: currentQuery || currentYear,
+                          year: currentYear,
+                          country: currentCountry,
+                          category: currentCategory,
+                      },
+                      currentCategory
+                          ? `the-loai/${currentCategory}`
+                          : currentCountry
+                            ? `quoc-gia/${currentCountry}`
+                            : "",
+                  ),
+              },
+              {
+                  id: SOURCES.SOURCE_C,
+                  title: "NguonC",
+                  type: currentCategory
+                      ? `the-loai/${currentCategory}`
+                      : currentCountry
+                        ? `quoc-gia/${currentCountry}`
+                        : currentQuery
+                          ? "search"
+                          : currentYear
+                            ? `nam-phat-hanh/${currentYear}`
+                            : "phim-moi-cap-nhat",
+                  source: SOURCES.SOURCE_C,
+                  page: currentPage,
+                  limit: 24,
+                  params: cleanParamsForApi(
+                      {
+                          keyword: currentQuery,
+                          country: currentCountry,
+                      },
+                      currentCategory
+                          ? `the-loai/${currentCategory}`
+                          : currentCountry
+                            ? `quoc-gia/${currentCountry}`
+                            : "",
+                  ),
+              },
+          ]
+        : isLibraryCategory
+          ? []
+          : [
+                {
+                    id: "listing",
+                    title: displayTitle,
+                    type: currentCategory
+                        ? `the-loai/${currentCategory}`
+                        : currentCountry
+                          ? `quoc-gia/${currentCountry}`
+                          : currentQuery || currentYear
+                            ? "tim-kiem"
+                            : "danh-sach/phim-moi-cap-nhat",
+                    source: activeSource || SOURCES.SOURCE_K,
+                    useV1: !!(
+                        currentQuery ||
+                        currentYear ||
+                        currentCategory ||
+                        currentCountry
+                    ),
+                    page: currentPage,
+                    limit: 24,
+                    params: cleanParamsForApi(
+                        {
+                            year: currentYear,
+                            keyword: currentQuery || currentYear,
+                            country: currentCountry,
+                            category: currentCategory,
+                        },
+                        currentCategory
+                            ? `the-loai/${currentCategory}`
+                            : currentCountry
+                              ? `quoc-gia/${currentCountry}`
+                              : "",
+                    ),
+                },
+            ];
 
     const { sections, loading: apiLoading } = useVodData(searchCategories);
 
@@ -231,36 +384,11 @@ export default function Listing() {
     }, [isHistoryCategory, currentUser?.uid]);
 
     useEffect(() => {
-        const loadFavorites = async () => {
-            if (!isFavoritesCategory) return;
-
-            setFavoriteLoading(true);
-            try {
-                let rawFavorites = [];
-
-                if (currentUser?.uid) {
-                    rawFavorites = await fetchFavoritesFromFirestore(
-                        currentUser.uid,
-                    );
-                } else {
-                    const localFavorites = localStorage.getItem("favorites");
-                    rawFavorites = localFavorites
-                        ? JSON.parse(localFavorites)
-                        : [];
-                }
-
-                const normalizedFavorites = normalizeLibraryItems(rawFavorites);
-                setFavoriteItems(normalizedFavorites);
-            } catch (error) {
-                console.error("Load favorites category error:", error);
-                setFavoriteItems([]);
-            } finally {
-                setFavoriteLoading(false);
-            }
-        };
-
-        loadFavorites();
-    }, [isFavoritesCategory, currentUser?.uid]);
+        if (!isFavoritesCategory) return;
+        const normalizedFavorites = normalizeLibraryItems(rawFavorites);
+        setFavoriteItems(normalizedFavorites);
+        setFavoriteLoading(false);
+    }, [isFavoritesCategory, rawFavorites]);
 
     // Aggregate items
     let items = [];
@@ -275,13 +403,15 @@ export default function Listing() {
         items = favoriteItems;
         totalPages = 1;
         totalItemsCount = favoriteItems.length;
-    } else if (query) {
+    } else if (isMergedView) {
         // Merge items from all sections and deduplicate by slug
         const mergedItems = [];
         const seenSlugs = new Set();
 
-        Object.values(sections).forEach((section) => {
-            if (section.items) {
+        // Thứ tự ưu tiên: OPhim (Source O) > KKPhim (Source K) > NguonC (Source C)
+        [SOURCES.SOURCE_O, SOURCES.SOURCE_K, SOURCES.SOURCE_C].forEach((id) => {
+            const section = sections[id];
+            if (section && section.items) {
                 section.items.forEach((item) => {
                     if (!seenSlugs.has(item.slug)) {
                         seenSlugs.add(item.slug);
@@ -308,7 +438,7 @@ export default function Listing() {
     // Scroll to top on page change
     useEffect(() => {
         window.scrollTo({ top: 0, behavior: "smooth" });
-    }, [page]);
+    }, [currentPage]);
 
     // Xóa LoadingSpinner toàn trang để render Layout ngay lập tức
     // if (loading) return <LoadingSpinner isLoading={true} />;
@@ -326,28 +456,29 @@ export default function Listing() {
         }
     };
 
-    const handleYearChange = (year) => {
-        const newParams = new URLSearchParams(searchParams);
-        if (year === "all") {
-            newParams.delete("year");
-        } else {
-            newParams.set("year", year);
-        }
-        newParams.delete("q"); // Xóa từ khóa tìm kiếm khi chọn năm
-        newParams.set("page", 1);
-        setSearchParams(newParams);
-    };
-
-    const currentYear = searchParams.get("year") || "all";
-    const years = [
-        "all",
-        ...Array.from({ length: 10 }, (_, i) => (2025 - i).toString()),
-    ];
-    const loading = isHistoryCategory
+    const isLoading = isHistoryCategory
         ? historyLoading
         : isFavoritesCategory
           ? favoriteLoading
           : apiLoading;
+
+    const urlFilters = useMemo(() => ({
+        source: activeSource,
+        country: currentCountry,
+        category: currentCategory,
+        year: currentYear,
+        keyword: currentQuery,
+    }), [activeSource, currentCountry, currentCategory, currentYear, currentQuery]);
+
+    // Tự động mở bộ lọc nếu là trang search
+    useEffect(() => {
+        const isSearchPage = window.location.pathname.endsWith("/vod/search");
+        // Mở nếu là trang search (có thể mở kể cả khi có params nếu người dùng muốn search thêm)
+        // Hoặc chỉ mở nếu chưa có query/filter chính
+        if (isSearchPage) {
+            openFilter(urlFilters);
+        }
+    }, []); // Chỉ chạy 1 lần duy nhất khi mount
 
     return (
         <VodLayout>
@@ -378,48 +509,68 @@ export default function Listing() {
                             <h1 className="text-3xl font-black uppercase tracking-tighter text-white md:text-5xl">
                                 {finalTitle}
                             </h1>
-                            <p className="mt-2 text-sm text-zinc-500">
-                                {t("vods.foundMovies", { count: totalItemsCount })}
-                            </p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-4">
-                            <div className="space-y-2">
+                            <div className="mt-2 flex items-center gap-4">
+                                <p className="text-sm text-zinc-500">
+                                    {t("vods.foundMovies", {
+                                        count: totalItemsCount,
+                                    })}
+                                </p>
                                 {!isLibraryCategory && (
-                                    <>
-                                        <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600">
-                                            {t("vods.filterByYear")}
-                                        </p>
-                                        <div className="flex flex-wrap gap-2">
-                                            {years.map((y) => (
-                                                <button
-                                                    key={y}
-                                                    onClick={() =>
-                                                        handleYearChange(y)
-                                                    }
-                                                    className={`rounded px-3 py-1 text-[10px] font-bold transition-all ${
-                                                        currentYear === y
-                                                            ? "bg-white text-black"
-                                                            : "bg-zinc-900 text-zinc-500 hover:bg-zinc-800 hover:text-white"
-                                                    }`}
-                                                >
-                                                    {y === "all" ? t("common.all") : y}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </>
+                                    <button
+                                        onClick={() =>
+                                            openFilter({
+                                                source: activeSource,
+                                                country: currentCountry,
+                                                category: currentCategory,
+                                                year: currentYear,
+                                            })
+                                        }
+                                        className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-bold text-zinc-400 transition-all hover:border-zinc-700 hover:text-white"
+                                    >
+                                        <svg
+                                            className="h-4 w-4"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth="2"
+                                                d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"
+                                            />
+                                        </svg>
+                                        {t("common.filter") || "Bộ lọc"}
+                                        {(currentCountry ||
+                                            currentCategory ||
+                                            currentYear) && (
+                                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[10px] text-white">
+                                                {
+                                                    [
+                                                        currentCountry,
+                                                        currentCategory,
+                                                        currentYear,
+                                                    ].filter(Boolean).length
+                                                }
+                                            </span>
+                                        )}
+                                    </button>
                                 )}
                             </div>
-                            <div className="hidden text-right md:block">
-                                <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                                    {t("vods.pageOf", { page, totalPages })}
-                                </p>
-                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                                {t("vods.pageOf", {
+                                    page: currentPage,
+                                    totalPages,
+                                })}
+                            </p>
                         </div>
                     </div>
                 </div>
 
-                {loading ? (
+                {isLoading ? (
                     <MovieGridSkeleton count={24} />
                 ) : (
                     <div className="grid grid-cols-2 gap-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
@@ -427,7 +578,7 @@ export default function Listing() {
                             <VodMovieCard
                                 key={movie.slug}
                                 movie={movie}
-                                source={source}
+                                source={activeSource}
                                 getImageUrl={getImageUrl}
                             />
                         ))}
@@ -439,8 +590,10 @@ export default function Listing() {
                     <div className="mt-16 flex flex-col items-center gap-6">
                         <div className="flex items-center justify-center gap-2">
                             <button
-                                onClick={() => handlePageChange(page - 1)}
-                                disabled={page === 1}
+                                onClick={() =>
+                                    handlePageChange(currentPage - 1)
+                                }
+                                disabled={currentPage === 1}
                                 className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400 transition-all hover:border-red-600 hover:text-white disabled:opacity-30"
                             >
                                 <svg
@@ -460,41 +613,31 @@ export default function Listing() {
                             </button>
 
                             <div className="flex items-center gap-1">
-                                {[...Array(Math.min(5, totalPages))].map(
-                                    (_, i) => {
-                                        let pageNum;
-                                        if (totalPages <= 5) {
-                                            pageNum = i + 1;
-                                        } else if (page <= 3) {
-                                            pageNum = i + 1;
-                                        } else if (page >= totalPages - 2) {
-                                            pageNum = totalPages - 4 + i;
-                                        } else {
-                                            pageNum = page - 2 + i;
+                                {generateVisiblePages(
+                                    totalPages,
+                                    currentPage,
+                                ).map((pageNum) => (
+                                    <button
+                                        key={pageNum}
+                                        onClick={() =>
+                                            handlePageChange(pageNum)
                                         }
-
-                                        return (
-                                            <button
-                                                key={pageNum}
-                                                onClick={() =>
-                                                    handlePageChange(pageNum)
-                                                }
-                                                className={`h-10 w-10 rounded-full text-sm font-bold transition-all ${
-                                                    page === pageNum
-                                                        ? "bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.4)]"
-                                                        : "text-zinc-500 hover:bg-zinc-800 hover:text-white"
-                                                }`}
-                                            >
-                                                {pageNum}
-                                            </button>
-                                        );
-                                    },
-                                )}
+                                        className={`h-10 w-10 rounded-full text-sm font-bold transition-all ${
+                                            currentPage === pageNum
+                                                ? "bg-red-600 text-white shadow-[0_0_15px_rgba(220,38,38,0.4)]"
+                                                : "text-zinc-500 hover:bg-zinc-800 hover:text-white"
+                                        }`}
+                                    >
+                                        {pageNum}
+                                    </button>
+                                ))}
                             </div>
 
                             <button
-                                onClick={() => handlePageChange(page + 1)}
-                                disabled={page === totalPages}
+                                onClick={() =>
+                                    handlePageChange(currentPage + 1)
+                                }
+                                disabled={currentPage === totalPages}
                                 className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400 transition-all hover:border-red-600 hover:text-white disabled:opacity-30"
                             >
                                 <svg
@@ -524,7 +667,7 @@ export default function Listing() {
                                     type="number"
                                     min="1"
                                     max={totalPages}
-                                    defaultValue={page}
+                                    defaultValue={currentPage}
                                     onKeyDown={(e) => {
                                         if (e.key === "Enter") {
                                             const val = parseInt(
@@ -539,13 +682,17 @@ export default function Listing() {
                                 />
                                 <span className="text-zinc-700">/</span>
                                 <span className="text-sm font-bold text-zinc-500">
-                                    {totalPages.toLocaleString(i18n.language === "vi" ? "vi-VN" : "en-US")}
+                                    {totalPages.toLocaleString(
+                                        i18n.language === "vi"
+                                            ? "vi-VN"
+                                            : "en-US",
+                                    )}
                                 </span>
                             </div>
                             <button
                                 onClick={(e) => {
                                     const input =
-                                        e.currentTarget.previousSibling.querySelector(
+                                        e.currentTarget.parentElement.querySelector(
                                             "input",
                                         );
                                     const val = parseInt(input.value);
@@ -583,6 +730,12 @@ export default function Listing() {
                         </button>
                     </div>
                 )}
+                <VodFilterModal
+                    isOpen={isFilterOpen}
+                    onClose={() => setIsFilterOpen(false)}
+                    onApply={handleFilterApply}
+                    initialFilters={urlFilters}
+                />
             </div>
         </VodLayout>
     );

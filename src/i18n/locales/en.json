@@ -23,7 +23,9 @@
         "noData": "No data",
         "seeMore": "See more",
         "seeLess": "See less",
-        "all": "All"
+        "all": "All",
+        "add": "Add to favorites",
+        "remove": "Remove from favorites"
     },
     "auth": {
         "welcome": "Welcome!",
@@ -99,6 +101,9 @@
         "resultsFor": "Results for \"{{query}}\"",
         "moviesInYear": "Movies in {{year}}",
         "filterByYear": "Filter by year",
+        "advancedSearch": "Advanced Search",
+        "filter": "Filter",
+        "filterByMultiple": "Filter by source, country, year & category",
         "voiceoverMovies": "Dubbed Movies",
         "dubbedMovies": "Voiceover Movies",
         "sub": "SUB",

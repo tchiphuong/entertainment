@@ -1,5 +1,7 @@
+import { memo } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { useVodContext } from "../../contexts/VodContext";
 import MovieLanguageBadges from "./MovieLanguageBadges";
 
 function getQualityBadge(quality) {
@@ -24,35 +26,68 @@ function getQualityBadge(quality) {
     return quality || "";
 }
 
-export default function VodMovieCard({
-    movie,
-    source,
-    getImageUrl,
-    onImageError,
-}) {
+const VodMovieCard = memo(({ movie, source, getImageUrl, onImageError }) => {
     const { t } = useTranslation();
+    const { isFavorite, toggleFavorite } = useVodContext();
     if (!movie?.slug) return null;
 
+    const favorite = isFavorite(movie.slug);
     const qualityBadge = getQualityBadge(movie.quality);
 
-    // Tối ưu URL play: nếu có thông tin tập đang xem từ lịch sử, đính kèm vào URL
     const episodeParam = movie.current_episode?.key
         ? `&episode=${movie.current_episode.key}`
         : "";
     const serverParam = movie.server ? `&server=${movie.server}` : "";
     const playUrl = `/vod/play/${movie.slug}?source=${movie.source || source || "source_k"}${episodeParam}${serverParam}`;
 
+    const handleToggleFavorite = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        toggleFavorite(movie);
+    };
+
     return (
-        <div className="group transition-all duration-500 hover:z-40 hover:scale-110">
+        <div className="group transition-all duration-300 hover:z-40 hover:scale-[1.02]">
             <Link to={playUrl} className="block">
                 <div className="aspect-2/3 relative overflow-hidden rounded-lg border border-white/5 bg-zinc-900 shadow-2xl transition-all">
                     <img
                         loading="lazy"
                         src={getImageUrl(movie, "poster")}
                         alt={movie.name}
-                        className="h-full w-full object-cover"
+                        className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
                         onError={onImageError}
                     />
+
+                    {/* Favorite Button (Premium Design) */}
+                    <div className="absolute left-2 top-2 z-40">
+                        <button
+                            onClick={handleToggleFavorite}
+                            className={`flex h-9 w-9 items-center justify-center rounded-full border border-white/10 shadow-2xl backdrop-blur-md transition-all duration-300 active:scale-95 ${
+                                favorite
+                                    ? "border-red-500/30 bg-red-500/20 opacity-100"
+                                    : "bg-black/20 opacity-0 hover:bg-white/20 group-hover:opacity-100"
+                            }`}
+                            title={
+                                favorite ? t("common.remove") : t("common.add")
+                            }
+                        >
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className={`h-5 w-5 transition-all duration-300 ${
+                                    favorite
+                                        ? "fill-red-500 stroke-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]"
+                                        : "fill-none stroke-white/80 group-hover:stroke-white"
+                                }`}
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth="1.5"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                            >
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+                            </svg>
+                        </button>
+                    </div>
 
                     <div className="absolute right-2 top-2 z-30 flex flex-col items-end gap-1">
                         {movie.isTrailer ? (
@@ -93,15 +128,6 @@ export default function VodMovieCard({
                         {movie.current_episode?.value && (
                             <span className="shrink-0 rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[9px] font-black uppercase text-red-500 ring-1 ring-white/5">
                                 {movie.current_episode.value}
-                                {movie.episode_total &&
-                                    movie.episode_total !== "1" &&
-                                    movie.current_episode.value.includes(
-                                        "Tập",
-                                    ) && (
-                                        <span className="ml-0.5 text-zinc-500">
-                                            /{movie.episode_total}
-                                        </span>
-                                    )}
                             </span>
                         )}
                     </div>
@@ -109,4 +135,6 @@ export default function VodMovieCard({
             </Link>
         </div>
     );
-}
+});
+
+export default VodMovieCard;

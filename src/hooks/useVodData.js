@@ -5,6 +5,7 @@ import {
     TMDB_IMAGE_BASE_URL,
     TMDB_IMAGE_SIZES,
 } from "../constants/vodConstants";
+import { vodCache } from "../utils/vodCache";
 
 const CONFIG = {
     APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
@@ -27,8 +28,9 @@ const normalizeMovie = (item, source) => {
     if (!m.slug && m.movie_slug) m.slug = m.movie_slug;
 
     if (source === SOURCES.SOURCE_C) {
-        m.poster_url = m.poster_url;
-        m.thumb_url = m.thumb_url;
+        // NguonC bị ngược: poster_url là ảnh ngang, thumb_url là ảnh dọc
+        m.poster_url = item.thumb_url;
+        m.thumb_url = item.poster_url;
         m.episode_current = m.current_episode || m.episode_current;
         m.lang = m.language || m.lang;
         m.quality = m.quality;
@@ -167,8 +169,21 @@ const parseApiJson = (json) => {
     return { items, totalPages, totalItems, cat };
 };
 
-// Memory cache to avoid redundant TMDB calls
+// Memory cache remains for TMDB as it's very frequent
 const tmdbCache = new Map();
+
+// VOD Data Cache now uses persistent storage via vodCache
+// Logic mirrored from vodCache.js
+
+const getVodCacheKey = (cat) => {
+    return JSON.stringify({
+        id: cat.id,
+        source: cat.source,
+        page: cat.page || 1,
+        params: cat.params || {},
+        limit: cat.limit,
+    });
+};
 
 // Helper to fetch TMDB branding & images (Poster, Backdrop, Logo)
 const fetchTmdbMetadata = async (
@@ -255,6 +270,13 @@ export const useVodData = (passedCategories) => {
         setLoading(true);
         try {
             const fetchPromises = CATEGORIES.map(async (cat) => {
+                const cacheKey = getVodCacheKey(cat);
+                const cached = vodCache.get(cacheKey);
+
+                if (cached) {
+                    return cached;
+                }
+
                 let url = "";
                 let items = [];
                 let totalPages = 1;
@@ -270,6 +292,10 @@ export const useVodData = (passedCategories) => {
                     limit: limit,
                     ...(cat.params || {}),
                 });
+
+                if (cat.params?.keyword || cat.params?.q) {
+                    params.set("keyword", cat.params.keyword || cat.params.q);
+                }
 
                 if (cat.source === SOURCES.SOURCE_R) {
                     url = `${CONFIG.APP_DOMAIN_SOURCE_R}/${cat.type}${cat.type.includes("?") ? "&" : "?"}${params.toString()}`;
@@ -332,39 +358,11 @@ export const useVodData = (passedCategories) => {
                         items.map(async (item) => {
                             const normalized = normalizeMovie(item, cat.source);
                             normalized._rawItem = item;
-
-                            // Tạm thời comment đoạn call TMDB để tăng tốc độ load trang listing
-                            /*
-                            const tmdbId = normalized.tmdbId || item.tmdb?.id;
-                            const tmdbType =
-                                item.tmdb?.type ||
-                                (normalized.episode_current ? "tv" : "movie");
-
-                            if (tmdbId) {
-                                const metadata = await fetchTmdbMetadata(
-                                    tmdbId,
-                                    tmdbType,
-                                    tmdbLang,
-                                );
-                                if (metadata) {
-                                    normalized.tmdbBranding = metadata;
-                                    // Priority: TMDB images > Source images
-                                    normalized.poster_url = metadata.poster || normalized.poster_url;
-                                    normalized.thumb_url = metadata.backdrop || normalized.thumb_url;
-                                    normalized.poster = normalized.poster_url;
-                                    normalized.thumbnail = normalized.thumb_url;
-
-                                    if (metadata.nameVi) {
-                                        normalized.name = metadata.nameVi;
-                                    }
-                                }
-                            }
-                            */
                             return normalized;
                         }),
                     );
 
-                    return {
+                    const result = {
                         id: cat.id,
                         items: enrichedItems,
                         source: cat.source,
@@ -372,11 +370,17 @@ export const useVodData = (passedCategories) => {
                         totalItems: totalItems,
                         cat: apiMetadata,
                     };
+
+                    // Save to cache with Listing TTL (10 minutes)
+                    vodCache.set(cacheKey, result, vodCache.TTL.LISTING);
+
+                    return result;
                 } catch (e) {
                     console.error(`Fetch error for ${cat.id}:`, e);
                     return { id: cat.id, items: [], totalPages: 1 };
                 }
             });
+
 
             const results = await Promise.all(fetchPromises);
             const sectionsData = {};
@@ -392,30 +396,35 @@ export const useVodData = (passedCategories) => {
             setSections(sectionsData);
 
             // Fetch high-quality details for Hero Slider
-            // Ưu tiên gộp phim từ 3 nguồn: Rophim Hot -> Ophim Mới -> PhimAPI Mới
             const HERO_PRIORITY = ["hot-rophim", "new-ophim", "new"];
             let rawHeroPool = [];
 
-            HERO_PRIORITY.forEach((catId) => {
-                const srcRes = results.find((r) => r.id === catId);
-                if (srcRes && srcRes.items && srcRes.items.length > 0) {
-                    // Lấy tối đa 10 phim từ mỗi nguồn để trộn
-                    rawHeroPool = [
-                        ...rawHeroPool,
-                        ...srcRes.items.slice(0, 10),
-                    ];
-                }
-            });
+            // Chỉ thực hiện logic Hero Slider nếu danh sách categories yêu cầu có chứa ID ưu tiên
+            const hasHeroSource = CATEGORIES.some((cat) =>
+                HERO_PRIORITY.includes(cat.id),
+            );
 
-            // Nếu không có phim nào từ 3 nguồn ưu tiên, lấy từ bất kỳ nguồn nào có dữ liệu
-            if (rawHeroPool.length === 0) {
-                const anySource = results.find(
-                    (r) => r.items && r.items.length > 0,
-                );
-                if (anySource) rawHeroPool = anySource.items.slice(0, 10);
+            if (hasHeroSource) {
+                HERO_PRIORITY.forEach((catId) => {
+                    const srcRes = results.find((r) => r.id === catId);
+                    if (srcRes && srcRes.items && srcRes.items.length > 0) {
+                        rawHeroPool = [
+                            ...rawHeroPool,
+                            ...srcRes.items.slice(0, 10),
+                        ];
+                    }
+                });
+
+                // Nếu không có phim nào từ 3 nguồn ưu tiên, lấy từ bất kỳ nguồn nào có dữ liệu
+                if (rawHeroPool.length === 0) {
+                    const anySource = results.find(
+                        (r) => r.items && r.items.length > 0,
+                    );
+                    if (anySource) rawHeroPool = anySource.items.slice(0, 10);
+                }
             }
 
-            if (rawHeroPool.length > 0) {
+            if (hasHeroSource && rawHeroPool.length > 0) {
                 // Giới hạn tổng số phim trên Slider (ví dụ 15-20 phim)
                 const finalPool = rawHeroPool.slice(0, 20);
 
