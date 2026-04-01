@@ -299,7 +299,7 @@ export default function VodLanding() {
                                             </p>
                                         </>
                                     ) : (
-                                        <h1 className="font-handwriting mb-4 text-5xl font-medium leading-tight tracking-normal text-white drop-shadow-2xl md:text-8xl md:leading-[1.1] lg:text-[10rem]">
+                                        <h1 className="mb-4 text-5xl font-medium leading-tight tracking-normal text-white drop-shadow-2xl md:text-8xl md:leading-[1.1]">
                                             {movie.name}
                                         </h1>
                                     )}
