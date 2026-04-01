@@ -14,7 +14,7 @@ export default function MovieLanguageBadges({
             {badges.map((b) => (
                 <span
                     key={b.id}
-                    className={`rounded-xs px-1.5 py-0.5 text-[10px] font-bold shadow-lg ${
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-bold shadow-lg ${
                         useLight
                             ? `${b.bgLight} ${b.textLight} ring-1 ${b.ring}`
                             : `${b.color} ${b.textColor}`

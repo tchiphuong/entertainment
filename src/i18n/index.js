@@ -7,8 +7,8 @@ import en from "./locales/en.json";
 
 // Các ngôn ngữ hỗ trợ
 export const LANGUAGES = [
-    { code: "vi", name: "Tiếng Việt", flag: "🇻🇳" },
-    { code: "en", name: "English", flag: "🇺🇸" },
+    { code: "vi", name: "Tiếng Việt" },
+    { code: "en", name: "English" },
 ];
 
 // Tắt sponsorship message của i18next trong dev

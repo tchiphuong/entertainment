@@ -580,6 +580,7 @@ export default function Listing() {
                                 movie={movie}
                                 source={activeSource}
                                 getImageUrl={getImageUrl}
+                                onImageError={handleImageError}
                             />
                         ))}
                     </div>
@@ -700,7 +701,7 @@ export default function Listing() {
                                         handlePageChange(val);
                                     }
                                 }}
-                                className="ml-1 rounded-sm bg-zinc-800 px-2 py-1 text-[10px] font-black uppercase text-zinc-400 transition-colors hover:bg-red-600 hover:text-white"
+                                className="ml-1 rounded-full bg-zinc-800 px-3 py-1 text-[10px] font-black uppercase text-zinc-400 transition-colors hover:bg-red-600 hover:text-white"
                             >
                                 {t("vods.go")}
                             </button>

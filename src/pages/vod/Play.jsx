@@ -392,6 +392,10 @@ export default function VodPlay() {
         true,
     ); // Tự động chuyển tập
     const autoplayEnabledRef = useRef(autoplayEnabled); // Ref để track giá trị mới nhất trong event handlers
+    const [isCompactView, setIsCompactView] = useLocalStorage(
+        "isCompactView",
+        null, // Mặc định là null để detect lần đầu
+    );
 
     // Memo hoá danh sách tập phim để tránh tính toán lại mỗi lần render
     const episodeListData = useMemo(() => {
@@ -406,12 +410,14 @@ export default function VodPlay() {
                 const imdbEp =
                     !isNaN(epNum) && epNum > 0
                         ? imdbEpisodes.find(
-                              (e) => (e.episode_number || e.episodeNumber) === epNum,
+                              (e) =>
+                                  (e.episode_number || e.episodeNumber) ===
+                                  epNum,
                           )
                         : undefined;
                 const thumb =
                     (imdbEp?.still_path
-                        ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.STILL || 'w300'}${imdbEp.still_path}`
+                        ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.STILL || "w300"}${imdbEp.still_path}`
                         : imdbEp?.primaryImage?.url) ||
                     getMovieImage(movie?.thumb_url, movie?.source);
                 map.set(k, { ...s, key: k, imdbEp, thumb });
@@ -434,8 +440,15 @@ export default function VodPlay() {
     useEffect(() => {
         const handleScroll = () => setScrollY(window.scrollY);
         window.addEventListener("scroll", handleScroll);
+
+        // Detect mobile để set mặc định cho Compact View
+        if (isCompactView === null) {
+            const isMobile = window.innerWidth < 768;
+            setIsCompactView(isMobile);
+        }
+
         return () => window.removeEventListener("scroll", handleScroll);
-    }, []);
+    }, [isCompactView, setIsCompactView]);
     const [skipIntroEnabled, setSkipIntroEnabled] = useLocalStorage(
         "skipIntroEnabled",
         false,
@@ -634,7 +647,10 @@ export default function VodPlay() {
             if (!tmdbId || !isSeries) return;
 
             try {
-                const data = await vodService.fetchTMDBSeason(tmdbId, detectedSeason);
+                const data = await vodService.fetchTMDBSeason(
+                    tmdbId,
+                    detectedSeason,
+                );
                 if (data && data.episodes) {
                     setImdbEpisodes(data.episodes);
                 }
@@ -961,16 +977,24 @@ export default function VodPlay() {
     // Helper function to format episode name
     const formatEpisodeName = useCallback(
         (name) => {
-            if (name && /^Tập \d+/.test(name)) {
-                const num = parseInt(name.match(/\d+/)[0]);
-                return `${t("vodPlay.episode")} ${num.toString().padStart(maxDigits, "0")}`;
-            } else if (name && /^\d+/.test(name)) {
-                const num = parseInt(name);
-                return `${t("vodPlay.episode")} ${num.toString().padStart(maxDigits, "0")}`;
+            if (!name) return name;
+
+            // Lấy số đầu tiên trong string (nếu có)
+            const match = name.match(/\d+/);
+            if (!match) return name;
+
+            const num = parseInt(match[0], 10);
+
+            // Kiểm tra có phải dạng "Tập ..." hoặc bắt đầu bằng số
+            if (/^tập\s*\d+/i.test(name) || /^\d+/.test(name)) {
+                return `${t("vodPlay.episode")} ${num
+                    .toString()
+                    .padStart(maxDigits, "0")}`;
             }
+
             return name;
         },
-        [maxDigits],
+        [maxDigits, t],
     );
 
     // Initialize from URL parameters - ưu tiên: URL param → last watched → tập đầu
@@ -1907,7 +1931,7 @@ export default function VodPlay() {
         playerDiv.innerHTML = "";
         const iframe = document.createElement("iframe");
         iframe.src = embedUrl;
-        iframe.className = "w-full aspect-video rounded-xl shadow-2xl";
+        iframe.className = "w-full h-full rounded-xl shadow-2xl";
         iframe.style.cssText = "border:none;";
         iframe.allowFullscreen = true;
         iframe.allow = "autoplay; encrypted-media";
@@ -2843,7 +2867,9 @@ export default function VodPlay() {
                 </div>
             )}
             {isLoading ? (
-                <PlaySkeleton backgrounds={memoizedBackgrounds || backgrounds} />
+                <PlaySkeleton
+                    backgrounds={memoizedBackgrounds || backgrounds}
+                />
             ) : !movie ? (
                 <div className="flex min-h-[60vh] flex-col items-center justify-center space-y-6 px-4 text-center">
                     <div className="rounded-full bg-zinc-900 p-8 ring-1 ring-white/10">
@@ -3022,7 +3048,7 @@ export default function VodPlay() {
                                                 {/* Previous Episode */}
                                                 <button
                                                     onClick={playPrevEpisode}
-                                                    className="group flex h-11 cursor-pointer items-center gap-2 rounded-xl bg-zinc-900/50 px-5 text-white/70 ring-1 ring-white/10 transition-all hover:bg-zinc-800 hover:text-white active:scale-95 sm:px-6"
+                                                    className="group flex h-11 cursor-pointer items-center gap-2 rounded-full bg-zinc-900/50 px-5 text-white/70 ring-1 ring-white/10 transition-all hover:bg-zinc-800 hover:text-white active:scale-95 sm:px-6"
                                                     title="Tập trước (P)"
                                                 >
                                                     <svg
@@ -3046,7 +3072,7 @@ export default function VodPlay() {
                                                 {/* Next Episode */}
                                                 <button
                                                     onClick={playNextEpisode}
-                                                    className="group flex h-11 cursor-pointer items-center gap-2 rounded-xl bg-red-600 px-5 text-white shadow-lg shadow-red-600/20 transition-all hover:bg-red-500 active:scale-95 sm:px-7"
+                                                    className="group flex h-11 cursor-pointer items-center gap-2 rounded-full bg-red-600 px-5 text-white shadow-lg shadow-red-600/20 transition-all hover:bg-red-500 active:scale-95 sm:px-7"
                                                 >
                                                     <span className="hidden text-[11px] font-black uppercase tracking-wider sm:block">
                                                         Tập tiếp theo
@@ -3133,7 +3159,7 @@ export default function VodPlay() {
                                                 </span>
                                             </div>
                                             {skipIntroEnabled && (
-                                                <div className="flex items-center gap-2 overflow-hidden rounded-lg border border-white/5 bg-zinc-900 p-1">
+                                                <div className="flex items-center gap-2 overflow-hidden rounded-full border border-white/5 bg-zinc-900 p-1">
                                                     <input
                                                         type="number"
                                                         min="0"
@@ -3172,6 +3198,36 @@ export default function VodPlay() {
                                                     </span>
                                                 </div>
                                             )}
+                                        </div>
+
+                                        <div className="flex items-center gap-4">
+                                            <div
+                                                className="flex cursor-pointer items-center gap-3"
+                                                onClick={() =>
+                                                    setIsCompactView(
+                                                        !isCompactView,
+                                                    )
+                                                }
+                                            >
+                                                <div
+                                                    className={`relative h-5 w-10 rounded-full transition-all duration-300 ${
+                                                        isCompactView
+                                                            ? "bg-red-600"
+                                                            : "bg-zinc-800"
+                                                    }`}
+                                                >
+                                                    <div
+                                                        className={`absolute top-1 h-3 w-3 rounded-full bg-white shadow-lg transition-transform duration-300 ${
+                                                            isCompactView
+                                                                ? "translate-x-6"
+                                                                : "translate-x-1"
+                                                        }`}
+                                                    ></div>
+                                                </div>
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                                                    Tập phim giản lược
+                                                </span>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -3314,8 +3370,14 @@ export default function VodPlay() {
                                 </div>
 
                                 {/* Server Data Grid - Responsive Episode Cards with Images */}
-                                <div className="no-scrollbar overflow-y-auto p-6 md:max-h-[35rem]">
-                                    <div className="grid grid-cols-2 gap-2 md:grid-cols-3 md:gap-3 lg:grid-cols-4 xl:grid-cols-5">
+                                <div className="no-scrollbar max-h-[35rem] overflow-y-auto p-6">
+                                    <div
+                                        className={`grid gap-2 ${
+                                            isCompactView
+                                                ? "grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10"
+                                                : "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                                        }`}
+                                    >
                                         {episodeListData.map(([k, server]) => {
                                             const isActive =
                                                 k === (currentEpisodeId || "");
@@ -3336,77 +3398,101 @@ export default function VodPlay() {
                                                         isActive
                                                             ? "border-red-600 bg-red-600/10 ring-1 ring-red-600/50"
                                                             : "border-white/5 bg-zinc-900/40 hover:border-white/20 hover:bg-zinc-900/60"
-                                                    }`}
+                                                    } ${isCompactView ? "items-center justify-center p-2 text-center" : ""}`}
+                                                    title={imdbEp?.overview}
                                                 >
-                                                    {/* Episode Thumbnail */}
-                                                    <div className="relative aspect-video w-full overflow-hidden">
-                                                        <img
-                                                            loading="lazy"
-                                                            src={episodeThumb}
-                                                            alt={`Tập ${k}`}
-                                                            className={`h-full w-full object-cover transition-transform duration-500 group-hover:scale-110 ${isActive ? "" : "opacity-60 group-hover:opacity-100"}`}
-                                                        />
-                                                        <div className="bg-linear-to-t absolute inset-0 from-black/80 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
+                                                    {!isCompactView && (
+                                                        <>
+                                                            {/* Episode Thumbnail */}
+                                                            <div className="relative aspect-video w-full overflow-hidden">
+                                                                <img
+                                                                    loading="lazy"
+                                                                    src={
+                                                                        episodeThumb
+                                                                    }
+                                                                    alt={`Tập ${k}`}
+                                                                    className={`h-full w-full object-cover transition-transform duration-500 group-hover:scale-110 ${isActive ? "" : "opacity-60 group-hover:opacity-100"}`}
+                                                                />
+                                                                <div className="bg-linear-to-t absolute inset-0 from-black/80 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100"></div>
 
-                                                        {/* Episode Badge */}
-                                                        <div
-                                                            className={`absolute left-2 top-2 rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-wider backdrop-blur-md ${isActive ? "bg-red-600 text-white" : "bg-black/60 text-zinc-300"}`}
-                                                        >
-                                                            Tập {k}
-                                                        </div>
-
-                                                        {/* Play Overlay Icon */}
-                                                        <div
-                                                            className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-                                                        >
-                                                            <div
-                                                                className={`flex h-10 w-10 items-center justify-center rounded-full backdrop-blur-md transition-transform duration-300 ${isActive ? "scale-100 bg-red-600" : "scale-75 bg-white/20 group-hover:scale-100"}`}
-                                                            >
-                                                                <svg
-                                                                    className="h-5 w-5 text-white"
-                                                                    fill="currentColor"
-                                                                    viewBox="0 0 24 24"
+                                                                {/* Episode Badge */}
+                                                                <div
+                                                                    className={`absolute left-2 top-2 rounded-md px-2 py-1 text-[9px] font-black uppercase tracking-wider backdrop-blur-md ${isActive ? "bg-red-600 text-white" : "bg-black/60 text-zinc-300"}`}
                                                                 >
-                                                                    <path d="M8 5v14l11-7z" />
-                                                                </svg>
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                                    Tập {k}
+                                                                </div>
 
-                                                    {/* Episode Title/Info */}
-                                                    <div className="flex flex-1 flex-col p-3">
-                                                        <div className="flex items-center justify-between gap-2">
+                                                                {/* Play Overlay Icon */}
+                                                                <div
+                                                                    className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+                                                                >
+                                                                    <div
+                                                                        className={`flex h-10 w-10 items-center justify-center rounded-full backdrop-blur-md transition-transform duration-300 ${isActive ? "scale-100 bg-red-600" : "scale-75 bg-white/20 group-hover:scale-100"}`}
+                                                                    >
+                                                                        <svg
+                                                                            className="h-5 w-5 text-white"
+                                                                            fill="currentColor"
+                                                                            viewBox="0 0 24 24"
+                                                                        >
+                                                                            <path d="M8 5v14l11-7z" />
+                                                                        </svg>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Episode Title/Info */}
+                                                            <div className="flex flex-1 flex-col p-3">
+                                                                {imdbEp?.name && (
+                                                                    <div className="flex items-center justify-between gap-2">
+                                                                        <span
+                                                                            className={`truncate text-[11px] font-black uppercase tracking-wider ${isActive ? "text-red-500" : "text-zinc-400 group-hover:text-white"}`}
+                                                                        >
+                                                                            {imdbEp?.name ||
+                                                                                formatEpisodeName(
+                                                                                    server.name ||
+                                                                                        (/^\d+$/.test(
+                                                                                            String(
+                                                                                                k,
+                                                                                            ),
+                                                                                        )
+                                                                                            ? `Tập ${k}`
+                                                                                            : "Extra"),
+                                                                                )}
+                                                                        </span>
+                                                                        {isActive && (
+                                                                            <span className="flex h-1.5 w-1.5 animate-pulse rounded-full bg-red-600 shadow-[0_0_8px_rgba(220,38,38,0.8)]"></span>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                                {imdbEp?.runtime && (
+                                                                    <span className="mt-1 text-[9px] font-medium text-zinc-600">
+                                                                        {Math.round(
+                                                                            imdbEp.runtime,
+                                                                        )}{" "}
+                                                                        Phút
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </>
+                                                    )}
+
+                                                    {isCompactView && (
+                                                        <div className="flex flex-col items-center">
                                                             <span
-                                                                className={`truncate text-[11px] font-black uppercase tracking-wider ${isActive ? "text-red-500" : "text-zinc-400 group-hover:text-white"}`}
+                                                                className={`text-base uppercase tracking-tighter ${isActive ? "text-white" : "text-zinc-400 group-hover:text-white"}`}
                                                             >
-                                                                {imdbEp?.title ||
-                                                                    formatEpisodeName(
-                                                                        server.name ||
-                                                                            (/^\d+$/.test(
-                                                                                String(
-                                                                                    k,
-                                                                                ),
-                                                                            )
-                                                                                ? `Tập ${k}`
-                                                                                : "Extra"),
-                                                                    )}
+                                                                {/^\d+$/.test(k)
+                                                                    ? k
+                                                                    : (
+                                                                          imdbEp?.name ||
+                                                                          k
+                                                                      )
+                                                                          .charAt(
+                                                                              0,
+                                                                          )
+                                                                          .toUpperCase()}
                                                             </span>
-                                                            {isActive && (
-                                                                <span className="flex h-1.5 w-1.5 animate-pulse rounded-full bg-red-600 shadow-[0_0_8px_rgba(220,38,38,0.8)]"></span>
-                                                            )}
                                                         </div>
-                                                        {imdbEp?.runtimeSeconds && (
-                                                            <span className="mt-1 text-[9px] font-medium text-zinc-600">
-                                                                {Math.round(
-                                                                    imdbEp.runtimeSeconds /
-                                                                        60,
-                                                                )}{" "}
-                                                                Phút
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    {isActive && (
-                                                        <div className="absolute bottom-0 left-0 h-[2px] w-full bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.6)]"></div>
                                                     )}
                                                 </button>
                                             );
@@ -3605,7 +3691,7 @@ export default function VodPlay() {
                                                 (cat, idx) => (
                                                     <span
                                                         key={idx}
-                                                        className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 transition-all hover:border-red-600 hover:text-white"
+                                                        className="rounded-full border border-zinc-800 bg-zinc-900/50 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 transition-all hover:border-red-600 hover:text-white"
                                                     >
                                                         {cat.name}
                                                     </span>
@@ -3782,10 +3868,9 @@ export default function VodPlay() {
                             {tmdbImages &&
                                 (tmdbImages.posters?.length > 0 ||
                                     tmdbImages.backdrops?.length > 0) && (
-                                    <section className="space-y-12">
+                                    <section className="space-y-4">
                                         <div className="flex items-center gap-4">
-                                            <span className="h-8 w-1.5 rounded-full bg-red-600"></span>
-                                            <h3 className="text-2xl font-black tracking-tighter text-white md:text-3xl">
+                                            <h3 className="text-sm font-black uppercase tracking-[0.3em] text-red-600">
                                                 Bộ sưu tập ảnh
                                             </h3>
                                         </div>

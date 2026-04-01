@@ -66,7 +66,12 @@ export const fetchSourceData = async (slug, source) => {
 
     try {
         const res = await fetch(url);
-        if (!res.ok) return null;
+        if (!res.ok) {
+            const emptyResult = { movie: null, episodes: [] };
+            // Cache 404 để tránh gọi lại API liên tục
+            saveToCache(cacheKey, emptyResult);
+            return emptyResult;
+        }
         const json = await res.json();
 
         let movieData = null;
@@ -89,8 +94,9 @@ export const fetchSourceData = async (slug, source) => {
     } catch (e) {
         console.error(`Error fetching ${source} data:`, e);
         // Cache lại lỗi để tránh retry liên tục trong phiên làm việc
-        saveToCache(cacheKey, { movie: null, episodes: [] });
-        return null;
+        const errorResult = { movie: null, episodes: [] };
+        saveToCache(cacheKey, errorResult);
+        return errorResult;
     }
 };
 

@@ -210,7 +210,7 @@ export default function VodLanding() {
                                 <div className="bg-linear-to-t absolute inset-0 from-zinc-950 via-zinc-950/20 to-transparent" />
                                 <div className="bg-linear-to-r absolute inset-0 from-zinc-950 via-zinc-950/10 to-transparent md:via-transparent" />
                             </div>
-                            <div className="relative z-10 mx-auto flex h-full w-full max-w-[1920px] flex-col justify-center space-y-8 px-4 md:px-12 lg:px-20">
+                            <div className="relative z-30 mx-auto flex h-full w-full max-w-[1920px] flex-col justify-center space-y-8 px-4 md:px-12 lg:px-20">
                                 <div
                                     className={
                                         idx === currentHeroIndex
@@ -239,13 +239,13 @@ export default function VodLanding() {
                                                 </div>
                                             </div>
                                         )}
-                                        <div className="flex items-center gap-1.5 rounded-sm bg-red-600 px-2 py-0.5 text-[10px] text-white md:text-xs">
+                                        <div className="flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-0.5 text-[10px] text-white md:text-xs">
                                             {t("vods.topHotMovies", {
                                                 count: heroMovies.length,
                                             })}
                                         </div>
                                         {movie.isTrailer ? (
-                                            <span className="rounded-xs bg-red-600 px-2 py-0.5 text-[10px] font-black uppercase text-white shadow-lg md:text-xs">
+                                            <span className="rounded-full bg-red-600 px-3 py-0.5 text-[10px] font-black uppercase text-white shadow-lg md:text-xs">
                                                 {t("vods.comingSoon")}
                                             </span>
                                         ) : (
@@ -256,7 +256,7 @@ export default function VodLanding() {
                                                     </span>
                                                 )}
                                                 {movie.quality && (
-                                                    <span className="rounded-xs border border-zinc-700 bg-zinc-800/50 px-1.5 py-0.5 text-zinc-300">
+                                                    <span className="rounded-full border border-zinc-700 bg-zinc-800/50 px-2 py-0.5 text-zinc-300">
                                                         {movie.quality}
                                                     </span>
                                                 )}
@@ -345,7 +345,7 @@ export default function VodLanding() {
                                                 },
                                             )
                                         }
-                                        className="flex items-center gap-2 rounded bg-white px-5 py-2.5 text-sm font-black text-black shadow-2xl transition-all hover:bg-zinc-200 active:scale-95 md:gap-3 md:px-9 md:py-3.5 md:text-lg"
+                                        className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-black text-black shadow-2xl transition-all hover:bg-zinc-200 active:scale-95 md:gap-3 md:px-9 md:py-3.5 md:text-lg"
                                     >
                                         <svg
                                             xmlns="http://www.w3.org/2000/svg"
@@ -372,7 +372,7 @@ export default function VodLanding() {
                                                 },
                                             )
                                         }
-                                        className="flex items-center gap-2 rounded border border-white/10 bg-zinc-600/40 px-5 py-2.5 text-sm font-black text-white shadow-xl backdrop-blur-md transition-all hover:bg-zinc-600/60 md:gap-3 md:px-9 md:py-3.5 md:text-lg"
+                                        className="flex items-center gap-2 rounded-full border border-white/10 bg-zinc-600/40 px-5 py-2.5 text-sm font-black text-white shadow-xl backdrop-blur-md transition-all hover:bg-zinc-600/60 md:gap-3 md:px-9 md:py-3.5 md:text-lg"
                                     >
                                         <svg
                                             xmlns="http://www.w3.org/2000/svg"
@@ -396,7 +396,7 @@ export default function VodLanding() {
                     ))}
 
                     {/* Navigation Arrows */}
-                    <div className="pointer-events-none absolute inset-y-0 left-0 z-20 flex w-16 items-center justify-start pl-2 opacity-50 transition-opacity hover:opacity-100 md:w-24 md:pl-4 lg:pl-10">
+                    <div className="pointer-events-none absolute left-0 top-1/2 z-40 flex w-12 -translate-y-1/2 items-center justify-start pl-2 opacity-50 transition-opacity hover:opacity-100 md:w-24 md:pl-4 lg:pl-10">
                         <button
                             onClick={prevHero}
                             className="group pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/20 text-white backdrop-blur-md transition-all hover:border-red-600 hover:bg-red-600 active:scale-90 md:h-14 md:w-14"
@@ -417,7 +417,7 @@ export default function VodLanding() {
                             </svg>
                         </button>
                     </div>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 z-20 flex w-16 items-center justify-end pr-2 opacity-50 transition-opacity hover:opacity-100 md:w-24 md:pr-4 lg:pr-10">
+                    <div className="pointer-events-none absolute right-0 top-1/2 z-40 flex w-12 -translate-y-1/2 items-center justify-end pr-2 opacity-50 transition-opacity hover:opacity-100 md:w-24 md:pr-4 lg:pr-10">
                         <button
                             onClick={nextHero}
                             className="group pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/20 text-white backdrop-blur-md transition-all hover:border-red-600 hover:bg-red-600 active:scale-90 md:h-14 md:w-14"
@@ -440,7 +440,7 @@ export default function VodLanding() {
                     </div>
 
                     {/* Slider Indicators */}
-                    <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 flex-row gap-3">
+                    <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 flex-row gap-1 md:gap-3">
                         {heroMovies.map((_, idx) => (
                             <button
                                 key={idx}
@@ -448,11 +448,11 @@ export default function VodLanding() {
                                     setCurrentHeroIndex(idx);
                                     startSlider();
                                 }}
-                                className="group relative flex h-6 w-12 items-center justify-center px-1"
+                                className="group relative flex h-6 items-center justify-center px-1"
                                 aria-label={`Go to slide ${idx + 1}`}
                             >
                                 <span
-                                    className={`h-1.5 rounded-full transition-all duration-500 group-hover:bg-zinc-400 ${idx === currentHeroIndex ? "w-10 scale-y-110 bg-red-600" : "w-4 bg-zinc-700"}`}
+                                    className={`h-1.5 w-6 rounded-full transition-all duration-500 group-hover:bg-zinc-400 ${idx === currentHeroIndex ? "w-10 scale-y-110 bg-red-600" : "w-4 bg-zinc-700"}`}
                                 />
                             </button>
                         ))}
@@ -700,7 +700,7 @@ function MovieRow({
                 {showLeftArrow && (
                     <button
                         onClick={() => scroll("left")}
-                        className="z-60 absolute left-0 top-0 hidden h-full w-12 items-center justify-center bg-zinc-950/50 text-white opacity-0 transition-opacity hover:bg-zinc-950/80 group-hover/row:opacity-100 md:flex md:w-16"
+                        className="z-60 absolute left-2 top-1/2 -translate-y-1/2 hidden h-12 w-12 items-center justify-center rounded-full bg-zinc-950/50 text-white opacity-0 transition-opacity hover:bg-zinc-950/80 group-hover/row:opacity-100 md:flex md:h-14 md:w-14"
                     >
                         <svg
                             className="h-10 w-10"
@@ -739,7 +739,7 @@ function MovieRow({
                 {showRightArrow && (
                     <button
                         onClick={() => scroll("right")}
-                        className="z-60 absolute right-0 top-0 hidden h-full w-12 items-center justify-center bg-zinc-950/50 text-white opacity-0 transition-opacity hover:bg-zinc-950/80 group-hover/row:opacity-100 md:flex md:w-16"
+                        className="z-60 absolute right-2 top-1/2 -translate-y-1/2 hidden h-12 w-12 items-center justify-center rounded-full bg-zinc-950/50 text-white opacity-0 transition-opacity hover:bg-zinc-950/80 group-hover/row:opacity-100 md:flex md:h-14 md:w-14"
                     >
                         <svg
                             className="h-10 w-10"

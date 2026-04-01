@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, memo, useCallback } from "react";
 import {
     Dialog,
     DialogPanel,
@@ -75,6 +75,179 @@ const CATEGORIES = [
     { slug: "vo-thuat", name: "Võ Thuật" },
 ];
 
+// Memoized Section components to prevent re-renders when keyword changes
+const KeywordSearchSection = memo(({ initialValue, onClear, t, onChange }) => {
+    const [localValue, setLocalValue] = useState(initialValue);
+
+    useEffect(() => {
+        setLocalValue(initialValue);
+    }, [initialValue]);
+
+    const handleInput = (e) => {
+        const val = e.target.value;
+        setLocalValue(val);
+        onChange(val); // This should be debounced or only sync when needed if parent re-renders are still too many.
+    };
+
+    return (
+        <section>
+            <h4 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-400">
+                {t("common.search") || "Từ khóa tìm kiếm"}
+            </h4>
+            <div className="relative">
+                <input
+                    type="text"
+                    value={localValue}
+                    onChange={handleInput}
+                    placeholder={
+                        t("vods.searchPlaceholder") ||
+                        "Nhập tên phim, diễn viên..."
+                    }
+                    className="w-full rounded-full border border-zinc-700 bg-zinc-800 py-3 pl-12 pr-4 text-white outline-none transition-all placeholder:text-zinc-600 focus:border-transparent focus:ring-2 focus:ring-red-600"
+                />
+                <svg
+                    className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-500"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                >
+                    <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="2"
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                </svg>
+                {localValue && (
+                    <button
+                        onClick={() => {
+                            setLocalValue("");
+                            onClear();
+                        }}
+                        className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors hover:text-white"
+                    >
+                        <svg
+                            className="h-4 w-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth="2"
+                                d="M6 18L18 6M6 6l12 12"
+                            />
+                        </svg>
+                    </button>
+                )}
+            </div>
+        </section>
+    );
+});
+
+const SourceSection = memo(({ selected, onSelect, t }) => (
+    <section>
+        <h4 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-400">
+            {t("vods.source") || "Nguồn phim"}
+        </h4>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {[
+                { id: SOURCES.SOURCE_K, name: "KKPhim" },
+                { id: SOURCES.SOURCE_O, name: "OPhim" },
+                { id: SOURCES.SOURCE_C, name: "NguonC" },
+                { id: "all", name: "Tất cả" },
+            ].map((src) => (
+                <button
+                    key={src.id}
+                    onClick={() => onSelect("source", src.id)}
+                    className={clsx(
+                        "rounded-full border px-4 py-2 text-sm font-medium transition-all duration-200",
+                        selected === src.id
+                            ? "border-red-600 bg-red-600 text-white shadow-lg shadow-red-600/20"
+                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white",
+                    )}
+                >
+                    {src.name}
+                </button>
+            ))}
+        </div>
+    </section>
+));
+
+const CountrySection = memo(({ selected, onSelect, t }) => (
+    <section>
+        <h4 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-400">
+            {t("vods.country") || "Quốc gia"}
+        </h4>
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+            {COUNTRIES.map((c) => (
+                <button
+                    key={c.slug}
+                    onClick={() => onSelect("country", c.slug)}
+                    className={clsx(
+                        "truncate rounded-full border px-3 py-1.5 text-center text-xs font-medium transition-all duration-200",
+                        selected === c.slug
+                            ? "border-white bg-white text-zinc-900 shadow-lg"
+                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500",
+                    )}
+                >
+                    {c.name}
+                </button>
+            ))}
+        </div>
+    </section>
+));
+
+const CategorySection = memo(({ selected, onSelect, t }) => (
+    <section>
+        <h4 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-400">
+            {t("vods.category") || "Thể loại"}
+        </h4>
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+            {CATEGORIES.map((cat) => (
+                <button
+                    title={cat.name}
+                    key={cat.slug}
+                    onClick={() => onSelect("category", cat.slug)}
+                    className={clsx(
+                        "truncate rounded-full border px-3 py-1.5 text-center text-xs font-medium transition-all duration-200",
+                        selected === cat.slug
+                            ? "border-white bg-white text-zinc-900 shadow-lg"
+                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500",
+                    )}
+                >
+                    {cat.name}
+                </button>
+            ))}
+        </div>
+    </section>
+));
+
+const YearSection = memo(({ selected, onSelect, t }) => (
+    <section>
+        <h4 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-400">
+            {t("vods.year") || "Năm phát hành"}
+        </h4>
+        <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">
+            {YEARS.map((y) => (
+                <button
+                    key={y}
+                    onClick={() => onSelect("year", y)}
+                    className={clsx(
+                        "rounded-full border px-2 py-1.5 text-center text-xs font-medium transition-all duration-200",
+                        selected === y
+                            ? "border-white bg-white text-zinc-900 shadow-lg"
+                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500",
+                    )}
+                >
+                    {y}
+                </button>
+            ))}
+        </div>
+    </section>
+));
+
 export default function VodFilterModal({
     isOpen,
     onClose,
@@ -87,45 +260,49 @@ export default function VodFilterModal({
         country: "",
         category: "",
         year: "",
-        keyword: "",
         ...initialFilters,
     });
 
+    const keywordRef = useRef(initialFilters?.keyword || "");
     const prevOpenRef = useRef(false);
 
     useEffect(() => {
         if (isOpen && !prevOpenRef.current) {
+            const newKW = initialFilters?.keyword || "";
+            keywordRef.current = newKW;
             setFilters({
                 source: initialFilters?.source || SOURCES.SOURCE_K,
                 country: (initialFilters?.country || "").toLowerCase(),
                 category: (initialFilters?.category || "").toLowerCase(),
                 year: initialFilters?.year || "",
-                keyword: initialFilters?.keyword || "",
             });
         }
         prevOpenRef.current = isOpen;
     }, [isOpen, initialFilters]);
 
-    const handleSelect = (key, value) => {
+    const handleSelect = useCallback((key, value) => {
         setFilters((prev) => ({
             ...prev,
             [key]: prev[key] === value ? "" : value,
         }));
-    };
+    }, []);
+
+    const handleSearchChange = useCallback((val) => {
+        keywordRef.current = val;
+    }, []);
 
     const handleApply = () => {
-        onApply(filters);
+        onApply({ ...filters, keyword: keywordRef.current });
     };
 
     const handleClear = () => {
-        const cleared = {
+        keywordRef.current = "";
+        setFilters({
             source: SOURCES.SOURCE_K,
             country: "",
             category: "",
             year: "",
-            keyword: "",
-        };
-        setFilters(cleared);
+        });
     };
 
     return (
@@ -184,208 +361,46 @@ export default function VodFilterModal({
                                     </button>
                                 </DialogTitle>
 
-                                <div className="custom-scrollbar mt-6 max-h-[70vh] space-y-8 overflow-y-auto pr-2">
-                                    {/* Từ khóa */}
-                                    <section>
-                                        <h4 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-400">
-                                            {t("common.search") ||
-                                                "Từ khóa tìm kiếm"}
-                                        </h4>
-                                        <div className="relative">
-                                            <input
-                                                type="text"
-                                                value={filters.keyword}
-                                                onChange={(e) =>
-                                                    setFilters((prev) => ({
-                                                        ...prev,
-                                                        keyword: e.target.value,
-                                                    }))
-                                                }
-                                                placeholder={
-                                                    t(
-                                                        "vods.searchPlaceholder",
-                                                    ) ||
-                                                    "Nhập tên phim, diễn viên..."
-                                                }
-                                                className="w-full rounded-xl border border-zinc-700 bg-zinc-800 py-3 pl-12 pr-4 text-white outline-none transition-all placeholder:text-zinc-600 focus:border-transparent focus:ring-2 focus:ring-red-600"
-                                            />
-                                            <svg
-                                                className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-zinc-500"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
-                                            >
-                                                <path
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                    strokeWidth="2"
-                                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                                                />
-                                            </svg>
-                                            {filters.keyword && (
-                                                <button
-                                                    onClick={() =>
-                                                        setFilters((prev) => ({
-                                                            ...prev,
-                                                            keyword: "",
-                                                        }))
-                                                    }
-                                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-500 transition-colors hover:text-white"
-                                                >
-                                                    <svg
-                                                        className="h-4 w-4"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        viewBox="0 0 24 24"
-                                                    >
-                                                        <path
-                                                            strokeLinecap="round"
-                                                            strokeLinejoin="round"
-                                                            strokeWidth="2"
-                                                            d="M6 18L18 6M6 6l12 12"
-                                                        />
-                                                    </svg>
-                                                </button>
-                                            )}
-                                        </div>
-                                    </section>
-                                    {/* Nguồn */}
-                                    <section>
-                                        <h4 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-400">
-                                            {t("vods.source") || "Nguồn phim"}
-                                        </h4>
-                                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                            {[
-                                                {
-                                                    id: SOURCES.SOURCE_K,
-                                                    name: "KKPhim",
-                                                },
-                                                {
-                                                    id: SOURCES.SOURCE_O,
-                                                    name: "OPhim",
-                                                },
-                                                {
-                                                    id: SOURCES.SOURCE_C,
-                                                    name: "NguonC",
-                                                },
-                                                { id: "all", name: "Tất cả" },
-                                            ].map((src) => (
-                                                <button
-                                                    key={src.id}
-                                                    onClick={() =>
-                                                        handleSelect(
-                                                            "source",
-                                                            src.id,
-                                                        )
-                                                    }
-                                                    className={clsx(
-                                                        "rounded-xl border px-4 py-2 text-sm font-medium transition-all duration-200",
-                                                        filters.source ===
-                                                            src.id
-                                                            ? "border-red-600 bg-red-600 text-white shadow-lg shadow-red-600/20"
-                                                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white",
-                                                    )}
-                                                >
-                                                    {src.name}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </section>
+                                <div className="custom-scrollbar mt-6 max-h-[70vh] transform-gpu space-y-8 overflow-y-auto px-2 will-change-transform">
+                                    <KeywordSearchSection
+                                        initialValue={keywordRef.current}
+                                        onClear={() => handleSearchChange("")}
+                                        onChange={handleSearchChange}
+                                        t={t}
+                                    />
 
-                                    {/* Quốc gia */}
-                                    <section>
-                                        <h4 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-400">
-                                            {t("vods.country") || "Quốc gia"}
-                                        </h4>
-                                        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-                                            {COUNTRIES.map((c) => (
-                                                <button
-                                                    key={c.slug}
-                                                    onClick={() =>
-                                                        handleSelect(
-                                                            "country",
-                                                            c.slug,
-                                                        )
-                                                    }
-                                                    className={clsx(
-                                                        "truncate rounded-lg border px-2 py-1.5 text-center text-xs font-medium transition-all duration-200",
-                                                        filters.country ===
-                                                            c.slug
-                                                            ? "border-white bg-white text-zinc-900 shadow-lg"
-                                                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500",
-                                                    )}
-                                                >
-                                                    {c.name}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </section>
-
-                                    {/* Thể loại */}
-                                    <section>
-                                        <h4 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-400">
-                                            {t("vods.category") || "Thể loại"}
-                                        </h4>
-                                        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                                            {CATEGORIES.map((cat) => (
-                                                <button
-                                                    key={cat.slug}
-                                                    onClick={() =>
-                                                        handleSelect(
-                                                            "category",
-                                                            cat.slug,
-                                                        )
-                                                    }
-                                                    className={clsx(
-                                                        "truncate rounded-lg border px-2 py-1.5 text-center text-xs font-medium transition-all duration-200",
-                                                        filters.category ===
-                                                            cat.slug
-                                                            ? "border-white bg-white text-zinc-900 shadow-lg"
-                                                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500",
-                                                    )}
-                                                >
-                                                    {cat.name}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </section>
-
-                                    {/* Năm */}
-                                    <section>
-                                        <h4 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-400">
-                                            {t("vods.year") || "Năm phát hành"}
-                                        </h4>
-                                        <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8">
-                                            {YEARS.map((y) => (
-                                                <button
-                                                    key={y}
-                                                    onClick={() =>
-                                                        handleSelect("year", y)
-                                                    }
-                                                    className={clsx(
-                                                        "rounded-lg border px-1 py-1.5 text-center text-xs font-medium transition-all duration-200",
-                                                        filters.year === y
-                                                            ? "border-white bg-white text-zinc-900 shadow-lg"
-                                                            : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500",
-                                                    )}
-                                                >
-                                                    {y}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </section>
+                                    <SourceSection
+                                        selected={filters.source}
+                                        onSelect={handleSelect}
+                                        t={t}
+                                    />
+                                    <CountrySection
+                                        selected={filters.country}
+                                        onSelect={handleSelect}
+                                        t={t}
+                                    />
+                                    <CategorySection
+                                        selected={filters.category}
+                                        onSelect={handleSelect}
+                                        t={t}
+                                    />
+                                    <YearSection
+                                        selected={filters.year}
+                                        onSelect={handleSelect}
+                                        t={t}
+                                    />
                                 </div>
 
                                 <div className="mt-8 flex items-center gap-3">
                                     <button
                                         onClick={handleClear}
-                                        className="flex-1 rounded-xl bg-zinc-800 py-3 font-semibold text-zinc-300 transition-colors hover:bg-zinc-700"
+                                        className="flex-1 rounded-full bg-zinc-800 py-3 font-semibold text-zinc-300 transition-colors hover:bg-zinc-700"
                                     >
                                         {t("vods.clearFilter") || "Xóa bộ lọc"}
                                     </button>
                                     <button
                                         onClick={handleApply}
-                                        className="flex-2 rounded-xl bg-red-600 py-3 font-bold text-white shadow-lg shadow-red-600/30 transition-colors hover:bg-red-500"
+                                        className="flex-2 rounded-full bg-red-600 py-3 font-bold text-white shadow-lg shadow-red-600/30 transition-colors hover:bg-red-500"
                                     >
                                         {t("common.apply") || "Áp dụng"}
                                     </button>

@@ -91,7 +91,7 @@ const VodMovieCard = memo(({ movie, source, getImageUrl, onImageError }) => {
 
                     <div className="absolute right-2 top-2 z-30 flex flex-col items-end gap-1">
                         {movie.isTrailer ? (
-                            <div className="rounded-sm bg-red-600/90 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg backdrop-blur-sm">
+                            <div className="rounded-full bg-red-600/90 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg backdrop-blur-sm">
                                 {t("vods.comingSoon")}
                             </div>
                         ) : (
@@ -101,12 +101,12 @@ const VodMovieCard = memo(({ movie, source, getImageUrl, onImageError }) => {
                                     className="flex-col items-end"
                                 />
                                 {qualityBadge && (
-                                    <div className="rounded-sm border border-white/20 bg-black/80 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg ring-1 ring-white/10 backdrop-blur-sm">
+                                    <div className="rounded-full border border-white/20 bg-black/80 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg ring-1 ring-white/10 backdrop-blur-sm">
                                         {qualityBadge}
                                     </div>
                                 )}
                                 {movie.year && (
-                                    <div className="rounded-sm border border-white/20 bg-black/80 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg ring-1 ring-white/10 backdrop-blur-sm">
+                                    <div className="rounded-full border border-white/20 bg-black/80 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg ring-1 ring-white/10 backdrop-blur-sm">
                                         {movie.year || "N/A"}
                                     </div>
                                 )}
@@ -126,7 +126,7 @@ const VodMovieCard = memo(({ movie, source, getImageUrl, onImageError }) => {
                             {movie.origin_name || ""}
                         </p>
                         {movie.current_episode?.value && (
-                            <span className="shrink-0 rounded-sm bg-zinc-800 px-1.5 py-0.5 text-[9px] font-black uppercase text-red-500 ring-1 ring-white/5">
+                            <span className="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[9px] font-black uppercase text-red-500 ring-1 ring-white/5">
                                 {movie.current_episode.value}
                             </span>
                         )}
