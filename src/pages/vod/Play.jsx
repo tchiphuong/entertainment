@@ -61,53 +61,70 @@ const JWPLAYER_LICENSE_MOCK = {
     overrideAdConfig: false,
 };
 
-// Helper function để clean M3U8 content
+// Hàm hỗ trợ làm sạch nội dung M3U8 (loại bỏ quảng cáo, chuẩn hóa đường dẫn)
 function cleanM3U8Content(text, baseURL = "") {
     const lines = text.split("\n");
     const cleaned = [];
 
-    let skipBlock = false; // Dùng để bỏ nguyên block có #EXT-X-KEY
+    let skipBlock = false; // Cờ dùng để bỏ qua khối chứa quảng cáo (#EXT-X-KEY)
 
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i].trim();
 
-        // Kiểm tra block bắt đầu bằng #EXT-X-DISCONTINUITY + #EXT-X-KEY:METHOD=NONE
+        // Kiểm tra khối bắt đầu bằng #EXT-X-DISCONTINUITY + #EXT-X-KEY:METHOD=NONE
+        // Đây là cấu trúc quảng cáo phổ biến trên một số server phim
         if (
             !skipBlock &&
             line === "#EXT-X-DISCONTINUITY" &&
             lines[i + 1]?.startsWith("#EXT-X-KEY:METHOD=NONE")
         ) {
             skipBlock = true;
-            i++; // bỏ luôn dòng #EXT-X-KEY
+            i++; // Bỏ qua dòng #EXT-X-KEY
             continue;
         }
 
-        // Nếu đang skip block
+        // Nếu đang trong trạng thái bỏ qua khối quảng cáo
         if (skipBlock) {
             if (line === "#EXT-X-DISCONTINUITY") {
-                skipBlock = false; // kết thúc block
+                skipBlock = false; // Kết thúc khối quảng cáo
             }
-            continue; // bỏ tất cả các dòng trong block
+            continue; // Bỏ qua tất cả các dòng bên trong khối
         }
 
-        // Bỏ các #EXT-X-DISCONTINUITY thừa
+        // Loại bỏ các tag #EXT-X-DISCONTINUITY thừa để đảm bảo timeline mượt mà trên Shaka Player
         if (line === "#EXT-X-DISCONTINUITY") continue;
 
-        const isSegment = /\.(ts|png|jpg|jpeg|gif)(\?|$)/i.test(line);
+        // Kiểm tra xem dòng hiện tại có phải là một segment video không
+        const isSegment =
+            /\.(ts|png|jpg|jpeg|gif|m4s|mp4)(\?|$)/i.test(line) &&
+            !line.startsWith("#");
 
-        // Nếu là dòng segment có "convertv7/", loại bỏ "convertv7/"
-        if (isSegment && line.includes("convertv7/")) {
-            line = line.replace("convertv7/", "");
-        }
+        if (isSegment) {
+            // Loại bỏ quảng cáo chủ động dựa trên các mẫu đường dẫn đặc trưng (/adjump/)
+            if (line.includes("/adjump/") || /ads|telecom|static/i.test(line)) {
+                if (
+                    cleaned.length > 0 &&
+                    cleaned[cleaned.length - 1].startsWith("#EXTINF")
+                ) {
+                    cleaned.pop(); // Xóa cả tag thời lượng #EXTINF kề trên
+                }
+                continue;
+            }
 
-        // Nếu có baseURL, ghép luôn full link cho các segment
-        if (baseURL && isSegment && !line.startsWith("http")) {
-            line = baseURL + line;
+            // Loại bỏ tiền tố convertv7/ nếu có (đảm bảo đường dẫn segment chuẩn)
+            if (line.includes("convertv7/")) {
+                line = line.replace("convertv7/", "");
+            }
+
+            // Chuẩn hóa thành đường dẫn tuyệt đối cho Shaka Player
+            if (baseURL && !line.startsWith("http") && !line.startsWith("/")) {
+                line = baseURL + line;
+            }
         }
 
         cleaned.push(line);
     }
-    console.log(cleaned.join("\n"));
+
     return cleaned.join("\n");
 }
 
@@ -126,7 +143,7 @@ window.fetch = function (...args) {
         );
     }
 
-    // Intercept M3U8 requests to strip #EXT-X-DISCONTINUITY
+    // Chặn các yêu cầu M3U8 để loại bỏ quảng cáo và tag ngắt quãng
     const fetchPromise = originalFetch.apply(this, args);
 
     if (url && url.includes(".m3u8")) {
@@ -137,10 +154,6 @@ window.fetch = function (...args) {
                 .clone()
                 .text()
                 .then((text) => {
-                    const originalDiscontinuityCount = (
-                        text.match(/#EXT-X-DISCONTINUITY/g) || []
-                    ).length;
-
                     const baseURL = url
                         .split("?")[0]
                         .substring(0, url.split("?")[0].lastIndexOf("/") + 1);
@@ -175,32 +188,24 @@ XMLHttpRequest.prototype.send = function (...args) {
             if (this.readyState === 4 && this.status === 200) {
                 try {
                     const originalText = this.responseText;
-                    const discontinuityCount = (
-                        originalText.match(/#EXT-X-DISCONTINUITY/g) || []
-                    ).length;
 
-                    if (discontinuityCount > 0) {
-                        const baseURL = this._url
-                            .split("?")[0]
-                            .substring(
-                                0,
-                                this._url.split("?")[0].lastIndexOf("/") + 1,
-                            );
-                        const cleanedText = cleanM3U8Content(
-                            originalText,
-                            baseURL,
+                    const baseURL = this._url
+                        .split("?")[0]
+                        .substring(
+                            0,
+                            this._url.split("?")[0].lastIndexOf("/") + 1,
                         );
+                    const cleanedText = cleanM3U8Content(originalText, baseURL);
 
-                        // Override responseText
-                        Object.defineProperty(this, "responseText", {
-                            writable: true,
-                            value: cleanedText,
-                        });
-                        Object.defineProperty(this, "response", {
-                            writable: true,
-                            value: cleanedText,
-                        });
-                    }
+                    // Override responseText
+                    Object.defineProperty(this, "responseText", {
+                        writable: true,
+                        value: cleanedText,
+                    });
+                    Object.defineProperty(this, "response", {
+                        writable: true,
+                        value: cleanedText,
+                    });
                 } catch (e) {
                     // Failed to clean M3U8 via XHR
                 }
@@ -1787,36 +1792,45 @@ export default function VodPlay() {
         await player.attach(video);
         shakaPlayerRef.current = player;
 
-        // Thêm filter để clean playlist m3u8 (bỏ discontinuity) vì Shaka Player bypass fetch/XHR interceptor
+        // Thêm filter để dọn dẹp playlist m3u8 vì Shaka Player đôi khi bỏ qua các interceptor fetch/XHR toàn cục
         if (player.getNetworkingEngine) {
             player
                 .getNetworkingEngine()
                 .registerResponseFilter((type, response) => {
-                    // response.uri có thể là mảng URI hoặc string URI tùy phiên bản shaka
-                    const uri = Array.isArray(response.uris)
-                        ? response.uris[0]
-                        : response.uri;
+                    // Shaka Player v3+ dùng response.uris, v2 dùng response.uri
+                    const uris =
+                        response.uris || (response.uri ? [response.uri] : []);
+                    const uri = uris[0] || "";
+
                     if (uri && uri.includes(".m3u8")) {
                         try {
-                            let text = new TextDecoder().decode(response.data);
+                            const decoder = new TextDecoder("utf-8");
+                            let text = decoder.decode(response.data);
+
                             if (
                                 text.includes("#EXT-X-DISCONTINUITY") ||
-                                text.includes("convertv7/")
+                                text.includes("convertv7/") ||
+                                text.includes("/adjump/") ||
+                                text.includes("ads")
                             ) {
-                                const baseURL = uri
-                                    .split("?")[0]
-                                    .substring(
+                                const urlObj = new URL(uri);
+                                const baseURL =
+                                    urlObj.origin +
+                                    urlObj.pathname.substring(
                                         0,
-                                        uri.split("?")[0].lastIndexOf("/") + 1,
+                                        urlObj.pathname.lastIndexOf("/") + 1,
                                     );
-                                text = cleanM3U8Content(text, baseURL);
-                                response.data = new TextEncoder().encode(text);
+
+                                const cleanedText = cleanM3U8Content(
+                                    text,
+                                    baseURL,
+                                );
+                                response.data = new TextEncoder().encode(
+                                    cleanedText,
+                                );
                             }
                         } catch (e) {
-                            console.error(
-                                "Lỗi khi clean M3U8 trong Shaka filter",
-                                e,
-                            );
+                            // Bỏ qua lỗi decode cho dữ liệu không phải text
                         }
                     }
                 });

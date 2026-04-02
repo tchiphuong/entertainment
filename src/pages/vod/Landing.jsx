@@ -299,7 +299,7 @@ export default function VodLanding() {
                                             </p>
                                         </>
                                     ) : (
-                                        <h1 className="mb-4 text-5xl font-medium leading-tight tracking-normal text-white text-balance drop-shadow-2xl md:text-8xl md:leading-[1.1]">
+                                        <h1 className="mb-4 text-balance text-3xl font-medium leading-tight tracking-normal text-white drop-shadow-2xl md:text-8xl md:leading-[1.1]">
                                             {movie.name}
                                         </h1>
                                     )}
@@ -700,7 +700,7 @@ function MovieRow({
                 {showLeftArrow && (
                     <button
                         onClick={() => scroll("left")}
-                        className="z-60 absolute left-2 top-1/2 -translate-y-1/2 hidden h-12 w-12 items-center justify-center rounded-full bg-zinc-950/50 text-white opacity-0 transition-opacity hover:bg-zinc-950/80 group-hover/row:opacity-100 md:flex md:h-14 md:w-14"
+                        className="z-60 absolute left-2 top-1/2 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-zinc-950/50 text-white opacity-0 transition-opacity hover:bg-zinc-950/80 group-hover/row:opacity-100 md:flex md:h-14 md:w-14"
                     >
                         <svg
                             className="h-10 w-10"
@@ -739,7 +739,7 @@ function MovieRow({
                 {showRightArrow && (
                     <button
                         onClick={() => scroll("right")}
-                        className="z-60 absolute right-2 top-1/2 -translate-y-1/2 hidden h-12 w-12 items-center justify-center rounded-full bg-zinc-950/50 text-white opacity-0 transition-opacity hover:bg-zinc-950/80 group-hover/row:opacity-100 md:flex md:h-14 md:w-14"
+                        className="z-60 absolute right-2 top-1/2 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-zinc-950/50 text-white opacity-0 transition-opacity hover:bg-zinc-950/80 group-hover/row:opacity-100 md:flex md:h-14 md:w-14"
                     >
                         <svg
                             className="h-10 w-10"

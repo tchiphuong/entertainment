@@ -47,7 +47,7 @@ export default function Listing() {
     const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
     const { t, i18n } = useTranslation();
-    const { getImageUrl } = useImageFallback();
+    const { getImageUrl, handleImageError } = useImageFallback();
     const { currentUser } = useAuth();
     const [historyItems, setHistoryItems] = useState([]);
     const [favoriteItems, setFavoriteItems] = useState([]);
