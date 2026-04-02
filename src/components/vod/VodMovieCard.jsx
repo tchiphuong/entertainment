@@ -26,28 +26,37 @@ function getQualityBadge(quality) {
     return quality || "";
 }
 
-const VodMovieCard = memo(({ movie, source, getImageUrl, onImageError }) => {
-    const { t } = useTranslation();
-    const { isFavorite, toggleFavorite } = useVodContext();
-    if (!movie?.slug) return null;
+const VodMovieCard = memo(
+    ({ movie, source, getImageUrl, onImageError, className = "", onDelete }) => {
+        const { t } = useTranslation();
+        const { isFavorite, toggleFavorite } = useVodContext();
+        if (!movie?.slug) return null;
 
-    const favorite = isFavorite(movie.slug);
-    const qualityBadge = getQualityBadge(movie.quality);
+        const favorite = isFavorite(movie.slug);
+        const qualityBadge = getQualityBadge(movie.quality);
 
-    const episodeParam = movie.current_episode?.key
-        ? `&episode=${movie.current_episode.key}`
-        : "";
-    const serverParam = movie.server ? `&server=${movie.server}` : "";
-    const playUrl = `/vod/play/${movie.slug}?source=${movie.source || source || "source_k"}${episodeParam}${serverParam}`;
+        const episodeParam = movie.current_episode?.key
+            ? `&episode=${movie.current_episode.key}`
+            : "";
+        const serverParam = movie.server ? `&server=${movie.server}` : "";
+        const playUrl = `/vod/play/${movie.slug}?source=${movie.source || source || "source_k"}${episodeParam}${serverParam}`;
 
-    const handleToggleFavorite = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        toggleFavorite(movie);
-    };
+        const handleToggleFavorite = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleFavorite(movie);
+        };
 
-    return (
-        <div className="group transition-all duration-300 hover:z-40 hover:scale-[1.02]">
+        const handleDelete = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (onDelete) onDelete(movie.slug);
+        };
+
+        return (
+            <div
+                className={`group mx-auto w-full max-w-[13.75rem] transition-all duration-300 hover:z-40 hover:scale-[1.02] md:max-w-[15rem] lg:max-w-[16.25rem] xl:max-w-[17.5rem] ${className}`}
+            >
             <Link to={playUrl} className="block">
                 <div className="aspect-2/3 relative overflow-hidden rounded-lg border border-white/5 bg-zinc-900 shadow-2xl transition-all">
                     <img
@@ -88,6 +97,29 @@ const VodMovieCard = memo(({ movie, source, getImageUrl, onImageError }) => {
                             </svg>
                         </button>
                     </div>
+
+                    {/* Nút xóa khỏi lịch sử (chỉ hiện khi có onDelete) */}
+                    {onDelete && (
+                        <div className="absolute bottom-2 right-2 z-40">
+                            <button
+                                onClick={handleDelete}
+                                className="flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-black/40 opacity-0 shadow-xl backdrop-blur-md transition-all duration-300 hover:border-red-500/50 hover:bg-red-600/80 active:scale-90 group-hover:opacity-100"
+                                title={t("common.delete") || "Xóa"}
+                            >
+                                <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    className="h-3.5 w-3.5 stroke-white"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    strokeWidth="2.5"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                >
+                                    <path d="M18 6L6 18M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                    )}
 
                     <div className="absolute right-2 top-2 z-30 flex flex-col items-end gap-1">
                         {movie.isTrailer ? (
@@ -136,5 +168,6 @@ const VodMovieCard = memo(({ movie, source, getImageUrl, onImageError }) => {
         </div>
     );
 });
+
 
 export default VodMovieCard;

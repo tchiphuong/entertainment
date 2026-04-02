@@ -1,36 +1,11 @@
 import React from "react";
-import { useNavigate } from "react-router-dom";
 import VodNavbar from "./VodNavbar";
-import VodFilterModal from "../vod/VodFilterModal";
-import { useVodContext } from "../../contexts/VodContext";
 
 export default function VodLayout({ children }) {
-    const navigate = useNavigate();
-    const { isFilterOpen, setIsFilterOpen, initialFilters } = useVodContext();
-
-    const handleFilterApply = (filters) => {
-        const params = new URLSearchParams();
-        if (filters.source && filters.source !== "all")
-            params.set("source", filters.source);
-        if (filters.country) params.set("country", filters.country);
-        if (filters.category) params.set("category", filters.category);
-        if (filters.year) params.set("year", filters.year);
-
-        navigate(`/vod/search?${params.toString()}`);
-        setIsFilterOpen(false);
-    };
-
     return (
         <div className="min-h-screen bg-zinc-950 font-sans text-white selection:bg-red-600 selection:text-white">
             <VodNavbar />
             <main>{children}</main>
-
-            <VodFilterModal
-                isOpen={isFilterOpen}
-                onClose={() => setIsFilterOpen(false)}
-                onApply={handleFilterApply}
-                initialFilters={initialFilters}
-            />
 
             <style
                 dangerouslySetInnerHTML={{

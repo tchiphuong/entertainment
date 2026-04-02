@@ -96,7 +96,7 @@ const normalizeMovie = (item, source) => {
 };
 
 // parseApiJson logic mirrored from Vods.jsx
-const parseApiJson = (json) => {
+const parseApiJson = (json, limit = 12) => {
     let items = [];
     let totalPages = 1;
     let totalItems = 0;
@@ -116,7 +116,7 @@ const parseApiJson = (json) => {
             totalItems = pag.totalItems || items.length;
             totalPages =
                 pag.totalPages ||
-                Math.ceil(totalItems / (pag.totalItemsPerPage || 24));
+                Math.ceil(totalItems / (pag.totalItemsPerPage || limit));
         } else {
             totalItems = items.length;
         }
@@ -132,7 +132,7 @@ const parseApiJson = (json) => {
             json.data.params.pagination.totalPages ||
             Math.ceil(
                 totalItems /
-                    (json.data.params.pagination.totalItemsPerPage || 24),
+                    (json.data.params.pagination.totalItemsPerPage || limit),
             );
     } else if (Array.isArray(json)) {
         items = json;
@@ -149,7 +149,7 @@ const parseApiJson = (json) => {
         totalPages =
             json.result.total_page ||
             json.result.totalPages ||
-            Math.ceil(totalItems / 24);
+            Math.ceil(totalItems / limit);
     } else if (Array.isArray(json.items)) {
         items = json.items;
         totalItems = items.length;
@@ -159,7 +159,7 @@ const parseApiJson = (json) => {
             totalItems = pag.totalItems || totalItems;
             totalPages =
                 pag.totalPages ||
-                Math.ceil(totalItems / (pag.totalItemsPerPage || 24));
+                Math.ceil(totalItems / (pag.totalItemsPerPage || limit));
         }
     } else if (Array.isArray(json.data)) {
         items = json.data;
@@ -178,6 +178,8 @@ const tmdbCache = new Map();
 const getVodCacheKey = (cat) => {
     return JSON.stringify({
         id: cat.id,
+        type: cat.type,
+        useV1: cat.useV1,
         source: cat.source,
         page: cat.page || 1,
         params: cat.params || {},
@@ -274,6 +276,15 @@ export const useVodData = (passedCategories) => {
                 const cached = vodCache.get(cacheKey);
 
                 if (cached) {
+                    // Nếu là cache lỗi (Negative Cache), trả về rỗng ngay lập tức
+                    if (cached.isError) {
+                        return {
+                            id: cat.id,
+                            items: [],
+                            totalPages: 1,
+                            totalItems: 0,
+                        };
+                    }
                     return cached;
                 }
 
@@ -287,9 +298,15 @@ export const useVodData = (passedCategories) => {
                 const limit = cat.limit || (cat.isView === false ? 24 : 12);
 
                 // Build query params
+                const paramsData = { page: page };
+                
+                // Chỉ gửi limit nếu là API V1 (KKPhim/OPhim) hoặc nguồn Rophim có hỗ trợ
+                if (cat.useV1 || cat.source === SOURCES.SOURCE_R) {
+                    paramsData.limit = limit;
+                }
+
                 const params = new URLSearchParams({
-                    page: page,
-                    limit: limit,
+                    ...paramsData,
                     ...(cat.params || {}),
                 });
 
@@ -330,8 +347,12 @@ export const useVodData = (passedCategories) => {
 
                 try {
                     const res = await fetch(url);
-                    if (!res.ok)
-                        return { id: cat.id, items: [], totalPages: 1 };
+                    if (!res.ok) {
+                        // Negative Caching: Lưu lại lỗi để không gọi lại dánh sách này nữa
+                        const errorData = { id: cat.id, items: [], totalPages: 1, totalItems: 0, isError: true };
+                        vodCache.set(cacheKey, errorData);
+                        return errorData;
+                    }
                     const json = await res.json();
 
                     // Special handling for Rophim collections
@@ -347,7 +368,7 @@ export const useVodData = (passedCategories) => {
                         items = collection ? collection.movies || [] : [];
                     } else {
                         // Default parsing for most sources
-                        const parsed = parseApiJson(json);
+                        const parsed = parseApiJson(json, limit);
                         items = parsed.items;
                         totalPages = parsed.totalPages;
                         totalItems = parsed.totalItems;
@@ -380,7 +401,6 @@ export const useVodData = (passedCategories) => {
                     return { id: cat.id, items: [], totalPages: 1 };
                 }
             });
-
 
             const results = await Promise.all(fetchPromises);
             const sectionsData = {};

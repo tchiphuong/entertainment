@@ -12,20 +12,18 @@ import MovieLanguageBadges from "../../components/vod/MovieLanguageBadges";
 import VodMovieCard from "../../components/vod/VodMovieCard";
 import { CATEGORIES, SOURCES } from "../../constants/vodConstants";
 import VodLayout from "../../components/layout/VodLayout";
-import { useAuth } from "../../contexts/AuthContext";
-import {
-    fetchHistoryFromFirestore,
-    fetchFavoritesFromFirestore,
-    dedupeHistory,
-} from "../../services/firebaseHelpers";
-
 import { useVodContext } from "../../contexts/VodContext";
 
 export default function VodLanding() {
     const { t } = useTranslation();
     const navigate = useNavigate();
-    const { openFilter, favorites: rawFavorites } = useVodContext();
-    const { currentUser } = useAuth();
+    const {
+        favorites: rawFavorites,
+        history: rawHistory,
+        historyLoading,
+        removeFromHistory,
+        clearAllHistory,
+    } = useVodContext();
     const { sections, heroMovies, loading } = useVodData(CATEGORIES);
     const { getImageUrl, handleImageError } = useImageFallback();
 
@@ -36,7 +34,6 @@ export default function VodLanding() {
     const touchEndX = useRef(0);
     const [historyItems, setHistoryItems] = useState([]);
     const [favoriteItems, setFavoriteItems] = useState([]);
-    const [historyLoading, setHistoryLoading] = useState(false);
     const [favoriteLoading, setFavoriteLoading] = useState(false);
 
     const normalizeLibraryItems = useCallback(
@@ -68,41 +65,11 @@ export default function VodLanding() {
         [t],
     );
 
+    // Đồng bộ history từ VodContext
     useEffect(() => {
-        const loadHistoryForLanding = async () => {
-            setHistoryLoading(true);
-            try {
-                // Luôn lấy từ localStorage TRƯỚC (vì nó chứa cái mới nhất vừa xem)
-                const localHistoryStr = localStorage.getItem("viewHistory");
-                const localHistory = localHistoryStr
-                    ? JSON.parse(localHistoryStr)
-                    : [];
-
-                let rawHistory = localHistory;
-
-                if (currentUser?.uid) {
-                    // Nếu có User, lấy thêm từ Firestore rồi merge
-                    const firestoreHistory = await fetchHistoryFromFirestore(
-                        currentUser.uid,
-                    );
-                    rawHistory = dedupeHistory([
-                        ...localHistory,
-                        ...firestoreHistory,
-                    ]);
-                }
-
-                const normalizedHistory = normalizeLibraryItems(rawHistory);
-                setHistoryItems(normalizedHistory);
-            } catch (error) {
-                console.error("Load history for landing error:", error);
-                setHistoryItems([]);
-            } finally {
-                setHistoryLoading(false);
-            }
-        };
-
-        loadHistoryForLanding();
-    }, [currentUser?.uid, normalizeLibraryItems]);
+        const normalizedHistory = normalizeLibraryItems(rawHistory);
+        setHistoryItems(normalizedHistory);
+    }, [rawHistory, normalizeLibraryItems]);
 
     useEffect(() => {
         const normalizedFavorites = normalizeLibraryItems(rawFavorites);
@@ -142,15 +109,30 @@ export default function VodLanding() {
         startSlider();
     }, [heroMovies, startSlider]);
 
+    const isSwiping = useRef(false);
+
     const handleTouchStart = (e) => {
         touchStartX.current = e.targetTouches[0].clientX;
+        touchEndX.current = e.targetTouches[0].clientX; // Khởi tạo bằng start để tránh distance lớn khi chỉ tap
+        isSwiping.current = false;
     };
 
     const handleTouchMove = (e) => {
         touchEndX.current = e.targetTouches[0].clientX;
+        // Chỉ đánh dấu swiping nếu di chuyển đủ xa (> 10px)
+        if (Math.abs(touchStartX.current - touchEndX.current) > 10) {
+            isSwiping.current = true;
+        }
     };
 
     const handleTouchEnd = (e) => {
+        // Nếu không swipe (chỉ tap) → bỏ qua, cho phép button click bình thường
+        if (!isSwiping.current) {
+            touchStartX.current = 0;
+            touchEndX.current = 0;
+            return;
+        }
+
         const threshold = 70;
         const distance = touchStartX.current - touchEndX.current;
 
@@ -164,6 +146,7 @@ export default function VodLanding() {
         }
         touchStartX.current = 0;
         touchEndX.current = 0;
+        isSwiping.current = false;
     };
 
     useEffect(() => {
@@ -472,6 +455,8 @@ export default function VodLanding() {
                         getImageUrl={getImageUrl}
                         handleImageError={handleImageError}
                         navigate={navigate}
+                        onDelete={removeFromHistory}
+                        onClearAll={clearAllHistory}
                     />
                 )}
 
@@ -642,6 +627,8 @@ function MovieRow({
     getImageUrl,
     handleImageError,
     navigate,
+    onDelete,
+    onClearAll,
 }) {
     const { t } = useTranslation();
     const rowRef = useRef(null);
@@ -669,32 +656,60 @@ function MovieRow({
 
     return (
         <div className="group/row space-y-5">
-            <div className="group/title -mb-4 flex items-center justify-between gap-4 px-4 md:px-12 lg:justify-start lg:px-20">
-                <h2 className="flex items-center gap-3 text-2xl font-black text-zinc-100 md:text-3xl">
-                    <span className="h-8 w-1.5 rounded-full bg-red-600"></span>
-                    {title}
-                </h2>
-                {link && (
-                    <Link
-                        to={link}
-                        className="flex items-center gap-1 text-sm font-bold text-zinc-500 opacity-100 transition-all duration-300 hover:text-red-500 focus:opacity-100 group-hover/title:opacity-100 md:opacity-0"
-                    >
-                        {t("common.seeMore")}
-                        <svg
-                            className="h-4 w-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
+            <div className="group/title -mb-4 flex items-center justify-between gap-4 px-4 md:px-12 lg:px-20">
+                <div className="flex items-center gap-3">
+                    <h2 className="flex items-center gap-3 text-2xl font-black text-zinc-100 md:text-3xl">
+                        <span className="h-8 w-1.5 rounded-full bg-red-600"></span>
+                        {title}
+                    </h2>
+                    {/* Nút xóa tất cả lịch sử */}
+                    {onClearAll && items.length > 0 && (
+                        <button
+                            onClick={onClearAll}
+                            className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 transition-all hover:border-red-600/50 hover:bg-red-600/10 hover:text-red-500 active:scale-95"
+                            title={t("common.clearAll") || "Xóa tất cả"}
                         >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={3}
-                                d="M9 5l7 7-7 7"
-                            />
-                        </svg>
-                    </Link>
-                )}
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="h-3.5 w-3.5"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                />
+                            </svg>
+                            {t("common.clearAll") || "Xóa tất cả"}
+                        </button>
+                    )}
+                </div>
+                <div className="flex items-center gap-3">
+                    {link && (
+                        <Link
+                            to={link}
+                            className="flex items-center gap-1 text-sm font-bold text-zinc-500 opacity-100 transition-all duration-300 hover:text-red-500 focus:opacity-100 group-hover/title:opacity-100 md:opacity-0"
+                        >
+                            {t("common.seeMore")}
+                            <svg
+                                className="h-4 w-4"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={3}
+                                    d="M9 5l7 7-7 7"
+                                />
+                            </svg>
+                        </Link>
+                    )}
+                </div>
             </div>
             <div className="relative">
                 {showLeftArrow && (
@@ -725,13 +740,14 @@ function MovieRow({
                     {items.map((item) => (
                         <div
                             key={item.slug}
-                            className="relative min-w-[170px] transition-all duration-500 hover:z-50 md:min-w-[210px] lg:min-w-[250px]"
+                            className="relative w-[13.75rem] shrink-0 transition-all duration-500 hover:z-50 md:w-[15rem] lg:w-[16.25rem] xl:w-[17.5rem]"
                         >
                             <VodMovieCard
                                 movie={item}
                                 source={source}
                                 getImageUrl={getImageUrl}
                                 onImageError={handleImageError}
+                                onDelete={onDelete}
                             />
                         </div>
                     ))}

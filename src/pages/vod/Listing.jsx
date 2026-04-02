@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
     useParams,
     useNavigate,
     Link,
     useSearchParams,
+    useLocation,
 } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useVodData } from "../../hooks/useVodData";
@@ -12,18 +13,23 @@ import { useImageFallback } from "../../hooks/useImageFallback";
 import VodMovieCard from "../../components/vod/VodMovieCard";
 import VodCategoryMenu from "../../components/vod/VodCategoryMenu";
 import VodLayout from "../../components/layout/VodLayout";
+import clsx from "clsx";
+import { useVodContext } from "../../contexts/VodContext";
 import {
     SOURCES,
-    TMDB_IMAGE_BASE_URL,
-    TMDB_IMAGE_SIZES,
+    SOURCE_C_COUNTRIES,
+    SOURCE_C_CATEGORIES,
+    FILTER_YEARS,
+    FILTER_SOURCES,
+    FILTER_TYPE_LIST,
 } from "../../constants/vodConstants";
 import { useAuth } from "../../contexts/AuthContext";
 import {
     fetchHistoryFromFirestore,
     fetchFavoritesFromFirestore,
 } from "../../services/firebaseHelpers";
-import VodFilterModal from "../../components/vod/VodFilterModal";
-import { useVodContext } from "../../contexts/VodContext";
+
+const filterMetadataCache = new Map();
 
 const generateVisiblePages = (totalPages, currentPage) => {
     const pages = [];
@@ -46,19 +52,23 @@ export default function Listing() {
     const { country, category } = useParams();
     const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
+    const location = useLocation();
     const { t, i18n } = useTranslation();
+
+    const pageSize = 12;
     const { getImageUrl, handleImageError } = useImageFallback();
     const { currentUser } = useAuth();
     const [historyItems, setHistoryItems] = useState([]);
     const [favoriteItems, setFavoriteItems] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
     const [favoriteLoading, setFavoriteLoading] = useState(false);
-    const {
-        isFilterOpen,
-        setIsFilterOpen,
-        openFilter,
-        favorites: rawFavorites,
-    } = useVodContext();
+    const { favorites: rawFavorites } = useVodContext();
+    const [showFilters, setShowFilters] = useState(false);
+
+    // Metadata từ API dựa trên activeSource
+    const [availableCategories, setAvailableCategories] = useState([]);
+    const [availableCountries, setAvailableCountries] = useState([]);
+    const [metadataLoading, setMetadataLoading] = useState(false);
 
     const isHistoryCategory = category === "history";
     const isFavoritesCategory = category === "favorites";
@@ -75,9 +85,27 @@ export default function Listing() {
     const currentQuery = getUrlParam("q");
     const currentPage = parseInt(getUrlParam("page") || "1");
     const currentYear = getUrlParam("year");
-    const activeSource = getUrlParam("source") || SOURCES.SOURCE_K;
+    const activeSource = getUrlParam("source") || "all";
     const currentCountry = getUrlParam("country") || country || "";
-    const currentCategory = getUrlParam("category") || category || "";
+
+    const DANH_SACH_TYPES = [
+        "phim-bo",
+        "phim-le",
+        "hoat-hinh",
+        "tv-shows",
+        "phim-vietsub",
+        "phim-thuyet-minh",
+        "phim-long-tieng",
+        "phim-bo-dang-chieu",
+        "phim-bo-hoan-thanh",
+        "phim-sap-chieu",
+    ];
+    const isListType = category && DANH_SACH_TYPES.includes(category);
+
+    const activeListContext =
+        getUrlParam("type_list") || (isListType ? category : "");
+    const currentCategory =
+        getUrlParam("category") || (isListType ? "" : category) || "";
 
     const normalizeLibraryItems = (rawItems) => {
         return (Array.isArray(rawItems) ? rawItems : [])
@@ -117,238 +145,396 @@ export default function Listing() {
             });
     };
 
-    // Determine type and context
-    let filterType = t("vods.category");
-    let filterValue =
-        currentCategory ||
-        currentCountry ||
-        (currentQuery ? t("common.search") : "");
-    let type = "";
-    let useV1 = false;
-
-    if (isHistoryCategory) {
-        filterType = t("vods.category");
-        filterValue = t("vods.history");
-    } else if (isFavoritesCategory) {
-        filterType = t("vods.category");
-        filterValue = t("vods.favorites");
-    } else if (currentQuery) {
-        // Tìm kiếm tổng hợp (Merged Search)
-        filterType = t("common.search");
-        filterValue = currentQuery;
-        type = "tim-kiem"; // Note: Search components use their own searchCategories logic
-        useV1 = true;
-    } else if (currentCategory || currentCountry) {
-        // Lọc theo Danh mục/Quốc gia (Single Source - có thể kèm Year)
-        filterType = currentCategory ? t("vods.category") : t("vods.country");
-        filterValue = currentCategory || currentCountry;
-        type = currentCategory
-            ? `the-loai/${currentCategory}`
-            : `quoc-gia/${currentCountry}`;
-        // NguonC không dùng v1/api prefix
-        useV1 = activeSource !== SOURCES.SOURCE_C;
-    } else if (currentYear) {
-        // Lọc theo Năm (Merged Search - dùng endpoint tìm kiếm)
-        filterType = t("vods.filterByYear");
-        filterValue = currentYear;
-        type = "tim-kiem";
-        useV1 = true;
-    } else {
-        // Mặc định: Phim mới cập nhật
-        filterType = t("vods.category");
-        filterValue = t("vods.newMovies");
-        type = "danh-sach/phim-moi-cap-nhat";
-        useV1 = false;
-    }
-
-    // Mapping for user-friendly titles
-    const displayTitle = currentQuery
-        ? t("vods.resultsFor", { query: currentQuery })
-        : currentYear
-          ? t("vods.moviesInYear", { year: currentYear })
-          : filterValue
-            ? filterValue.charAt(0).toUpperCase() +
-              filterValue.slice(1).replace(/-/g, " ")
-            : t("vods.newMovies");
-
-    const finalTitle =
-        currentQuery || currentYear
-            ? displayTitle
-            : `${filterType}: ${displayTitle}`;
-
-    // Helper to clean params - Fix: ensure no empty values go to API
-    const cleanParamsForApi = (p, currentType) => {
-        const cleaned = {};
-        Object.entries(p).forEach(([k, v]) => {
-            // Quy tắc: Nếu đã dùng endpoint chuyên biệt (the-loai, quoc-gia), không gửi lại chính nó trong params
-            if (currentType?.includes("the-loai") && k === "category") return;
-            if (currentType?.includes("quoc-gia") && k === "country") return;
-            if (v && v.toString().trim() !== "") cleaned[k] = v;
-        });
-        return cleaned;
+    const getSlugName = (slug, list) => {
+        if (!slug) return "";
+        const item = list?.find((i) => i.slug === slug);
+        return item
+            ? item.name
+            : slug
+                  .split("-")
+                  .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+                  .join(" ");
     };
 
-    // Aggregated data fetching for filters (Search, Year, Category, Country)
-    const handleFilterApply = (newFilters) => {
-        const params = new URLSearchParams(searchParams);
-        if (newFilters.source) params.set("source", newFilters.source);
-        else params.delete("source");
-
-        if (newFilters.country) params.set("country", newFilters.country);
-        else params.delete("country");
-
-        if (newFilters.category) params.set("category", newFilters.category);
-        else params.delete("category");
-
-        if (newFilters.year) params.set("year", newFilters.year);
-        else params.delete("year");
-
-        if (newFilters.keyword !== undefined) {
-          if (newFilters.keyword.trim()) params.set("q", newFilters.keyword.trim());
-          else params.delete("q");
+    let titleParts = [];
+    if (currentQuery) {
+        titleParts.push(
+            t("vods.resultsFor", { query: currentQuery }) ||
+                `Tìm kiếm: ${currentQuery}`,
+        );
+    } else {
+        if (activeListContext) {
+            titleParts.push(getSlugName(activeListContext, FILTER_TYPE_LIST));
+        }
+        if (currentCategory) {
+            titleParts.push(
+                `Thể loại: ${getSlugName(currentCategory, availableCategories)}`,
+            );
+        }
+        if (currentCountry) {
+            titleParts.push(
+                `Quốc gia: ${getSlugName(currentCountry, availableCountries)}`,
+            );
+        }
+        if (currentYear) {
+            titleParts.push(`Năm: ${currentYear}`);
         }
 
-        params.set("page", "1");
-        setSearchParams(params);
-        setIsFilterOpen(false);
+        if (isHistoryCategory) {
+            titleParts = [t("vods.history") || "Lịch sử xem phim"];
+        } else if (isFavoritesCategory) {
+            titleParts = [t("vods.favorites") || "Phim yêu thích"];
+        } else if (titleParts.length === 0) {
+            titleParts.push(t("vods.newMovies") || "Phim mới cập nhật");
+        }
+    }
+
+    const finalTitle = titleParts.join(" • ");
+
+    // Fetch metadata theo nguồn đang chọn
+    useEffect(() => {
+        const fetchMetadata = async () => {
+            const cacheKey = activeSource || "all";
+            if (filterMetadataCache.has(cacheKey)) {
+                const cachedData = filterMetadataCache.get(cacheKey);
+                // Nếu là cache lỗi, kệ nó, đừng gán state rỗng làm trắng trang lọc
+                if (!cachedData.isError) {
+                    setAvailableCategories(cachedData.genres);
+                    setAvailableCountries(cachedData.countries);
+                }
+                setMetadataLoading(false);
+                return;
+            }
+
+            setMetadataLoading(true);
+            try {
+                if (activeSource === "all" || !activeSource) {
+                    const fetchWithFallback = async (url) => {
+                        try {
+                            const res = await fetch(url);
+                            if (res.ok) {
+                                const data = await res.json();
+                                return (
+                                    data?.items ||
+                                    data?.data?.items ||
+                                    data?.result ||
+                                    []
+                                );
+                            }
+                        } catch (e) {
+                            console.error("Fetch merged filter failed:", e);
+                        }
+                        return [];
+                    };
+
+                    const [kGenres, kCountries, oGenres, oCountries] =
+                        await Promise.all([
+                            fetchWithFallback(
+                                `${import.meta.env.VITE_SOURCE_K_API}/the-loai`,
+                            ),
+                            fetchWithFallback(
+                                `${import.meta.env.VITE_SOURCE_K_API}/quoc-gia`,
+                            ),
+                            fetchWithFallback(
+                                `${import.meta.env.VITE_SOURCE_O_API}/v1/api/the-loai`,
+                            ),
+                            fetchWithFallback(
+                                `${import.meta.env.VITE_SOURCE_O_API}/v1/api/quoc-gia`,
+                            ),
+                        ]);
+
+                    const mergeLists = (list1, list2, list3) => {
+                        const map = new Map();
+                        [...list1, ...list2, ...list3].forEach((item) => {
+                            if (item && item.slug && item.name) {
+                                map.set(item.slug, {
+                                    slug: item.slug,
+                                    name: item.name,
+                                });
+                            }
+                        });
+                        return Array.from(map.values()).sort((a, b) =>
+                            a.name.localeCompare(b.name, "vi"),
+                        );
+                    };
+
+                    const mergedGenres = mergeLists(
+                        SOURCE_C_CATEGORIES,
+                        kGenres,
+                        oGenres,
+                    );
+                    const mergedCountries = mergeLists(
+                        SOURCE_C_COUNTRIES,
+                        kCountries,
+                        oCountries,
+                    );
+
+                    filterMetadataCache.set(cacheKey, {
+                        genres: mergedGenres,
+                        countries: mergedCountries,
+                    });
+
+                    setAvailableCategories(mergedGenres);
+                    setAvailableCountries(mergedCountries);
+                    setMetadataLoading(false);
+                    return;
+                }
+
+                const sourceToFetch = activeSource;
+                let domain = "";
+                let genresPath = "/v1/api/the-loai";
+                let countriesPath = "/v1/api/quoc-gia";
+
+                if (sourceToFetch === SOURCES.SOURCE_C) {
+                    const sortedCat = [...SOURCE_C_CATEGORIES].sort((a, b) =>
+                        a.name.localeCompare(b.name, "vi"),
+                    );
+                    const sortedCou = [...SOURCE_C_COUNTRIES].sort((a, b) =>
+                        a.name.localeCompare(b.name, "vi"),
+                    );
+
+                    filterMetadataCache.set(cacheKey, {
+                        genres: sortedCat,
+                        countries: sortedCou,
+                    });
+
+                    setAvailableCategories(sortedCat);
+                    setAvailableCountries(sortedCou);
+                    setMetadataLoading(false);
+                    return;
+                }
+
+                if (sourceToFetch === SOURCES.SOURCE_K) {
+                    domain = import.meta.env.VITE_SOURCE_K_API;
+                    genresPath = "/the-loai";
+                    countriesPath = "/quoc-gia";
+                } else if (sourceToFetch === SOURCES.SOURCE_O) {
+                    domain = import.meta.env.VITE_SOURCE_O_API;
+                }
+
+                if (!domain) throw new Error("No domain for source");
+
+                const [gRes, cRes] = await Promise.all([
+                    fetch(`${domain}${genresPath}`),
+                    fetch(`${domain}${countriesPath}`),
+                ]);
+
+                const gData = gRes.ok ? await gRes.json() : null;
+                const cData = cRes.ok ? await cRes.json() : null;
+
+                const genreItems =
+                    gData?.items || gData?.data?.items || gData?.result || [];
+                const countryItems =
+                    cData?.items || cData?.data?.items || cData?.result || [];
+
+                const newGenres = genreItems
+                    .map((i) => ({ slug: i.slug, name: i.name }))
+                    .sort((a, b) => a.name.localeCompare(b.name, "vi"));
+                const newCountries = countryItems
+                    .map((i) => ({ slug: i.slug, name: i.name }))
+                    .sort((a, b) => a.name.localeCompare(b.name, "vi"));
+
+                // Cache results (even if empty to prevent repeated failed calls)
+                filterMetadataCache.set(cacheKey, { 
+                    genres: newGenres, 
+                    countries: newCountries,
+                    isError: newGenres.length === 0 && newCountries.length === 0
+                });
+
+                setAvailableCategories(newGenres);
+                setAvailableCountries(newCountries);
+            } catch (error) {
+                console.error("Error fetching source metadata:", error);
+                // Negative cache: mark as failed to avoid re-fetching
+                filterMetadataCache.set(activeSource || "all", { 
+                    genres: [], 
+                    countries: [],
+                    isError: true 
+                });
+
+                if (activeSource !== SOURCES.SOURCE_K) {
+                    try {
+                        const [gRes, cRes] = await Promise.all([
+                            fetch(
+                                `${import.meta.env.VITE_SOURCE_K_API}/the-loai`,
+                            ),
+                            fetch(
+                                `${import.meta.env.VITE_SOURCE_K_API}/quoc-gia`,
+                            ),
+                        ]);
+                        const [gData, cData] = await Promise.all([
+                            gRes.json(),
+                            cRes.json(),
+                        ]);
+                        if (gData?.items) setAvailableCategories(gData.items);
+                        if (cData?.items) setAvailableCountries(cData.items);
+                    } catch (fallbackError) {
+                        console.error(
+                            "Fallback metadata fetch failed:",
+                            fallbackError,
+                        );
+                    }
+                }
+            } finally {
+                setMetadataLoading(false);
+            }
+        };
+
+        fetchMetadata();
+    }, [activeSource]);
+
+    // Xử lý chọn filter inline (toggle)
+    const handleFilterSelect = useCallback(
+        (key, value) => {
+            const params = new URLSearchParams(searchParams);
+            const current = params.get(key) || "";
+            if (current === value && key !== "source") {
+                params.delete(key); // Bỏ chọn nếu đang chọn cùng một value
+            } else {
+                if (key === "source" && value === "all") {
+                    params.delete(key); // "all" là mặc định nên clear param khỏi url
+                } else if (!value) {
+                    params.delete(key);
+                } else {
+                    params.set(key, value);
+                }
+            }
+            params.set("page", "1");
+            setSearchParams(params);
+        },
+        [searchParams, setSearchParams],
+    );
+
+    const buildSourceConfig = (sourceId, overrides = {}) => {
+        let typeVal = "";
+        let useV1Val = false;
+        let urlParams = {};
+
+        if (sourceId === SOURCES.SOURCE_K || sourceId === SOURCES.SOURCE_O) {
+            if (currentQuery) {
+                typeVal = "tim-kiem";
+                useV1Val = true;
+                urlParams = {
+                    keyword: currentQuery,
+                    year: currentYear,
+                    category: currentCategory,
+                    country: currentCountry,
+                };
+            } else if (activeListContext) {
+                const isNonV1 = [
+                    "phim-bo-dang-chieu",
+                    "phim-bo-hoan-thanh",
+                    "phim-sap-chieu",
+                ].includes(activeListContext);
+                typeVal = `danh-sach/${activeListContext}`;
+                useV1Val = !isNonV1;
+                if (!isNonV1) {
+                    urlParams = {
+                        year: currentYear,
+                        country: currentCountry,
+                        category: currentCategory,
+                    };
+                }
+            } else if (currentCategory) {
+                typeVal = `the-loai/${currentCategory}`;
+                useV1Val = true;
+                urlParams = { year: currentYear, country: currentCountry };
+            } else if (currentCountry) {
+                typeVal = `quoc-gia/${currentCountry}`;
+                useV1Val = true;
+                urlParams = { year: currentYear };
+            } else if (currentYear) {
+                typeVal =
+                    sourceId === SOURCES.SOURCE_O
+                        ? `nam-phat-hanh/${currentYear}`
+                        : `nam/${currentYear}`;
+                useV1Val = true;
+            } else {
+                typeVal = "danh-sach/phim-moi-cap-nhat";
+                useV1Val = false;
+            }
+        } else if (sourceId === SOURCES.SOURCE_C) {
+            useV1Val = false;
+
+            // Kiểm tra xem NguonC có thực sự hỗ trợ danh mục / quốc gia này không
+            if (
+                currentCountry &&
+                !SOURCE_C_COUNTRIES.some((c) => c.slug === currentCountry)
+            ) {
+                return null;
+            }
+            if (
+                currentCategory &&
+                !SOURCE_C_CATEGORIES.some((c) => c.slug === currentCategory)
+            ) {
+                return null;
+            }
+
+            // NguonC API không hỗ trợ Gom Filter (Mix params), do đó nếu người dùng chọn >= 2 bộ lọc, skip NguonC
+            const activeFiltersCount = [
+                activeListContext,
+                currentCategory,
+                currentCountry,
+                currentYear,
+                currentQuery,
+            ].filter(Boolean).length;
+            if (activeFiltersCount > 1) {
+                return null;
+            }
+
+            if (currentQuery) {
+                typeVal = "search";
+                urlParams = { keyword: currentQuery };
+            } else if (activeListContext) {
+                typeVal = `danh-sach/${activeListContext}`;
+            } else if (currentCategory) {
+                typeVal = `the-loai/${currentCategory}`;
+            } else if (currentCountry) {
+                typeVal = `quoc-gia/${currentCountry}`;
+            } else if (currentYear) {
+                typeVal = `nam-phat-hanh/${currentYear}`;
+            } else {
+                typeVal = "phim-moi-cap-nhat";
+            }
+        }
+
+        // Loại bỏ rỗng
+        const cleanParams = {};
+        Object.entries(urlParams).forEach(([k, v]) => {
+            if (v && v.toString().trim() !== "") cleanParams[k] = v;
+        });
+
+        return {
+            id: overrides.id || sourceId,
+            title: overrides.title || sourceId,
+            type: typeVal,
+            source: sourceId,
+            useV1: useV1Val,
+            page: currentPage,
+            limit: pageSize,
+            params: cleanParams,
+        };
     };
 
     const isMergedView =
         activeSource === "all" || (!activeSource && currentQuery);
 
-    const searchCategories = isMergedView
-        ? [
-              {
-                  id: SOURCES.SOURCE_O,
-                  title: "OPhim",
-                  type: currentCategory
-                      ? `the-loai/${currentCategory}`
-                      : currentCountry
-                        ? `quoc-gia/${currentCountry}`
-                        : currentQuery || currentYear
-                          ? "tim-kiem"
-                          : "danh-sach/phim-moi-cap-nhat",
-                  source: SOURCES.SOURCE_O,
-                  useV1: !!(
-                      currentQuery ||
-                      currentYear ||
-                      currentCategory ||
-                      currentCountry
-                  ),
-                  page: currentPage,
-                  limit: 24,
-                  params: cleanParamsForApi(
-                      {
-                          keyword: currentQuery || currentYear, // KKPhim/OPhim often use keyword for year too in search
-                          year: currentYear,
-                          country: currentCountry,
-                          category: currentCategory,
-                      },
-                      currentCategory
-                          ? `the-loai/${currentCategory}`
-                          : currentCountry
-                            ? `quoc-gia/${currentCountry}`
-                            : "",
-                  ),
-              },
-              {
-                  id: SOURCES.SOURCE_K,
-                  title: "KKPhim",
-                  type: currentCategory
-                      ? `the-loai/${currentCategory}`
-                      : currentCountry
-                        ? `quoc-gia/${currentCountry}`
-                        : currentQuery || currentYear
-                          ? "tim-kiem"
-                          : "danh-sach/phim-moi-cap-nhat",
-                  source: SOURCES.SOURCE_K,
-                  useV1: !!(
-                      currentQuery ||
-                      currentYear ||
-                      currentCategory ||
-                      currentCountry
-                  ),
-                  page: currentPage,
-                  limit: 24,
-                  params: cleanParamsForApi(
-                      {
-                          keyword: currentQuery || currentYear,
-                          year: currentYear,
-                          country: currentCountry,
-                          category: currentCategory,
-                      },
-                      currentCategory
-                          ? `the-loai/${currentCategory}`
-                          : currentCountry
-                            ? `quoc-gia/${currentCountry}`
-                            : "",
-                  ),
-              },
-              {
-                  id: SOURCES.SOURCE_C,
-                  title: "NguonC",
-                  type: currentCategory
-                      ? `the-loai/${currentCategory}`
-                      : currentCountry
-                        ? `quoc-gia/${currentCountry}`
-                        : currentQuery
-                          ? "search"
-                          : currentYear
-                            ? `nam-phat-hanh/${currentYear}`
-                            : "phim-moi-cap-nhat",
-                  source: SOURCES.SOURCE_C,
-                  page: currentPage,
-                  limit: 24,
-                  params: cleanParamsForApi(
-                      {
-                          keyword: currentQuery,
-                          country: currentCountry,
-                      },
-                      currentCategory
-                          ? `the-loai/${currentCategory}`
-                          : currentCountry
-                            ? `quoc-gia/${currentCountry}`
-                            : "",
-                  ),
-              },
-          ]
-        : isLibraryCategory
-          ? []
-          : [
-                {
-                    id: "listing",
-                    title: displayTitle,
-                    type: currentCategory
-                        ? `the-loai/${currentCategory}`
-                        : currentCountry
-                          ? `quoc-gia/${currentCountry}`
-                          : currentQuery || currentYear
-                            ? "tim-kiem"
-                            : "danh-sach/phim-moi-cap-nhat",
-                    source: activeSource || SOURCES.SOURCE_K,
-                    useV1: !!(
-                        currentQuery ||
-                        currentYear ||
-                        currentCategory ||
-                        currentCountry
-                    ),
-                    page: currentPage,
-                    limit: 24,
-                    params: cleanParamsForApi(
-                        {
-                            year: currentYear,
-                            keyword: currentQuery || currentYear,
-                            country: currentCountry,
-                            category: currentCategory,
-                        },
-                        currentCategory
-                            ? `the-loai/${currentCategory}`
-                            : currentCountry
-                              ? `quoc-gia/${currentCountry}`
-                              : "",
-                    ),
-                },
-            ];
+    const searchCategories = (
+        isMergedView
+            ? [
+                  buildSourceConfig(SOURCES.SOURCE_O, { title: "OPhim" }),
+                  buildSourceConfig(SOURCES.SOURCE_K, { title: "KKPhim" }),
+                  buildSourceConfig(SOURCES.SOURCE_C, { title: "NguonC" }),
+              ]
+            : isLibraryCategory
+              ? []
+              : [
+                    buildSourceConfig(activeSource || SOURCES.SOURCE_K, {
+                        id: "listing",
+                        title: finalTitle,
+                    }),
+                ]
+    ).filter(Boolean);
 
     const { sections, loading: apiLoading } = useVodData(searchCategories);
 
@@ -422,12 +608,15 @@ export default function Listing() {
         });
         items = mergedItems;
         // For multi-source search, pagination is complex, take the max as a hint
-        totalPages = Math.max(
-            ...Object.values(sections).map((s) => s.totalPages || 1),
-        );
-        totalItemsCount = Math.max(
-            ...Object.values(sections).map((s) => s.totalItems || 0),
-        );
+        const sectionValues = Object.values(sections);
+        totalPages =
+            sectionValues.length > 0
+                ? Math.max(...sectionValues.map((s) => s.totalPages || 1))
+                : 1;
+        totalItemsCount =
+            sectionValues.length > 0
+                ? Math.max(...sectionValues.map((s) => s.totalItems || 0))
+                : 0;
     } else {
         const section = sections["listing"] || {};
         items = section.items || [];
@@ -462,23 +651,97 @@ export default function Listing() {
           ? favoriteLoading
           : apiLoading;
 
-    const urlFilters = useMemo(() => ({
-        source: activeSource,
-        country: currentCountry,
-        category: currentCategory,
-        year: currentYear,
-        keyword: currentQuery,
-    }), [activeSource, currentCountry, currentCategory, currentYear, currentQuery]);
+    const urlFilters = useMemo(
+        () => ({
+            source: activeSource,
+            country: currentCountry,
+            category: currentCategory,
+            year: currentYear,
+            keyword: currentQuery,
+        }),
+        [
+            activeSource,
+            currentCountry,
+            currentCategory,
+            currentYear,
+            currentQuery,
+        ],
+    );
 
-    // Tự động mở bộ lọc nếu là trang search
+    // Thanh tìm kiếm inline với debounce
+    const [searchInput, setSearchInput] = useState(currentQuery || "");
+    const searchTimerRef = useRef(null);
+    const searchInputRef = useRef(null);
+
+    // Xóa tất cả filter
+    const clearAllFilters = useCallback(() => {
+        const params = new URLSearchParams();
+        if (searchInput.trim()) params.set("q", searchInput.trim());
+        params.set("page", "1");
+        setSearchParams(params);
+    }, [searchInput, setSearchParams]);
+
+    // Đồng bộ searchInput khi URL thay đổi (ví dụ bấm back)
     useEffect(() => {
-        const isSearchPage = window.location.pathname.endsWith("/vod/search");
-        // Mở nếu là trang search (có thể mở kể cả khi có params nếu người dùng muốn search thêm)
-        // Hoặc chỉ mở nếu chưa có query/filter chính
-        if (isSearchPage) {
-            openFilter(urlFilters);
-        }
-    }, []); // Chỉ chạy 1 lần duy nhất khi mount
+        setSearchInput(currentQuery || "");
+    }, [currentQuery]);
+
+    // Xử lý input thay đổi với debounce
+    const handleSearchChange = useCallback(
+        (value) => {
+            setSearchInput(value);
+            if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+
+            searchTimerRef.current = setTimeout(() => {
+                const params = new URLSearchParams(searchParams);
+                if (value.trim()) {
+                    params.set("q", value.trim());
+                } else {
+                    params.delete("q");
+                }
+                params.set("page", "1");
+                params.delete("source"); // Search tổng hợp
+                setSearchParams(params);
+            }, 600);
+        },
+        [searchParams, setSearchParams],
+    );
+
+    // Submit ngay khi nhấn Enter
+    const handleSearchSubmit = useCallback(
+        (e) => {
+            e.preventDefault();
+            if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+            const params = new URLSearchParams(searchParams);
+            if (searchInput.trim()) {
+                params.set("q", searchInput.trim());
+            } else {
+                params.delete("q");
+            }
+            params.set("page", "1");
+            params.delete("source");
+            setSearchParams(params);
+        },
+        [searchInput, searchParams, setSearchParams],
+    );
+
+    // Xóa ô tìm kiếm
+    const clearSearch = useCallback(() => {
+        setSearchInput("");
+        if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        const params = new URLSearchParams(searchParams);
+        params.delete("q");
+        params.set("page", "1");
+        setSearchParams(params);
+        searchInputRef.current?.focus();
+    }, [searchParams, setSearchParams]);
+
+    // Cleanup timer
+    useEffect(() => {
+        return () => {
+            if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+        };
+    }, []);
 
     return (
         <VodLayout>
@@ -497,12 +760,57 @@ export default function Listing() {
                         </span>
                     </nav>
 
-                    <div className="mb-10">
-                        <p className="mb-4 text-[10px] font-black uppercase tracking-[0.3em] text-red-600">
-                            {t("vods.exploreByCategory")}
-                        </p>
-                        <VodCategoryMenu />
-                    </div>
+                    {/* Thanh tìm kiếm inline */}
+                    <form onSubmit={handleSearchSubmit} className="mb-8">
+                        <div className="relative flex items-center">
+                            {/* Icon search */}
+                            <svg
+                                className="pointer-events-none absolute left-4 h-5 w-5 text-zinc-500"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                />
+                            </svg>
+                            <input
+                                ref={searchInputRef}
+                                type="text"
+                                value={searchInput}
+                                onChange={(e) =>
+                                    handleSearchChange(e.target.value)
+                                }
+                                placeholder={t("common.search") + "..."}
+                                className="w-full rounded-2xl border border-zinc-800 bg-zinc-900/80 py-3.5 pl-12 pr-12 text-base font-medium text-white placeholder-zinc-600 outline-none transition-all focus:border-red-600/50 focus:ring-1 focus:ring-red-600/30 md:text-lg"
+                            />
+                            {/* Nút xóa */}
+                            {searchInput && (
+                                <button
+                                    type="button"
+                                    onClick={clearSearch}
+                                    className="absolute right-4 rounded-full p-1 text-zinc-500 transition-colors hover:text-white"
+                                >
+                                    <svg
+                                        className="h-5 w-5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M6 18L18 6M6 6l12 12"
+                                        />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
+                    </form>
 
                     <div className="flex flex-col gap-6 border-b border-zinc-900 pb-6 md:flex-row md:items-end md:justify-between">
                         <div>
@@ -518,14 +826,14 @@ export default function Listing() {
                                 {!isLibraryCategory && (
                                     <button
                                         onClick={() =>
-                                            openFilter({
-                                                source: activeSource,
-                                                country: currentCountry,
-                                                category: currentCategory,
-                                                year: currentYear,
-                                            })
+                                            setShowFilters(!showFilters)
                                         }
-                                        className="flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-bold text-zinc-400 transition-all hover:border-zinc-700 hover:text-white"
+                                        className={clsx(
+                                            "flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold transition-all",
+                                            showFilters
+                                                ? "border-red-600 bg-red-600/10 text-red-500"
+                                                : "border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700 hover:text-white",
+                                        )}
                                     >
                                         <svg
                                             className="h-4 w-4"
@@ -543,17 +851,41 @@ export default function Listing() {
                                         {t("common.filter") || "Bộ lọc"}
                                         {(currentCountry ||
                                             currentCategory ||
-                                            currentYear) && (
+                                            currentYear ||
+                                            (activeSource &&
+                                                activeSource !==
+                                                    SOURCES.SOURCE_K)) && (
                                             <span className="flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[10px] text-white">
                                                 {
                                                     [
                                                         currentCountry,
                                                         currentCategory,
                                                         currentYear,
+                                                        activeSource &&
+                                                        activeSource !==
+                                                            SOURCES.SOURCE_K
+                                                            ? activeSource
+                                                            : null,
                                                     ].filter(Boolean).length
                                                 }
                                             </span>
                                         )}
+                                        <svg
+                                            className={clsx(
+                                                "h-3 w-3 transition-transform",
+                                                showFilters && "rotate-180",
+                                            )}
+                                            fill="none"
+                                            viewBox="0 0 24 24"
+                                            stroke="currentColor"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2.5}
+                                                d="M19 9l-7 7-7-7"
+                                            />
+                                        </svg>
                                     </button>
                                 )}
                             </div>
@@ -570,8 +902,199 @@ export default function Listing() {
                     </div>
                 </div>
 
+                {/* Inline Filter Panel */}
+                {showFilters && !isLibraryCategory && (
+                    <div className="animate-in fade-in slide-in-from-top-2 mb-8 space-y-6 rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-6 duration-300">
+                        {/* Nguồn phim */}
+                        <section>
+                            <h4 className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                                {t("vods.source") || "Nguồn phim"}
+                            </h4>
+                            <div className="flex flex-wrap gap-2">
+                                {FILTER_SOURCES.map((src) => (
+                                    <button
+                                        key={src.id}
+                                        onClick={() =>
+                                            handleFilterSelect("source", src.id)
+                                        }
+                                        className={clsx(
+                                            "rounded-full border px-4 py-1.5 text-xs font-bold transition-all active:scale-95",
+                                            activeSource === src.id
+                                                ? "border-red-600 bg-red-600 text-white shadow-lg shadow-red-600/20"
+                                                : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white",
+                                        )}
+                                    >
+                                        {src.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section>
+                            <h4 className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                                Định dạng
+                            </h4>
+                            <div className="flex flex-wrap gap-2">
+                                {FILTER_TYPE_LIST.map((type) => (
+                                    <button
+                                        key={type.slug}
+                                        onClick={() =>
+                                            handleFilterSelect(
+                                                "type_list",
+                                                activeListContext === type.slug
+                                                    ? ""
+                                                    : type.slug,
+                                            )
+                                        }
+                                        className={clsx(
+                                            "rounded-full border px-3 py-1.5 text-xs font-medium transition-all active:scale-95",
+                                            activeListContext === type.slug
+                                                ? "border-white bg-white text-zinc-900 shadow-lg"
+                                                : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white",
+                                        )}
+                                    >
+                                        {type.name}
+                                    </button>
+                                ))}
+                            </div>
+                        </section>
+
+                        {/* Quốc gia */}
+                        <section>
+                            <h4 className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                                {t("vods.country") || "Quốc gia"}
+                            </h4>
+                            {metadataLoading ? (
+                                <div className="flex animate-pulse flex-wrap gap-2">
+                                    {[...Array(8)].map((_, i) => (
+                                        <div
+                                            key={i}
+                                            className="h-7 w-20 rounded-full bg-zinc-800"
+                                        />
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="flex flex-wrap gap-2">
+                                    {availableCountries.map((c) => (
+                                        <button
+                                            key={c.slug}
+                                            onClick={() =>
+                                                handleFilterSelect(
+                                                    "country",
+                                                    c.slug,
+                                                )
+                                            }
+                                            className={clsx(
+                                                "rounded-full border px-3 py-1.5 text-xs font-medium transition-all active:scale-95",
+                                                currentCountry === c.slug
+                                                    ? "border-white bg-white text-zinc-900 shadow-lg"
+                                                    : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white",
+                                            )}
+                                        >
+                                            {c.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+
+                        {/* Thể loại */}
+                        <section>
+                            <h4 className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                                {t("vods.category") || "Thể loại"}
+                            </h4>
+                            {metadataLoading ? (
+                                <div className="flex animate-pulse flex-wrap gap-2">
+                                    {[...Array(10)].map((_, i) => (
+                                        <div
+                                            key={i}
+                                            className="h-7 w-24 rounded-full bg-zinc-800"
+                                        />
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="flex flex-wrap gap-2">
+                                    {availableCategories.map((cat) => (
+                                        <button
+                                            key={cat.slug}
+                                            onClick={() =>
+                                                handleFilterSelect(
+                                                    "category",
+                                                    cat.slug,
+                                                )
+                                            }
+                                            className={clsx(
+                                                "rounded-full border px-3 py-1.5 text-xs font-medium transition-all active:scale-95",
+                                                currentCategory === cat.slug
+                                                    ? "border-white bg-white text-zinc-900 shadow-lg"
+                                                    : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white",
+                                            )}
+                                        >
+                                            {cat.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </section>
+
+                        {/* Năm */}
+                        <section>
+                            <h4 className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                                {t("vods.year") || "Năm phát hành"}
+                            </h4>
+                            <div className="flex flex-wrap gap-2">
+                                {FILTER_YEARS.map((y) => (
+                                    <button
+                                        key={y}
+                                        onClick={() =>
+                                            handleFilterSelect("year", y)
+                                        }
+                                        className={clsx(
+                                            "rounded-full border px-2.5 py-1 text-xs font-medium transition-all active:scale-95",
+                                            currentYear === y
+                                                ? "border-white bg-white text-zinc-900 shadow-lg"
+                                                : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white",
+                                        )}
+                                    >
+                                        {y}
+                                    </button>
+                                ))}
+                            </div>
+                        </section>
+
+                        {/* Nút xóa filter */}
+                        {(currentCountry ||
+                            currentCategory ||
+                            currentYear ||
+                            (activeSource &&
+                                activeSource !== SOURCES.SOURCE_K)) && (
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={clearAllFilters}
+                                    className="flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-800 px-5 py-2 text-xs font-bold text-zinc-400 transition-all hover:border-red-600 hover:text-white active:scale-95"
+                                >
+                                    <svg
+                                        className="h-3.5 w-3.5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M6 18L18 6M6 6l12 12"
+                                        />
+                                    </svg>
+                                    Xóa bộ lọc
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {isLoading ? (
-                    <MovieGridSkeleton count={24} />
+                    <MovieGridSkeleton count={pageSize} />
                 ) : (
                     <div className="grid grid-cols-2 gap-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
                         {items.map((movie) => (
@@ -731,12 +1254,6 @@ export default function Listing() {
                         </button>
                     </div>
                 )}
-                <VodFilterModal
-                    isOpen={isFilterOpen}
-                    onClose={() => setIsFilterOpen(false)}
-                    onApply={handleFilterApply}
-                    initialFilters={urlFilters}
-                />
             </div>
         </VodLayout>
     );

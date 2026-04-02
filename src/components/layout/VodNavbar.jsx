@@ -5,7 +5,6 @@ import { useDebounce } from "../../hooks/useDebounce";
 import { useAuth } from "../../contexts/AuthContext";
 import { auth, googleProvider } from "../../services/firebase";
 import { signInWithPopup, signOut } from "firebase/auth";
-import { useVodContext } from "../../contexts/VodContext";
 
 // Icon SVG tái sử dụng
 const IconSearch = ({ className = "h-5 w-5" }) => (
@@ -98,7 +97,6 @@ export default function VodNavbar() {
     const navigate = useNavigate();
     const location = useLocation();
     const { currentUser } = useAuth();
-    const { openFilter } = useVodContext();
     const [searchParams] = useSearchParams();
 
     // State quản lý
@@ -276,7 +274,7 @@ export default function VodNavbar() {
                     <div className="hidden items-center gap-2 md:flex">
                         {/* Nút mở bộ lọc nâng cao */}
                         <button
-                            onClick={() => openFilter()}
+                            onClick={() => navigate('/vod/search')}
                             className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-700/50 bg-zinc-900/40 text-zinc-400 transition-all hover:border-red-600/50 hover:bg-red-600/10 hover:text-red-500"
                             title={t("vods.advancedSearch") || "Tìm kiếm nâng cao"}
                         >
@@ -352,7 +350,7 @@ export default function VodNavbar() {
                     <div className={`items-center gap-2 md:flex md:gap-3 ${isMobileSearchOpen ? "hidden" : "flex"}`}>
                         {/* Nút bộ lọc mobile (<md) */}
                         <button
-                            onClick={() => openFilter()}
+                            onClick={() => navigate('/vod/search')}
                             className="flex h-10 w-10 items-center justify-center rounded-full text-zinc-400 transition-all active:scale-90 hover:bg-zinc-800/60 hover:text-red-500 md:hidden"
                             aria-label="Bộ lọc"
                         >

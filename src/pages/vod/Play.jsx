@@ -397,6 +397,16 @@ export default function VodPlay() {
         true,
     ); // Tự động chuyển tập
     const autoplayEnabledRef = useRef(autoplayEnabled); // Ref để track giá trị mới nhất trong event handlers
+    // Refs để tránh stale closure trong video.onended và keyboard shortcuts
+    const episodesRef = useRef(episodes);
+    const activeEpisodeRef = useRef(activeEpisode);
+    const currentEpisodeIdRef = useRef(currentEpisodeId);
+    const movieRef = useRef(movie);
+    // Countdown state cho tự động chuyển tập
+    const [showNextCountdown, setShowNextCountdown] = useState(false);
+    const [countdownSeconds, setCountdownSeconds] = useState(5);
+    const countdownTimerRef = useRef(null);
+    const COUNTDOWN_DURATION = 5; // Số giây đếm ngược
     const [isCompactView, setIsCompactView] = useLocalStorage(
         "isCompactView",
         null, // Mặc định là null để detect lần đầu
@@ -497,6 +507,58 @@ export default function VodPlay() {
     useEffect(() => {
         autoplayEnabledRef.current = autoplayEnabled;
     }, [autoplayEnabled]);
+
+    // Đồng bộ refs với state để tránh stale closure
+    useEffect(() => { episodesRef.current = episodes; }, [episodes]);
+    useEffect(() => { activeEpisodeRef.current = activeEpisode; }, [activeEpisode]);
+    useEffect(() => { currentEpisodeIdRef.current = currentEpisodeId; }, [currentEpisodeId]);
+    useEffect(() => { movieRef.current = movie; }, [movie]);
+
+    // Countdown timer: đếm ngược rồi tự động chuyển tập
+    useEffect(() => {
+        if (!showNextCountdown) {
+            // Dọn dẹp timer nếu countdown bị tắt
+            if (countdownTimerRef.current) {
+                clearInterval(countdownTimerRef.current);
+                countdownTimerRef.current = null;
+            }
+            return;
+        }
+
+        countdownTimerRef.current = setInterval(() => {
+            setCountdownSeconds((prev) => {
+                if (prev <= 1) {
+                    clearInterval(countdownTimerRef.current);
+                    countdownTimerRef.current = null;
+                    setShowNextCountdown(false);
+                    // Gọi playNextEpisode sau khi state cập nhật
+                    setTimeout(() => playNextEpisode(), 0);
+                    return COUNTDOWN_DURATION;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => {
+            if (countdownTimerRef.current) {
+                clearInterval(countdownTimerRef.current);
+                countdownTimerRef.current = null;
+            }
+        };
+    }, [showNextCountdown]);
+
+    // Hủy countdown
+    const cancelCountdown = useCallback(() => {
+        setShowNextCountdown(false);
+        setCountdownSeconds(COUNTDOWN_DURATION);
+    }, []);
+
+    // Bỏ qua countdown, phát ngay
+    const skipCountdown = useCallback(() => {
+        setShowNextCountdown(false);
+        setCountdownSeconds(COUNTDOWN_DURATION);
+        playNextEpisode();
+    }, []);
 
     // Media Session API (Browser/OS Media Control)
     useEffect(() => {
@@ -1903,7 +1965,9 @@ export default function VodPlay() {
 
             video.onended = () => {
                 if (autoplayEnabledRef.current) {
-                    playNextEpisode();
+                    // Hiển thị countdown thay vì chuyển tập ngay
+                    setShowNextCountdown(true);
+                    setCountdownSeconds(COUNTDOWN_DURATION);
                 }
             };
         } catch (error) {
@@ -2054,12 +2118,12 @@ export default function VodPlay() {
         }
     }
 
-    // Play next episode
+    // Play next episode (đọc từ refs để tránh stale closure)
     function playNextEpisode() {
-        const episodesList = episodes || [];
+        const episodesList = episodesRef.current || [];
         if (episodesList.length === 0) return;
 
-        let currentKey = currentEpisodeId || episodeParam;
+        let currentKey = currentEpisodeIdRef.current || episodeParam;
         const lastWatchedList = getLastWatchedList();
         const cleanSlug = slug.split("?")[0];
         const dataSlug = movie?.slug || cleanSlug;
@@ -2099,7 +2163,7 @@ export default function VodPlay() {
             : null;
 
         // Tìm server group chứa tập hiện tại
-        let currentGroup = activeEpisode;
+        let currentGroup = activeEpisodeRef.current;
         let currentIndexInGroup = -1;
 
         if (currentGroup) {
@@ -2144,7 +2208,7 @@ export default function VodPlay() {
 
         if (nextIndex < data.length) {
             console.log("Playing next in same group:", data[nextIndex].name);
-            openEpisode(data[nextIndex], currentGroup, movie);
+            openEpisode(data[nextIndex], currentGroup, movieRef.current);
         } else {
             // Chuyển sang group tiếp theo
             const currentGroupIdx = episodesList.findIndex(
@@ -2192,7 +2256,7 @@ export default function VodPlay() {
                             openEpisode(
                                 nextGroup.server_data[0],
                                 nextGroup,
-                                movie,
+                                movieRef.current,
                             );
                             return;
                         }
@@ -2207,7 +2271,7 @@ export default function VodPlay() {
                         nextGroup.server_name,
                     );
                     setActiveEpisode(nextGroup);
-                    openEpisode(nextGroup.server_data[0], nextGroup, movie);
+                    openEpisode(nextGroup.server_data[0], nextGroup, movieRef.current);
                     return;
                 }
             }
@@ -2217,12 +2281,12 @@ export default function VodPlay() {
         }
     }
 
-    // Play previous episode
+    // Play previous episode (đọc từ refs để tránh stale closure)
     function playPrevEpisode() {
-        const episodesList = episodes || [];
+        const episodesList = episodesRef.current || [];
         if (episodesList.length === 0) return;
 
-        let currentKey = currentEpisodeId || episodeParam;
+        let currentKey = currentEpisodeIdRef.current || episodeParam;
         const lastWatchedList = getLastWatchedList();
         const cleanSlug = slug.split("?")[0];
         const dataSlug = movie?.slug || cleanSlug;
@@ -2254,7 +2318,7 @@ export default function VodPlay() {
             : null;
 
         // Tìm server group chứa tập hiện tại
-        let currentGroup = activeEpisode;
+        let currentGroup = activeEpisodeRef.current;
         let currentIndexInGroup = -1;
 
         if (currentGroup) {
@@ -2289,7 +2353,7 @@ export default function VodPlay() {
         const prevIndex = currentIndexInGroup - 1;
 
         if (prevIndex >= 0) {
-            openEpisode(data[prevIndex], currentGroup, movie);
+            openEpisode(data[prevIndex], currentGroup, movieRef.current);
         } else {
             // Chuyển sang group trước đó
             const currentGroupIdx = episodesList.findIndex(
@@ -2319,7 +2383,7 @@ export default function VodPlay() {
                                     prevGroup.server_data.length - 1
                                 ],
                                 prevGroup,
-                                movie,
+                                movieRef.current,
                             );
                             return;
                         }
@@ -2333,7 +2397,7 @@ export default function VodPlay() {
                     openEpisode(
                         prevGroup.server_data[prevGroup.server_data.length - 1],
                         prevGroup,
-                        movie,
+                        movieRef.current,
                     );
                     return;
                 }
@@ -3032,6 +3096,58 @@ export default function VodPlay() {
                                         ref={playerRef}
                                         className="relative z-10 h-full w-full"
                                     ></div>
+
+                                    {/* Countdown Overlay - Tự động chuyển tập */}
+                                    {showNextCountdown && (
+                                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm transition-all duration-500">
+                                            <div className="flex flex-col items-center gap-6 text-center">
+                                                {/* Vòng tròn đếm ngược */}
+                                                <div className="relative flex h-28 w-28 items-center justify-center">
+                                                    <svg className="absolute h-full w-full -rotate-90" viewBox="0 0 100 100">
+                                                        <circle
+                                                            cx="50" cy="50" r="42"
+                                                            fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="4"
+                                                        />
+                                                        <circle
+                                                            cx="50" cy="50" r="42"
+                                                            fill="none" stroke="#dc2626" strokeWidth="4"
+                                                            strokeLinecap="round"
+                                                            strokeDasharray={2 * Math.PI * 42}
+                                                            strokeDashoffset={2 * Math.PI * 42 * (1 - countdownSeconds / COUNTDOWN_DURATION)}
+                                                            className="transition-all duration-1000 ease-linear"
+                                                        />
+                                                    </svg>
+                                                    <span className="text-4xl font-black text-white drop-shadow-lg">
+                                                        {countdownSeconds}
+                                                    </span>
+                                                </div>
+
+                                                <div className="space-y-1">
+                                                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-red-500">
+                                                        Tự động chuyển tập
+                                                    </p>
+                                                    <p className="text-sm font-bold text-zinc-400">
+                                                        Tập tiếp theo sẽ phát sau {countdownSeconds} giây
+                                                    </p>
+                                                </div>
+
+                                                <div className="flex items-center gap-3">
+                                                    <button
+                                                        onClick={cancelCountdown}
+                                                        className="rounded-full border border-zinc-700 bg-zinc-900/80 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-zinc-400 transition-all hover:border-zinc-500 hover:text-white active:scale-95"
+                                                    >
+                                                        Hủy
+                                                    </button>
+                                                    <button
+                                                        onClick={skipCountdown}
+                                                        className="rounded-full bg-red-600 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-red-600/30 transition-all hover:bg-red-500 active:scale-95"
+                                                    >
+                                                        Phát ngay
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Control Bar */}
@@ -3452,6 +3568,17 @@ export default function VodPlay() {
                                                                         </svg>
                                                                     </div>
                                                                 </div>
+
+                                                                {/* Thời lượng tập phim (góc dưới phải thumbnail) */}
+                                                                {imdbEp?.runtime && (
+                                                                    <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-[9px] font-bold text-zinc-200 backdrop-blur-sm">
+                                                                        {imdbEp.runtime >= 60
+                                                                            ? Math.round(imdbEp.runtime % 60) > 0
+                                                                                ? `${Math.floor(imdbEp.runtime / 60)}g ${Math.round(imdbEp.runtime % 60)}p`
+                                                                                : `${Math.floor(imdbEp.runtime / 60)} Giờ`
+                                                                            : `${Math.round(imdbEp.runtime)} Phút`}
+                                                                    </span>
+                                                                )}
                                                             </div>
 
                                                             {/* Episode Title/Info */}
@@ -3477,14 +3604,6 @@ export default function VodPlay() {
                                                                             <span className="flex h-1.5 w-1.5 animate-pulse rounded-full bg-red-600 shadow-[0_0_8px_rgba(220,38,38,0.8)]"></span>
                                                                         )}
                                                                     </div>
-                                                                )}
-                                                                {imdbEp?.runtime && (
-                                                                    <span className="mt-1 text-[9px] font-medium text-zinc-600">
-                                                                        {Math.round(
-                                                                            imdbEp.runtime,
-                                                                        )}{" "}
-                                                                        Phút
-                                                                    </span>
                                                                 )}
                                                             </div>
                                                         </>

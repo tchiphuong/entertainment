@@ -164,15 +164,23 @@ export const addHistoryToFirestore = async (uid, item) => {
 };
 
 /**
- * Xóa item khỏi history trên Firestore (với fallback khi offline)
+ * Xóa item khỏi history trên Firestore (lọc theo slug để đảm bảo xóa chính xác)
  */
-export const removeHistoryFromFirestore = async (uid, item) => {
-    if (!uid) return;
+export const removeHistoryFromFirestore = async (uid, slug) => {
+    if (!uid || !slug) return;
     try {
         const docRef = doc(db, "users", uid);
-        await updateDoc(docRef, {
-            history: arrayRemove(item),
-        });
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            const history = Array.isArray(data.history) ? data.history : [];
+            const newHistory = history.filter((h) => h.slug !== slug);
+
+            if (newHistory.length !== history.length) {
+                await updateDoc(docRef, { history: newHistory });
+            }
+        }
     } catch (error) {
         console.warn(
             "Firestore offline, history deleted locally only:",
@@ -200,6 +208,27 @@ export const clearHistoryFromFirestore = async (uid) => {
 };
 
 /**
+ * Chuẩn hóa đối tượng phim để lưu vào danh sách yêu thích
+ * Chỉ giữ lại các trường metadata cần thiết để đảm bảo tính đồng nhất trên toàn hệ thống
+ */
+export const normalizeMovie = (movie) => {
+    if (!movie) return null;
+    return {
+        slug: movie.slug || "",
+        name: movie.name || "",
+        origin_name: movie.origin_name || "",
+        thumb_url: movie.thumb_url || "",
+        poster_url: movie.poster_url || "",
+        source: movie.source || "",
+        type: movie.type || "",
+        year: movie.year || "",
+        lang: movie.lang || "",
+        quality: movie.quality || "",
+        time: new Date().toISOString(), // Lưu thời điểm thêm vào yêu thích
+    };
+};
+
+/**
  * Thêm item vào favorites trên Firestore (tìm theo slug, không trùng lặp)
  */
 export const addFavoriteToFirestore = async (uid, item) => {
@@ -210,7 +239,7 @@ export const addFavoriteToFirestore = async (uid, item) => {
         if (!docSnap.exists()) {
             await setDoc(docRef, {
                 history: [],
-                favorites: [item],
+                favorites: [normalizeMovie(item)],
             });
         } else {
             // Kiểm tra xem đã có item với slug này chưa
@@ -223,8 +252,8 @@ export const addFavoriteToFirestore = async (uid, item) => {
             );
 
             if (existingIndex === -1) {
-                // Chưa có, thêm mới vào đầu mảng
-                const newFavorites = [item, ...favorites];
+                // Chưa có, thêm mới vào đầu mảng (đã chuẩn hóa)
+                const newFavorites = [normalizeMovie(item), ...favorites];
                 await updateDoc(docRef, { favorites: newFavorites });
             }
             // Đã có thì không làm gì (tránh trùng lặp)
@@ -241,12 +270,26 @@ export const addFavoriteToFirestore = async (uid, item) => {
  * Xóa item khỏi favorites trên Firestore (với fallback khi offline)
  */
 export const removeFavoriteFromFirestore = async (uid, item) => {
-    if (!uid) return;
+    if (!uid || !item?.slug) return;
     try {
         const docRef = doc(db, "users", uid);
-        await updateDoc(docRef, {
-            favorites: arrayRemove(item),
-        });
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            const favorites = Array.isArray(data.favorites)
+                ? data.favorites
+                : [];
+
+            // Lọc phim theo slug để đảm bảo xóa chính xác dù metadata có thay đổi
+            const newFavorites = favorites.filter((f) => f.slug !== item.slug);
+
+            if (newFavorites.length !== favorites.length) {
+                await updateDoc(docRef, {
+                    favorites: newFavorites,
+                });
+            }
+        }
     } catch (error) {
         console.warn(
             "Firestore offline, favorite deleted locally only:",
