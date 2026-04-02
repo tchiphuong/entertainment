@@ -47,6 +47,9 @@ jobs:
                   VITE_TMDB_API_KEY: ${{ secrets.VITE_TMDB_API_KEY }}
                   VITE_TMDB_BASE_URL: ${{ secrets.VITE_TMDB_BASE_URL }}
                   VITE_TMDB_IMAGE_URL: ${{ secrets.VITE_TMDB_IMAGE_URL }}
+                  # SportsDB
+                  VITE_SPORTSDB_API_KEY: ${{ secrets.VITE_SPORTSDB_API_KEY }}
+                  VITE_SPORTSDB_BASE_URL: ${{ secrets.VITE_SPORTSDB_BASE_URL }}
                   # TV
                   VITE_API_ENDPOINT: ${{ secrets.VITE_API_ENDPOINT }}
                   VITE_TV_CHANNEL_SOURCES: ${{ secrets.VITE_TV_CHANNEL_SOURCES }}
