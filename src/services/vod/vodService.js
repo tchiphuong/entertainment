@@ -158,32 +158,10 @@ export const fetchTMDBSeason = async (
     }
 };
 
-export const fetchFanartLogo = async (imdbId) => {
-    const apiKey = "cfa9dc054d221b8d107f8411cd20b13f"; // Fanart API Key
-    const cacheKey = `fanart_logo_${imdbId}`;
-
-    const cached = getFromCache(cacheKey);
-    if (cached) return cached;
-
-    try {
-        const res = await fetch(
-            `https://webservice.fanart.tv/v3/movies/${imdbId}?api_key=${apiKey}`,
-        );
-        if (!res.ok) return null;
-        const data = await res.json();
-        saveToCache(cacheKey, data);
-        return data;
-    } catch (e) {
-        console.error("Error fetching Fanart logo:", e);
-        return null;
-    }
-};
-
 export const vodService = {
     fetchSourceData,
     fetchTMDbData,
     fetchTMDBSeason,
-    fetchFanartLogo,
     normalizeMovieForSource,
     getFromCache,
     saveToCache,

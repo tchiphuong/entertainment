@@ -13,7 +13,6 @@ export const useMovieDetail = (slug, initialSource = null) => {
     const [tmdbCredits, setTmdbCredits] = useState(null);
     const [tmdbImages, setTmdbImages] = useState(null);
     const [tmdbVideos, setTmdbVideos] = useState(null);
-    const [fanartLogo, setFanartLogo] = useState(null);
     const isFetchingRef = useRef(false);
 
     const typeConfig = {
@@ -220,35 +219,6 @@ export const useMovieDetail = (slug, initialSource = null) => {
                         setTmdbCredits(details.credits);
                         setTmdbImages(details.images);
                         setTmdbVideos(details.videos?.results || []);
-
-                        // Fetch Fanart Logo nếu TMDB không có logo
-                        const imdbId =
-                            details.imdb_id || details.external_ids?.imdb_id;
-                        const hasTmdbLogos =
-                            details.images?.logos &&
-                            details.images.logos.length > 0;
-
-                        if (imdbId && !hasTmdbLogos) {
-                            try {
-                                const fanart =
-                                    await vodService.fetchFanartLogo(imdbId);
-                                if (fanart) {
-                                    const logo =
-                                        fanart.hdmovielogo?.[0] ||
-                                        fanart.movielogo?.[0];
-                                    if (logo) {
-                                        setFanartLogo(logo.url);
-                                    }
-                                }
-                            } catch (e) {
-                                console.warn(
-                                    "Fanart logo fetch failed:",
-                                    e.message,
-                                );
-                            }
-                        } else {
-                            setFanartLogo(null);
-                        }
                     }
                 } catch (e) {
                     console.warn("TMDB data fetch failed:", e.message);
@@ -276,7 +246,6 @@ export const useMovieDetail = (slug, initialSource = null) => {
         tmdbCredits,
         tmdbImages,
         tmdbVideos,
-        fanartLogo,
         refresh: fetchAllData,
     };
 };

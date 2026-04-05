@@ -448,56 +448,78 @@ export const useVodData = (passedCategories) => {
                 // Giới hạn tổng số phim trên Slider (ví dụ 15-20 phim)
                 const finalPool = rawHeroPool.slice(0, 20);
 
-                const detailedHeroMovies = await Promise.all(
-                    finalPool.map(async (m) => {
-                        try {
-                            let rawItem = m._rawItem || m; // Dữ liệu gốc trước normalize
-                            const source = m.source;
+                // Cơ chế cache cho Hero Slider (tránh gọi TMDB liên tục)
+                const heroCacheKey = `hero_slider_detailed_${finalPool.map((m) => m.slug).join("_")}`;
+                const cachedHero = vodCache.get(heroCacheKey);
 
-                            // Normalize từ dữ liệu thô (chỉ 1 lần duy nhất)
-                            const normalized = normalizeMovie(rawItem, source);
-                            // Gắn lại titleLogo nếu có
-                            if (rawItem._titleLogo)
-                                normalized.titleLogo = rawItem._titleLogo;
+                if (cachedHero) {
+                    setHeroMovies(cachedHero);
+                } else {
+                    const detailedHeroMovies = await Promise.all(
+                        finalPool.map(async (m) => {
+                            try {
+                                let rawItem = m._rawItem || m; // Dữ liệu gốc trước normalize
+                                const source = m.source;
 
-                            const tmdbId =
-                                normalized.tmdbId || rawItem.tmdb?.id;
-                            const tmdbType =
-                                rawItem.tmdb?.type ||
-                                (normalized.episode_current ? "tv" : "movie");
+                                // Normalize từ dữ liệu thô (chỉ 1 lần duy nhất)
+                                const normalized = normalizeMovie(
+                                    rawItem,
+                                    source,
+                                );
+                                // Gắn lại titleLogo nếu có
+                                if (rawItem._titleLogo)
+                                    normalized.titleLogo = rawItem._titleLogo;
 
-                            if (tmdbId || normalized.titleLogo) {
-                                const metadata = tmdbId
-                                    ? await fetchTmdbMetadata(
-                                          tmdbId,
-                                          tmdbType,
-                                          tmdbLang,
-                                      )
-                                    : null;
+                                const tmdbId =
+                                    normalized.tmdbId || rawItem.tmdb?.id;
+                                const tmdbType =
+                                    rawItem.tmdb?.type ||
+                                    (normalized.episode_current
+                                        ? "tv"
+                                        : "movie");
 
-                                const branding = metadata || {};
-                                if (normalized.titleLogo) {
-                                    branding.titleLogo = normalized.titleLogo;
+                                if (tmdbId || normalized.titleLogo) {
+                                    const metadata = tmdbId
+                                        ? await fetchTmdbMetadata(
+                                              tmdbId,
+                                              tmdbType,
+                                              tmdbLang,
+                                          )
+                                        : null;
+
+                                    const branding = metadata || {};
+                                    if (normalized.titleLogo) {
+                                        branding.titleLogo =
+                                            normalized.titleLogo;
+                                    }
+
+                                    normalized.tmdbBranding = branding;
+                                    // Priority: TMDB images > Source images
+                                    normalized.poster_url =
+                                        branding.poster ||
+                                        normalized.poster_url;
+                                    normalized.thumb_url =
+                                        branding.backdrop ||
+                                        normalized.thumb_url;
+                                    normalized.poster = normalized.poster_url;
+                                    normalized.thumbnail = normalized.thumb_url;
                                 }
 
-                                normalized.tmdbBranding = branding;
-                                // Priority: TMDB images > Source images
-                                normalized.poster_url =
-                                    branding.poster || normalized.poster_url;
-                                normalized.thumb_url =
-                                    branding.backdrop || normalized.thumb_url;
-                                normalized.poster = normalized.poster_url;
-                                normalized.thumbnail = normalized.thumb_url;
+                                return normalized;
+                            } catch (e) {
+                                console.error("Error detailing hero movie:", e);
+                                return m;
                             }
-
-                            return normalized;
-                        } catch (e) {
-                            console.error("Error detailing hero movie:", e);
-                            return m;
-                        }
-                    }),
-                );
-                setHeroMovies(detailedHeroMovies);
+                        }),
+                    );
+                    setHeroMovies(detailedHeroMovies);
+                    // Lưu vào cache với TTL tương đương Listing (10 phút)
+                    vodCache.set(
+                        heroCacheKey,
+                        detailedHeroMovies,
+                        vodCache.TTL.LISTING,
+                    );
+                }
             } else {
                 setHeroMovies([]);
             }

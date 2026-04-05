@@ -25,7 +25,9 @@
         "seeLess": "Thu gọn",
         "all": "Tất cả",
         "add": "Thêm vào yêu thích",
-        "remove": "Xoá khỏi yêu thích"
+        "remove": "Xoá khỏi yêu thích",
+        "language": "Ngôn ngữ",
+        "clearAll": "Xoá tất cả"
     },
     "auth": {
         "welcome": "Chào mừng bạn!",
@@ -39,6 +41,8 @@
         "newMovies": "Phim Mới Cập Nhật",
         "newSingleMovies": "Phim Lẻ Mới",
         "newSeriesMovies": "Phim Bộ Mới",
+        "series": "Phim Bộ",
+        "movies": "Phim Lẻ",
         "cinemaMovies": "Phim Chiếu Rạp",
         "tvShows": "TV Shows",
         "animation": "Hoạt Hình",

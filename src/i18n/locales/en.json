@@ -25,7 +25,9 @@
         "seeLess": "See less",
         "all": "All",
         "add": "Add to favorites",
-        "remove": "Remove from favorites"
+        "remove": "Remove from favorites",
+        "language": "Language",
+        "clearAll": "Clear All"
     },
     "auth": {
         "welcome": "Welcome!",
@@ -39,6 +41,8 @@
         "newMovies": "Newly Updated",
         "newSingleMovies": "New Movies",
         "newSeriesMovies": "New Series",
+        "series": "Series",
+        "movies": "Movies",
         "cinemaMovies": "Cinema Movies",
         "tvShows": "TV Shows",
         "animation": "Animation",

@@ -691,7 +691,7 @@ function MovieRow({
                     {link && (
                         <Link
                             to={link}
-                            className="flex items-center gap-1 text-sm font-bold text-zinc-500 opacity-100 transition-all duration-300 hover:text-red-500 focus:opacity-100 group-hover/title:opacity-100 md:opacity-0"
+                            className="flex items-center gap-1 text-sm font-bold text-zinc-500 transition-all duration-300 hover:text-red-500 focus:opacity-100"
                         >
                             {t("common.seeMore")}
                             <svg

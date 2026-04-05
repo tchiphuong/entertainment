@@ -377,7 +377,6 @@ export default function VodPlay() {
     const [tmdbCredits, setTmdbCredits] = useState(null);
     const [tmdbImages, setTmdbImages] = useState(null);
     const [tmdbVideos, setTmdbVideos] = useState(null);
-    const [fanartLogo, setFanartLogo] = useState(null); // Logo từ Fanart.tv hoặc hook
     const [imdbEpisodes, setImdbEpisodes] = useState([]); // Danh sách tập phim từ IMDb (cho hình ảnh)
     const [viewHistory, setViewHistory] = useLocalStorage("viewHistory", []);
     const viewHistoryRef = useRef(viewHistory); // Ref tránh re-render thường xuyên
@@ -509,10 +508,18 @@ export default function VodPlay() {
     }, [autoplayEnabled]);
 
     // Đồng bộ refs với state để tránh stale closure
-    useEffect(() => { episodesRef.current = episodes; }, [episodes]);
-    useEffect(() => { activeEpisodeRef.current = activeEpisode; }, [activeEpisode]);
-    useEffect(() => { currentEpisodeIdRef.current = currentEpisodeId; }, [currentEpisodeId]);
-    useEffect(() => { movieRef.current = movie; }, [movie]);
+    useEffect(() => {
+        episodesRef.current = episodes;
+    }, [episodes]);
+    useEffect(() => {
+        activeEpisodeRef.current = activeEpisode;
+    }, [activeEpisode]);
+    useEffect(() => {
+        currentEpisodeIdRef.current = currentEpisodeId;
+    }, [currentEpisodeId]);
+    useEffect(() => {
+        movieRef.current = movie;
+    }, [movie]);
 
     // Countdown timer: đếm ngược rồi tự động chuyển tập
     useEffect(() => {
@@ -656,7 +663,6 @@ export default function VodPlay() {
         tmdbCredits: fetchedTmdbCredits,
         tmdbImages: fetchedTmdbImages,
         tmdbVideos: fetchedTmdbVideos,
-        fanartLogo: fetchedFanartLogo,
     } = useMovieDetail(slug, sourceParam); // Truyền sourceParam vào hook
 
     useEffect(() => {
@@ -691,13 +697,11 @@ export default function VodPlay() {
         setTmdbCredits(fetchedTmdbCredits);
         setTmdbImages(fetchedTmdbImages);
         setTmdbVideos(fetchedTmdbVideos);
-        setFanartLogo(fetchedFanartLogo);
     }, [
         fetchedTmdbData,
         fetchedTmdbCredits,
         fetchedTmdbImages,
         fetchedTmdbVideos,
-        fetchedFanartLogo,
     ]);
 
     // Fetch danh sách tập phim từ TMDB để lấy hình ảnh từng tập
@@ -1817,7 +1821,7 @@ export default function VodPlay() {
 
         const video = document.createElement("video");
         video.id = "shaka-video";
-        video.className = "h-full w-full";
+        video.className = "h-full w-full object-contain";
         video.autoplay = true;
         video.playsInline = true;
 
@@ -2009,7 +2013,7 @@ export default function VodPlay() {
         playerDiv.innerHTML = "";
         const iframe = document.createElement("iframe");
         iframe.src = embedUrl;
-        iframe.className = "w-full h-full rounded-xl shadow-2xl";
+        iframe.className = "w-full h-full rounded-xl shadow-2xl object-contain";
         iframe.style.cssText = "border:none;";
         iframe.allowFullscreen = true;
         iframe.allow = "autoplay; encrypted-media";
@@ -2271,7 +2275,11 @@ export default function VodPlay() {
                         nextGroup.server_name,
                     );
                     setActiveEpisode(nextGroup);
-                    openEpisode(nextGroup.server_data[0], nextGroup, movieRef.current);
+                    openEpisode(
+                        nextGroup.server_data[0],
+                        nextGroup,
+                        movieRef.current,
+                    );
                     return;
                 }
             }
@@ -3076,10 +3084,7 @@ export default function VodPlay() {
                         <div className="flex flex-col gap-8">
                             {/* Player Column */}
                             <div className="flex w-full flex-col overflow-hidden rounded-2xl bg-black shadow-2xl ring-1 ring-white/5">
-                                <div
-                                    className="relative flex max-h-[80vh] w-full items-center justify-center overflow-hidden bg-black"
-                                    style={{ aspectRatio: "16/9" }}
-                                >
+                                <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden bg-black md:max-h-[80vh]">
                                     {/* Lớp nền mờ - React quản lý */}
                                     {!currentUrlRef.current &&
                                         memoizedBackgrounds && (
@@ -3103,17 +3108,37 @@ export default function VodPlay() {
                                             <div className="flex flex-col items-center gap-6 text-center">
                                                 {/* Vòng tròn đếm ngược */}
                                                 <div className="relative flex h-28 w-28 items-center justify-center">
-                                                    <svg className="absolute h-full w-full -rotate-90" viewBox="0 0 100 100">
+                                                    <svg
+                                                        className="absolute h-full w-full -rotate-90"
+                                                        viewBox="0 0 100 100"
+                                                    >
                                                         <circle
-                                                            cx="50" cy="50" r="42"
-                                                            fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="4"
+                                                            cx="50"
+                                                            cy="50"
+                                                            r="42"
+                                                            fill="none"
+                                                            stroke="rgba(255,255,255,0.1)"
+                                                            strokeWidth="4"
                                                         />
                                                         <circle
-                                                            cx="50" cy="50" r="42"
-                                                            fill="none" stroke="#dc2626" strokeWidth="4"
+                                                            cx="50"
+                                                            cy="50"
+                                                            r="42"
+                                                            fill="none"
+                                                            stroke="#dc2626"
+                                                            strokeWidth="4"
                                                             strokeLinecap="round"
-                                                            strokeDasharray={2 * Math.PI * 42}
-                                                            strokeDashoffset={2 * Math.PI * 42 * (1 - countdownSeconds / COUNTDOWN_DURATION)}
+                                                            strokeDasharray={
+                                                                2 * Math.PI * 42
+                                                            }
+                                                            strokeDashoffset={
+                                                                2 *
+                                                                Math.PI *
+                                                                42 *
+                                                                (1 -
+                                                                    countdownSeconds /
+                                                                        COUNTDOWN_DURATION)
+                                                            }
                                                             className="transition-all duration-1000 ease-linear"
                                                         />
                                                     </svg>
@@ -3127,13 +3152,17 @@ export default function VodPlay() {
                                                         Tự động chuyển tập
                                                     </p>
                                                     <p className="text-sm font-bold text-zinc-400">
-                                                        Tập tiếp theo sẽ phát sau {countdownSeconds} giây
+                                                        Tập tiếp theo sẽ phát
+                                                        sau {countdownSeconds}{" "}
+                                                        giây
                                                     </p>
                                                 </div>
 
                                                 <div className="flex items-center gap-3">
                                                     <button
-                                                        onClick={cancelCountdown}
+                                                        onClick={
+                                                            cancelCountdown
+                                                        }
                                                         className="rounded-full border border-zinc-700 bg-zinc-900/80 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-zinc-400 transition-all hover:border-zinc-500 hover:text-white active:scale-95"
                                                     >
                                                         Hủy
@@ -3175,55 +3204,67 @@ export default function VodPlay() {
                                         <div className="flex flex-wrap items-center gap-4 md:justify-end">
                                             {/* Previous/Next Episode Buttons */}
                                             <div className="flex items-center gap-3">
-                                                {/* Previous Episode */}
-                                                <button
-                                                    onClick={playPrevEpisode}
-                                                    className="group flex h-11 cursor-pointer items-center gap-2 rounded-full bg-zinc-900/50 px-5 text-white/70 ring-1 ring-white/10 transition-all hover:bg-zinc-800 hover:text-white active:scale-95 sm:px-6"
-                                                    title="Tập trước (P)"
-                                                >
-                                                    <svg
-                                                        className="h-4 w-4 transition-transform group-hover:-translate-x-1"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        viewBox="0 0 24 24"
-                                                    >
-                                                        <path
-                                                            strokeLinecap="round"
-                                                            strokeLinejoin="round"
-                                                            strokeWidth={2.5}
-                                                            d="M15 19l-7-7 7-7"
-                                                        />
-                                                    </svg>
-                                                    <span className="hidden text-[11px] font-black uppercase tracking-wider sm:block">
-                                                        Tập trước
-                                                    </span>
-                                                </button>
+                                                {episodeListData.length > 1 && (
+                                                    <div className="flex items-center gap-3">
+                                                        {/* Previous Episode */}
+                                                        <button
+                                                            onClick={
+                                                                playPrevEpisode
+                                                            }
+                                                            className="group flex h-11 cursor-pointer items-center gap-2 rounded-full bg-zinc-900/50 px-5 text-white/70 ring-1 ring-white/10 transition-all hover:bg-zinc-800 hover:text-white active:scale-95 sm:px-6"
+                                                            title="Tập trước (P)"
+                                                        >
+                                                            <svg
+                                                                className="h-4 w-4 transition-transform group-hover:-translate-x-1"
+                                                                fill="none"
+                                                                stroke="currentColor"
+                                                                viewBox="0 0 24 24"
+                                                            >
+                                                                <path
+                                                                    strokeLinecap="round"
+                                                                    strokeLinejoin="round"
+                                                                    strokeWidth={
+                                                                        2.5
+                                                                    }
+                                                                    d="M15 19l-7-7 7-7"
+                                                                />
+                                                            </svg>
+                                                            <span className="hidden text-[11px] font-black uppercase tracking-wider sm:block">
+                                                                Tập trước
+                                                            </span>
+                                                        </button>
 
-                                                {/* Next Episode */}
-                                                <button
-                                                    onClick={playNextEpisode}
-                                                    className="group flex h-11 cursor-pointer items-center gap-2 rounded-full bg-red-600 px-5 text-white shadow-lg shadow-red-600/20 transition-all hover:bg-red-500 active:scale-95 sm:px-7"
-                                                >
-                                                    <span className="hidden text-[11px] font-black uppercase tracking-wider sm:block">
-                                                        Tập tiếp theo
-                                                    </span>
-                                                    <span className="text-[11px] font-black uppercase tracking-wider sm:hidden">
-                                                        Tiếp
-                                                    </span>
-                                                    <svg
-                                                        className="h-4 w-4 transition-transform group-hover:translate-x-1"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        viewBox="0 0 24 24"
-                                                    >
-                                                        <path
-                                                            strokeLinecap="round"
-                                                            strokeLinejoin="round"
-                                                            strokeWidth={2.5}
-                                                            d="M9 5l7 7-7 7"
-                                                        />
-                                                    </svg>
-                                                </button>
+                                                        {/* Next Episode */}
+                                                        <button
+                                                            onClick={
+                                                                playNextEpisode
+                                                            }
+                                                            className="group flex h-11 cursor-pointer items-center gap-2 rounded-full bg-red-600 px-5 text-white shadow-lg shadow-red-600/20 transition-all hover:bg-red-500 active:scale-95 sm:px-7"
+                                                        >
+                                                            <span className="hidden text-[11px] font-black uppercase tracking-wider sm:block">
+                                                                Tập tiếp theo
+                                                            </span>
+                                                            <span className="text-[11px] font-black uppercase tracking-wider sm:hidden">
+                                                                Tiếp
+                                                            </span>
+                                                            <svg
+                                                                className="h-4 w-4 transition-transform group-hover:translate-x-1"
+                                                                fill="none"
+                                                                stroke="currentColor"
+                                                                viewBox="0 0 24 24"
+                                                            >
+                                                                <path
+                                                                    strokeLinecap="round"
+                                                                    strokeLinejoin="round"
+                                                                    strokeWidth={
+                                                                        2.5
+                                                                    }
+                                                                    d="M9 5l7 7-7 7"
+                                                                />
+                                                            </svg>
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -3572,8 +3613,13 @@ export default function VodPlay() {
                                                                 {/* Thời lượng tập phim (góc dưới phải thumbnail) */}
                                                                 {imdbEp?.runtime && (
                                                                     <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-[9px] font-bold text-zinc-200 backdrop-blur-sm">
-                                                                        {imdbEp.runtime >= 60
-                                                                            ? Math.round(imdbEp.runtime % 60) > 0
+                                                                        {imdbEp.runtime >=
+                                                                        60
+                                                                            ? Math.round(
+                                                                                  imdbEp.runtime %
+                                                                                      60,
+                                                                              ) >
+                                                                              0
                                                                                 ? `${Math.floor(imdbEp.runtime / 60)}g ${Math.round(imdbEp.runtime % 60)}p`
                                                                                 : `${Math.floor(imdbEp.runtime / 60)} Giờ`
                                                                             : `${Math.round(imdbEp.runtime)} Phút`}
@@ -3612,18 +3658,9 @@ export default function VodPlay() {
                                                     {isCompactView && (
                                                         <div className="flex flex-col items-center">
                                                             <span
-                                                                className={`text-base uppercase tracking-tighter ${isActive ? "text-white" : "text-zinc-400 group-hover:text-white"}`}
+                                                                className={`text-[10px] font-black uppercase tracking-widest ${isActive ? "text-white" : "text-zinc-500 group-hover:text-white"}`}
                                                             >
-                                                                {/^\d+$/.test(k)
-                                                                    ? k
-                                                                    : (
-                                                                          imdbEp?.name ||
-                                                                          k
-                                                                      )
-                                                                          .charAt(
-                                                                              0,
-                                                                          )
-                                                                          .toUpperCase()}
+                                                                Tập {k}
                                                             </span>
                                                         </div>
                                                     )}
@@ -3698,7 +3735,7 @@ export default function VodPlay() {
 
                                                 const logoUrl = titleLogo
                                                     ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.POSTER}${titleLogo.file_path}`
-                                                    : fanartLogo;
+                                                    : null;
 
                                                 if (logoUrl) {
                                                     return (
