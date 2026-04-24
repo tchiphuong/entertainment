@@ -12,6 +12,13 @@ import "shaka-player/dist/controls.css";
 import "../styles/shaka-player.css";
 
 const IMAGE_PROXY_PREFIX = "https://external-content.duckduckgo.com/iu/?u=";
+// Danh sách các CORS Proxy dự phòng
+const CORS_PROXIES = [
+    { url: "https://proxy.cors.sh/", encode: false },
+    { url: "https://api.allorigins.win/raw?url=", encode: true },
+    { url: "https://thingproxy.freeboard.io/fetch/", encode: false },
+    { url: "https://corsproxy.io/?url=", encode: true },
+];
 const FALLBACK_LOGO_DATA_URI =
     "data:image/svg+xml;utf8," +
     encodeURIComponent(`
@@ -521,7 +528,7 @@ const ChannelScroller = React.memo(function ChannelScroller({
                                 key={channel.id}
                                 onClick={() => onSelectChannel(channel)}
                                 className={
-                                    "premium-card-border group flex w-36 shrink-0 transform-gpu cursor-pointer flex-col items-center gap-2 rounded-xl border p-3 text-center transition-all duration-300 " +
+                                    "group flex w-36 shrink-0 transform-gpu cursor-pointer flex-col items-center gap-2 rounded-xl border p-3 text-center transition-all duration-300 " +
                                     (isSelected
                                         ? "border-cyan-400/50 bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.15)] ring-1 ring-cyan-400/30"
                                         : "bg-white/2 hover:bg-white/8 border-white/5 hover:scale-[1.05] hover:border-white/20 hover:shadow-xl")
@@ -597,95 +604,253 @@ const ChannelScroller = React.memo(function ChannelScroller({
 });
 
 // Component hiển thị thông tin kênh đang chọn - Memoized
-const ChannelInfo = React.memo(({ selectedChannel, onPrev, onNext }) => {
-    if (!selectedChannel) return null;
-    return (
-        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/40 p-5 shadow-2xl">
-            {/* Subtle inner highlight */}
-            <div className="bg-linear-to-b from-white/8 pointer-events-none absolute inset-0 to-transparent opacity-50" />
+const ChannelInfo = React.memo(
+    ({
+        selectedChannel,
+        currentSourceIdx,
+        showSourceDropdown,
+        setShowSourceDropdown,
+        onSelectSource,
+        onPrev,
+        onNext,
+        isFavorite,
+        onToggleFavorite,
+    }) => {
+        if (!selectedChannel) return null;
+        return (
+            <div className="relative rounded-2xl border border-white/10 bg-black/40 p-5 shadow-2xl">
+                {/* Subtle inner highlight */}
+                <div className="bg-linear-to-b from-white/8 pointer-events-none absolute inset-0 to-transparent opacity-50" />
 
-            <div className="relative z-10 flex items-center justify-between gap-4">
-                <div className="flex items-center gap-5">
-                    <div className="group relative">
-                        {selectedChannel.logo ? (
-                            <img
-                                loading="lazy"
-                                src={selectedChannel.logo}
-                                alt={selectedChannel.name}
-                                onError={handleImageFallbackError}
-                                className="h-14 w-14 rounded-xl border border-white/15 bg-zinc-900/50 object-contain p-1.5 shadow-lg transition-transform group-hover:scale-105"
-                            />
-                        ) : (
-                            <div className="h-14 w-14 rounded-xl border border-white/15 bg-zinc-800/50 shadow-lg" />
-                        )}
-                        <div className="animate-pulse-live absolute -right-1 -top-1 h-3 w-3 rounded-full bg-red-500 shadow-[0_0_10px_#06b6d4]" />
-                    </div>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400 ring-1 ring-inset ring-red-500/20">
-                                Live
-                            </span>
-                            <div className="text-[11px] font-medium uppercase tracking-wide text-white/40">
-                                Đang phát
-                            </div>
-                        </div>
-                        <div className="mt-0.5 line-clamp-1 text-xl font-bold tracking-tight text-white">
-                            {selectedChannel.name}
-                        </div>
-                        {selectedChannel.configSources &&
-                            selectedChannel.configSources.length > 1 && (
-                                <div className="mt-1 flex items-center gap-1.5 text-xs text-white/50">
-                                    <div className="h-1 w-1 rounded-full bg-white/30" />
-                                    {selectedChannel.configSources.length} nguồn
-                                    phát
-                                </div>
+                <div className="relative z-10 flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-5">
+                        <div className="group relative">
+                            {selectedChannel.logo ? (
+                                <img
+                                    loading="lazy"
+                                    src={selectedChannel.logo}
+                                    alt={selectedChannel.name}
+                                    onError={handleImageFallbackError}
+                                    className="h-14 w-14 rounded-xl border border-white/15 bg-zinc-900/50 object-contain p-1.5 shadow-lg transition-transform group-hover:scale-105"
+                                />
+                            ) : (
+                                <div className="h-14 w-14 rounded-xl border border-white/15 bg-zinc-800/50 shadow-lg" />
                             )}
+                            <div className="animate-pulse-live absolute -right-1 -top-1 h-3 w-3 rounded-full bg-red-500 shadow-[0_0_10px_#06b6d4]" />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                                <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400 ring-1 ring-inset ring-red-500/20">
+                                    Live
+                                </span>
+                                <div className="text-[11px] font-medium uppercase tracking-wide text-white/40">
+                                    Đang phát
+                                </div>
+                            </div>
+                            <div className="mt-0.5 flex items-center gap-2">
+                                <div className="line-clamp-1 text-xl font-bold tracking-tight text-white">
+                                    {selectedChannel.name}
+                                </div>
+                                <button
+                                    onClick={() =>
+                                        onToggleFavorite(selectedChannel.id)
+                                    }
+                                    className={
+                                        "transition-all duration-300 " +
+                                        (isFavorite
+                                            ? "scale-110 text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]"
+                                            : "text-white/20 hover:text-white/50")
+                                    }
+                                >
+                                    <svg
+                                        className="h-5 w-5"
+                                        fill={
+                                            isFavorite ? "currentColor" : "none"
+                                        }
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                                        />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* Custom Source Selection Dropdown */}
+                            {selectedChannel.configSources &&
+                                selectedChannel.configSources.length > 0 && (
+                                    <div className="mt-3 flex items-center gap-3">
+                                        <div className="relative">
+                                            <button
+                                                onClick={() =>
+                                                    setShowSourceDropdown(
+                                                        !showSourceDropdown,
+                                                    )
+                                                }
+                                                className={
+                                                    "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[11px] font-bold transition-all " +
+                                                    (showSourceDropdown
+                                                        ? "border-cyan-500/50 bg-cyan-500/20 text-white shadow-[0_0_15px_rgba(6,182,212,0.3)]"
+                                                        : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:bg-white/10 hover:text-white")
+                                                }
+                                            >
+                                                <span>
+                                                    Nguồn {currentSourceIdx + 1}
+                                                </span>
+                                                <svg
+                                                    className={
+                                                        "h-3 w-3 transition-transform duration-300 " +
+                                                        (showSourceDropdown
+                                                            ? "rotate-180 text-cyan-400"
+                                                            : "")
+                                                    }
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                >
+                                                    <path
+                                                        strokeLinecap="round"
+                                                        strokeLinejoin="round"
+                                                        strokeWidth={3}
+                                                        d="M19 9l-7 7-7-7"
+                                                    />
+                                                </svg>
+                                            </button>
+
+                                            {showSourceDropdown && (
+                                                <>
+                                                    {/* Backdrop to close on click outside */}
+                                                    <div
+                                                        className="fixed inset-0 z-40"
+                                                        onClick={() =>
+                                                            setShowSourceDropdown(
+                                                                false,
+                                                            )
+                                                        }
+                                                    />
+
+                                                    {/* Dropdown Menu */}
+                                                    <div className="animate-in fade-in slide-in-from-top-2 absolute left-0 top-full z-50 mt-2 min-w-[120px] overflow-hidden rounded-xl border border-white/10 bg-zinc-900/90 shadow-2xl backdrop-blur-xl duration-200">
+                                                        <div className="flex flex-col p-1.5">
+                                                            {selectedChannel.configSources.map(
+                                                                (_, idx) => {
+                                                                    const isSelected =
+                                                                        currentSourceIdx ===
+                                                                        idx;
+                                                                    return (
+                                                                        <button
+                                                                            key={
+                                                                                idx
+                                                                            }
+                                                                            onClick={() => {
+                                                                                onSelectSource(
+                                                                                    idx,
+                                                                                );
+                                                                                setShowSourceDropdown(
+                                                                                    false,
+                                                                                );
+                                                                            }}
+                                                                            className={
+                                                                                "flex items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-bold transition-all " +
+                                                                                (isSelected
+                                                                                    ? "bg-cyan-500 text-black"
+                                                                                    : "text-white/60 hover:bg-white/10 hover:text-white")
+                                                                            }
+                                                                        >
+                                                                            <span>
+                                                                                Nguồn{" "}
+                                                                                {idx +
+                                                                                    1}
+                                                                            </span>
+                                                                            {isSelected && (
+                                                                                <svg
+                                                                                    className="h-3 w-3"
+                                                                                    fill="none"
+                                                                                    stroke="currentColor"
+                                                                                    viewBox="0 0 24 24"
+                                                                                >
+                                                                                    <path
+                                                                                        strokeLinecap="round"
+                                                                                        strokeLinejoin="round"
+                                                                                        strokeWidth={
+                                                                                            3
+                                                                                        }
+                                                                                        d="M5 13l4 4L19 7"
+                                                                                    />
+                                                                                </svg>
+                                                                            )}
+                                                                        </button>
+                                                                    );
+                                                                },
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+                                            <span className="text-[10px] font-bold uppercase tracking-tight text-white/40">
+                                                Nguồn {currentSourceIdx + 1} /{" "}
+                                                {
+                                                    selectedChannel
+                                                        .configSources.length
+                                                }
+                                            </span>
+                                        </div>
+                                    </div>
+                                )}
+                        </div>
                     </div>
-                </div>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={onPrev}
-                        className="rounded-full bg-white/10 p-2 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
-                        title="Kênh trước"
-                    >
-                        <svg
-                            className="h-5 w-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                    <div className="flex shrink-0 items-center gap-2">
+                        <button
+                            onClick={onPrev}
+                            className="rounded-full bg-white/10 p-2 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+                            title="Kênh trước"
                         >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M15 19l-7-7 7-7"
-                            />
-                        </svg>
-                    </button>
-                    <button
-                        onClick={onNext}
-                        className="rounded-full bg-white/10 p-2 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
-                        title="Kênh sau"
-                    >
-                        <svg
-                            className="h-5 w-5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                            <svg
+                                className="h-5 w-5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M15 19l-7-7 7-7"
+                                />
+                            </svg>
+                        </button>
+                        <button
+                            onClick={onNext}
+                            className="rounded-full bg-white/10 p-2 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+                            title="Kênh sau"
                         >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M9 5l7 7-7 7"
-                            />
-                        </svg>
-                    </button>
+                            <svg
+                                className="h-5 w-5"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 5l7 7-7 7"
+                                />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
-        </div>
-    );
-});
+        );
+    },
+);
 
 // Component hiển thị từng mục trong lịch phát sóng - Memoized
 
@@ -827,6 +992,22 @@ const ScheduleList = React.memo(
         expanded,
         onToggle,
     }) => {
+        // Đăng ký wheel event với { passive: false } để có thể preventDefault
+        useEffect(() => {
+            const el = containerRef?.current;
+            if (!el) return;
+
+            const handleWheel = (e) => {
+                const canScroll = el.scrollHeight > el.clientHeight;
+                if (!canScroll) return;
+                e.preventDefault();
+                el.scrollTop += e.deltaY;
+            };
+
+            el.addEventListener("wheel", handleWheel, { passive: false });
+            return () => el.removeEventListener("wheel", handleWheel);
+        }, [containerRef]);
+
         return (
             <div className="bg-white/3 relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
                 {/* Subtle inner highlight */}
@@ -878,18 +1059,6 @@ const ScheduleList = React.memo(
 
                 <div
                     ref={containerRef}
-                    onWheel={(e) => {
-                        const target = containerRef?.current;
-                        if (!target) return;
-
-                        const canScroll =
-                            target.scrollHeight > target.clientHeight;
-                        if (!canScroll) return;
-
-                        // Ép cuộn đúng vùng lịch phát sóng khi lăn chuột
-                        e.preventDefault();
-                        target.scrollTop += e.deltaY;
-                    }}
                     className={
                         "custom-scrollbar h-0 min-h-96 grow overflow-auto text-sm text-white/80 " +
                         (expanded === false ? "hidden" : "")
@@ -1118,20 +1287,42 @@ export default function TV() {
             // ignore toast errors
         }
     }, []);
-    const [groups, setGroups] = useState([]);
+    const [rawGroups, setRawGroups] = useState([]); // Lưu dữ liệu gốc từ API
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [selectedChannel, setSelectedChannel] = useState(null);
+    const [currentSourceIdx, setCurrentSourceIdx] = useState(0); // Track nguồn đang phát hiện tại
+    const [showSourceDropdown, setShowSourceDropdown] = useState(false); // Đóng/mở menu chọn nguồn
     const [lastUpdated, setLastUpdated] = useState(null);
     const [schedule, setSchedule] = useState([]);
     const [scheduleLoading, setScheduleLoading] = useState(false);
     const [scheduleError, setScheduleError] = useState(null);
-    const [expandedGroups, setExpandedGroups] = useState(new Set()); // Track các group đang mở
+    const [activeGroupId, setActiveGroupId] = useState(null); // ID của nhóm đang chọn (Tab)
+    const [expandedGroups, setExpandedGroups] = useState(new Set()); // Vẫn giữ để tương thích nếu cần
+
+    // Favorites & Play Counts
+    const [favorites, setFavorites] = useState(() => {
+        const saved = localStorage.getItem("tv_favorites");
+        return saved ? JSON.parse(saved) : [];
+    });
+    const [playCounts, setPlayCounts] = useState(() => {
+        const saved = localStorage.getItem("tv_play_counts");
+        return saved ? JSON.parse(saved) : {};
+    });
+
     const [epgChannels, setEpgChannels] = useState(new Map()); // Map tvgId -> channel info từ EPG API
     const [showEpg, setShowEpg] = useState(true);
     const [showChannels, setShowChannels] = useState(true);
     const [isPseudoPip, setIsPseudoPip] = useState(false); // PiP giả lập bằng CSS
+    const [pipCorner, setPipCorner] = useState("bottom-right"); // Góc hiện tại của PiP: top-left, top-right, bottom-left, bottom-right
     const [showScrollTopButton, setShowScrollTopButton] = useState(false);
+    const pipDragRef = useRef({
+        isDragging: false,
+        startX: 0,
+        startY: 0,
+        initialX: 0,
+        initialY: 0,
+    }); // Drag state cho PiP
     // Refs for video element và Shaka
     const videoRef = useRef(null);
     const playerFrameRef = useRef(null); // Frame gốc để detect scroll ra khỏi viewport
@@ -1141,14 +1332,42 @@ export default function TV() {
     const currentChannelRef = useRef(null); // Track channel đang phát để tránh duplicate init
     const hasLoadedChannelsRef = useRef(false); // Track đã load channels chưa để tránh duplicate fetch
     const hasLoadedEpgChannelsRef = useRef(false); // Track đã load EPG channels chưa
+    const scrollPosRef = useRef(0);
+    const isSyncingUrlRef = useRef(false);
+    const lastSyncedIdRef = useRef(null); // Ghi nhớ ID cuối cùng đã đồng bộ thành công
+    const tabsRef = useRef(null); // Ref cho thanh cuộn Tab Nhóm
+
     const scheduleCacheRef = useRef(new Map()); // Cache schedule theo channelId, tránh spam API
     const errorCountRef = useRef(0); // Track số lần lỗi liên tiếp
     const triedSourcesRef = useRef(new Set()); // Track các source đã thử
-    const isSyncingUrlRef = useRef(false); // Chặn loop khi đồng bộ state <-> URL
     const retryTimeoutsRef = useRef(new Set()); // Lưu timeout retry để clear khi đổi kênh
     const playSessionRef = useRef(0); // Phiên phát hiện tại để chặn retry cũ
     const sourceTimeoutRef = useRef(null); // Timeout watchdog cho source hiện tại
     const activeVideoElementRef = useRef(null); // Track video element đang phát để destroy triệt để
+
+    // Cache source index hoạt động gần nhất theo channelId - persist vào localStorage
+    const workingSourceCacheRef = useRef(null);
+    if (workingSourceCacheRef.current === null) {
+        try {
+            const saved = localStorage.getItem("tv-source-cache");
+            workingSourceCacheRef.current = saved
+                ? new Map(JSON.parse(saved))
+                : new Map();
+        } catch (e) {
+            workingSourceCacheRef.current = new Map();
+        }
+    }
+
+    // Index của proxy đang hoạt động tốt (0-3)
+    const currentProxyIndexRef = useRef(null);
+    if (currentProxyIndexRef.current === null) {
+        try {
+            const saved = localStorage.getItem("tv-working-proxy-index");
+            currentProxyIndexRef.current = saved ? parseInt(saved, 10) : 0;
+        } catch (e) {
+            currentProxyIndexRef.current = 0;
+        }
+    }
 
     // getChannelParamId & findChannelByParamId đã được đưa ra ngoài component
 
@@ -1198,10 +1417,7 @@ export default function TV() {
     // --- LOAD CHANNELS ON MOUNT ---
     useEffect(() => {
         const loadChannels = async () => {
-            // Tránh fetch duplicate trong React Strict Mode
-            if (hasLoadedChannelsRef.current) {
-                return;
-            }
+            if (hasLoadedChannelsRef.current) return;
             hasLoadedChannelsRef.current = true;
 
             try {
@@ -1211,30 +1427,16 @@ export default function TV() {
                     : Array.isArray(response?.groups)
                       ? response.groups
                       : [];
-                setGroups(data);
 
-                // Chỉ mở group chứa kênh đang xem (thay vì mở hết 62 groups)
-                // Giảm DOM từ ~18,900 → ~500 elements
-                const initialChannel = (() => {
-                    const allCh = data.flatMap((g) => g.channels);
-                    return (
-                        findChannelByParamId(allCh, urlChannelId) ||
-                        allCh[0] ||
-                        null
-                    );
-                })();
-                const activeGroupName = initialChannel
-                    ? data.find((g) =>
-                          g.channels.some((c) => c.id === initialChannel.id),
-                      )?.name
-                    : data[0]?.name;
-                setExpandedGroups(
-                    new Set(activeGroupName ? [activeGroupName] : []),
-                );
+                setRawGroups(data);
 
                 // Tự động chọn kênh từ URL param id trước, nếu không có thì chọn kênh đầu tiên
                 if (data && data.length > 0) {
-                    const allChannels = data.flatMap((group) => group.channels);
+                    const allChannels = data.flatMap((group) =>
+                        group && Array.isArray(group.channels)
+                            ? group.channels
+                            : [],
+                    );
                     const channelFromParam = findChannelByParamId(
                         allChannels,
                         urlChannelId,
@@ -1256,43 +1458,165 @@ export default function TV() {
         loadChannels();
     }, []);
 
-    // Đồng bộ từ URL param id -> selectedChannel (khi người dùng sửa URL)
-    useEffect(() => {
-        if (!groups || groups.length === 0) return;
+    // Tính toán groups hiển thị (bao gồm nhóm ảo) - Reactive theo favorites/playCounts
+    const groups = useMemo(() => {
+        const allChannelsMap = new Map();
+        (rawGroups || []).forEach((g) => {
+            if (g && Array.isArray(g.channels)) {
+                g.channels.forEach((c) => {
+                    if (c && c.id) {
+                        // Ưu tiên giữ lại bản ghi đầy đủ nhất nếu trùng ID
+                        if (
+                            !allChannelsMap.has(c.id) ||
+                            (c.configSources &&
+                                !allChannelsMap.get(c.id).configSources)
+                        ) {
+                            allChannelsMap.set(c.id, c);
+                        }
+                    }
+                });
+            }
+        });
 
-        // Bỏ qua 1 lượt khi URL vừa được update từ state để tránh loop
+        const virtualGroups = [];
+
+        // Nhóm Yêu thích
+        if (Array.isArray(favorites) && favorites.length > 0) {
+            const favoriteChannels = favorites
+                .map((id) => allChannelsMap.get(id))
+                .filter(Boolean);
+
+            if (favoriteChannels.length > 0) {
+                virtualGroups.push({
+                    id: "favorites",
+                    name: "Yêu thích",
+                    channels: favoriteChannels,
+                });
+            }
+        }
+
+        // Nhóm Xem nhiều
+        if (playCounts) {
+            const mostWatchedIds = Object.keys(playCounts)
+                .sort((a, b) => playCounts[b] - playCounts[a])
+                .slice(0, 20);
+
+            const mostWatchedChannels = mostWatchedIds
+                .map((id) => allChannelsMap.get(id))
+                .filter(Boolean);
+
+            if (mostWatchedChannels.length > 0) {
+                virtualGroups.push({
+                    id: "most_watched",
+                    name: "Xem nhiều",
+                    channels: mostWatchedChannels,
+                });
+            }
+        }
+
+        return [...virtualGroups, ...(rawGroups || [])];
+    }, [rawGroups, favorites, playCounts]);
+
+    // Đồng bộ activeGroupId khi groups thay đổi hoặc khi chọn kênh mới
+    useEffect(() => {
+        if (!Array.isArray(groups) || groups.length === 0) return;
+
+        // Nếu chưa có Tab nào được chọn, hoặc Tab hiện tại không còn tồn tại
+        const currentGroupExists = groups.some(
+            (g) => g && g.id === activeGroupId,
+        );
+        if (!activeGroupId || !currentGroupExists) {
+            // Ưu tiên chọn Tab chứa kênh đang xem hiện tại
+            if (selectedChannel) {
+                const foundGroup = groups.find(
+                    (g) =>
+                        g &&
+                        Array.isArray(g.channels) &&
+                        g.channels.some(
+                            (c) => c && c.id === selectedChannel.id,
+                        ),
+                );
+                if (foundGroup) {
+                    setActiveGroupId(foundGroup.id);
+                    return;
+                }
+            }
+            setActiveGroupId(groups[0]?.id);
+        }
+    }, [groups, activeGroupId, selectedChannel?.id]);
+
+    // Đồng bộ từ URL param id -> selectedChannel (khi người dùng sửa URL thủ công hoặc back/forward)
+    useEffect(() => {
+        if (!Array.isArray(groups) || groups.length === 0) return;
+
+        // Nếu là do state vừa update URL, ta bỏ qua
         if (isSyncingUrlRef.current) {
             isSyncingUrlRef.current = false;
             return;
         }
 
-        if (!urlChannelId) return;
+        const currentUrlId = String(urlChannelId || "")
+            .trim()
+            .toLowerCase();
+        if (!currentUrlId) return;
 
-        const allChannels = groups.flatMap((group) => group.channels);
-        const matchedChannel = findChannelByParamId(allChannels, urlChannelId);
+        // Nếu ID trên URL trùng với ID ta vừa chủ động đẩy lên, không cần xử lý lại
+        if (lastSyncedIdRef.current === currentUrlId) return;
+
+        // Lấy danh sách kênh duy nhất
+        const allChannelsMap = new Map();
+        groups.forEach((g) => {
+            if (g && Array.isArray(g.channels)) {
+                g.channels.forEach((c) => {
+                    if (c && c.id && !allChannelsMap.has(c.id)) {
+                        allChannelsMap.set(c.id, c);
+                    }
+                });
+            }
+        });
+        const allUniqueChannels = Array.from(allChannelsMap.values());
+
+        const matchedChannel = findChannelByParamId(
+            allUniqueChannels,
+            currentUrlId,
+        );
 
         if (matchedChannel && matchedChannel.id !== selectedChannel?.id) {
+            lastSyncedIdRef.current = currentUrlId;
             setSelectedChannel(matchedChannel);
         }
-    }, [groups, urlChannelId]);
+    }, [groups, urlChannelId, selectedChannel?.id]);
 
     // Đồng bộ selectedChannel -> URL param id
     useEffect(() => {
         if (!selectedChannel) return;
 
-        const currentId = String(urlChannelId || "")
-            .trim()
-            .toLowerCase();
         const nextId = getChannelParamId(selectedChannel);
         const nextIdNormalized = String(nextId || "")
             .trim()
             .toLowerCase();
-        if (!nextIdNormalized || currentId === nextIdNormalized) return;
+        const currentUrlId = String(urlChannelId || "")
+            .trim()
+            .toLowerCase();
 
+        if (!nextIdNormalized || currentUrlId === nextIdNormalized) {
+            lastSyncedIdRef.current = nextIdNormalized;
+            return;
+        }
+
+        scrollPosRef.current = window.scrollY;
         isSyncingUrlRef.current = true;
+        lastSyncedIdRef.current = nextIdNormalized;
+
         const nextParams = new URLSearchParams(window.location.search);
         nextParams.set("id", nextId);
         setSearchParams(nextParams, { replace: true });
+
+        requestAnimationFrame(() => {
+            if (window.scrollY !== scrollPosRef.current) {
+                window.scrollTo(0, scrollPosRef.current);
+            }
+        });
     }, [selectedChannel?.id, urlChannelId, setSearchParams]);
 
     // Ref để lưu danh sách sources đã filter cho channel hiện tại
@@ -1351,8 +1675,11 @@ export default function TV() {
     }, []);
 
     const scheduleRetry = useCallback((callback, delayMs) => {
+        const sessionAtSchedule = playSessionRef.current;
         const timeoutId = window.setTimeout(() => {
             retryTimeoutsRef.current.delete(timeoutId);
+            // Chỉ thực thi nếu vẫn đang ở cùng phiên phát
+            if (sessionAtSchedule !== playSessionRef.current) return;
             callback();
         }, delayMs);
         retryTimeoutsRef.current.add(timeoutId);
@@ -1406,6 +1733,7 @@ export default function TV() {
     ) => {
         if (sessionId !== playSessionRef.current) return;
         clearSourceTimeout();
+        setCurrentSourceIdx(sourceIndex);
 
         console.log(`[Shaka Setup] Source ${sourceIndex}:`, {
             file: source.file,
@@ -1635,21 +1963,86 @@ export default function TV() {
             }
         }
 
-        // Cấu hình network request filters
-        if (source.referrer || source.userAgent) {
+        // Cấu hình network request filters - CORS proxy qua corsproxy.io
+        // Cấu hình network request filters - Multi CORS proxy
+        {
             const networkingEngine = player.getNetworkingEngine();
             if (networkingEngine) {
+                // Chỉ kích hoạt proxy nếu clearKeyMode là một trong các chế độ proxy
+                const isProxyMode =
+                    typeof clearKeyMode === "string" &&
+                    clearKeyMode.startsWith("cors-proxy");
+
+                let proxyIndex = 0;
+                if (clearKeyMode.startsWith("cors-proxy-")) {
+                    proxyIndex = parseInt(
+                        clearKeyMode.replace("cors-proxy-", ""),
+                        10,
+                    );
+                } else if (clearKeyMode === "cors-proxy") {
+                    proxyIndex = currentProxyIndexRef.current;
+                }
+
                 networkingEngine.registerRequestFilter((type, request) => {
-                    // Browser chặn set User-Agent/Referer bằng JS.
-                    // Không set 2 header này để tránh request fail ngầm khi play segment.
+                    if (
+                        !isProxyMode ||
+                        !request.uris ||
+                        request.uris.length === 0
+                    )
+                        return;
+
+                    const isManifest =
+                        type ===
+                        shaka.net.NetworkingEngine.RequestType.MANIFEST;
+                    const isLicense =
+                        type === shaka.net.NetworkingEngine.RequestType.LICENSE;
+                    const isSegment =
+                        type === shaka.net.NetworkingEngine.RequestType.SEGMENT;
+
+                    // Chỉ proxy khi ở chế độ proxy explicitly
+                    if (isProxyMode) {
+                        const proxy =
+                            CORS_PROXIES[proxyIndex % CORS_PROXIES.length];
+                        request.uris = request.uris.map((uri) => {
+                            if (
+                                uri.includes("proxy.cors.sh") ||
+                                uri.includes("allorigins") ||
+                                uri.includes("corsproxy.io")
+                            )
+                                return uri;
+
+                            const targetUri = proxy.encode
+                                ? encodeURIComponent(uri)
+                                : uri;
+                            return proxy.url + targetUri;
+                        });
+
+                        // Thêm API key cho proxy.cors.sh
+                        if (proxy.url === "https://proxy.cors.sh/") {
+                            request.headers["x-cors-api-key"] =
+                                "temp_a7e2e393ae9dafa7dae7412bb23fadee";
+                        }
+
+                        // Một số proxy yêu cầu hoặc hỗ trợ nhận header qua các header tùy chỉnh
+                        // Hoặc đơn giản là forward các header chuẩn nếu proxy đó hỗ trợ
+                        if (source.userAgent) {
+                            request.headers["X-Cors-User-Agent"] =
+                                source.userAgent;
+                            // Thử cả header chuẩn, một số proxy minh bạch (transparent) sẽ forward
+                            request.headers["User-Agent"] = source.userAgent;
+                        }
+                        if (source.referrer) {
+                            request.headers["X-Cors-Referer"] = source.referrer;
+                            request.headers["Referer"] = source.referrer;
+                        }
+                    } else {
+                        // Ngay cả khi không dùng proxy, vẫn thử set header (dù trình duyệt có thể chặn Referer/UA)
+                        if (source.userAgent)
+                            request.headers["User-Agent"] = source.userAgent;
+                        if (source.referrer)
+                            request.headers["Referer"] = source.referrer;
+                    }
                 });
-                console.log("Shaka source has extra network hints:", {
-                    referrer: source.referrer,
-                    userAgent: source.userAgent,
-                });
-                console.warn(
-                    "Browser không cho phép set trực tiếp Referer/User-Agent từ JS. Nếu nguồn bắt buộc 2 header này thì cần proxy server.",
-                );
             }
         }
 
@@ -1704,6 +2097,52 @@ export default function TV() {
                 // Đã thử hết 3 modes, chuyển sang source tiếp theo
             }
 
+            // CORS retry: thử lần lượt các proxy trong danh sách
+            const isCorsError =
+                error?.code === 1001 ||
+                error?.code === 1002 ||
+                error?.category === 1;
+
+            if (isCorsError) {
+                // Tương tự logic retry ở trên
+                let currentTryIdx = 0;
+                if (
+                    typeof clearKeyMode === "string" &&
+                    clearKeyMode.startsWith("cors-proxy-")
+                ) {
+                    currentTryIdx =
+                        parseInt(clearKeyMode.replace("cors-proxy-", ""), 10) +
+                        1;
+                } else {
+                    currentTryIdx = 0;
+                }
+
+                if (currentTryIdx < CORS_PROXIES.length) {
+                    const nextProxyMode = `cors-proxy-${currentTryIdx}`;
+                    console.log(
+                        `[CORS Proxy] Thử proxy tiếp theo: index ${currentTryIdx}`,
+                    );
+                    showToast(
+                        `Lỗi mạng, thử proxy dự phòng ${currentTryIdx + 1}...`,
+                        {
+                            type: "warn",
+                            duration: 2500,
+                        },
+                    );
+                    scheduleRetry(
+                        () =>
+                            setupShakaPlayer(
+                                source,
+                                sourceIndex,
+                                nextProxyMode,
+                                sessionId,
+                            ),
+                        300,
+                    );
+                    return;
+                }
+            }
+
             // Thử source tiếp theo
             const nextIndex = sourceIndex + 1;
             if (nextIndex < sources.length) {
@@ -1735,6 +2174,49 @@ export default function TV() {
                     `Đang phát từ nguồn ${sourceIndex + 1}/${sources.length}: ${source.label}`,
                     { type: "info", duration: 3000 },
                 );
+            }
+
+            // Cache proxy thành công vào localStorage
+            if (
+                typeof clearKeyMode === "string" &&
+                clearKeyMode.startsWith("cors-proxy-")
+            ) {
+                const successIdx = parseInt(
+                    clearKeyMode.replace("cors-proxy-", ""),
+                    10,
+                );
+                currentProxyIndexRef.current = successIdx;
+                localStorage.setItem(
+                    "tv-working-proxy-index",
+                    successIdx.toString(),
+                );
+            }
+
+            // Cache source index hoạt động cho channel hiện tại
+            // Lưu vào cả ref và localStorage để persist qua reload
+            if (selectedChannel) {
+                const chCacheKey =
+                    getChannelParamId(selectedChannel) || selectedChannel.id;
+                const cacheEntry = {
+                    sourceIndex,
+                    clearKeyMode: clearKeyMode,
+                    useCorsProxy: clearKeyMode.includes("cors-proxy"),
+                };
+                workingSourceCacheRef.current.set(chCacheKey, cacheEntry);
+                try {
+                    // Giới hạn cache 50 kênh gần nhất để không phình localStorage
+                    const map = workingSourceCacheRef.current;
+                    if (map.size > 50) {
+                        const firstKey = map.keys().next().value;
+                        map.delete(firstKey);
+                    }
+                    localStorage.setItem(
+                        "tv-source-cache",
+                        JSON.stringify([...map]),
+                    );
+                } catch (e) {
+                    /* ignore storage errors */
+                }
             }
         } catch (error) {
             clearSourceTimeout();
@@ -1785,6 +2267,35 @@ export default function TV() {
                     return;
                 }
                 // Đã thử hết 3 modes, chuyển sang source tiếp theo
+            }
+
+            // CORS retry: khi load fail do network error (CORS block)
+            // Shaka network errors: 1001 = BAD_HTTP_STATUS, 1002 = HTTP_ERROR
+            // TypeError thường là dấu hiệu CORS bị chặn hoàn toàn (fetch failed)
+            const isCorsError =
+                error?.code === 1001 ||
+                error?.code === 1002 ||
+                error?.category === 1 ||
+                error instanceof TypeError;
+            if (isCorsError && clearKeyMode !== "cors-proxy") {
+                console.log(
+                    "[CORS Proxy] Manifest load bị lỗi mạng, thử lại qua CORS proxy...",
+                );
+                showToast("Đang thử qua CORS proxy...", {
+                    type: "warn",
+                    duration: 2500,
+                });
+                scheduleRetry(
+                    () =>
+                        setupShakaPlayer(
+                            source,
+                            sourceIndex,
+                            "cors-proxy",
+                            sessionId,
+                        ),
+                    300,
+                );
+                return;
             }
 
             // Thử source tiếp theo
@@ -1913,6 +2424,8 @@ export default function TV() {
 
                 // Destroy existing players trước khi setup mới
                 await destroyAllPlayers();
+                // Clear lần 2: bắt bất kỳ retry nào được schedule bởi error handler trong quá trình destroy
+                clearPendingRetries();
 
                 // Nếu có configSources, build sources array và dùng logic retry
                 if (
@@ -1980,9 +2493,28 @@ export default function TV() {
                         );
                     }
 
-                    // Lưu danh sách sources và bắt đầu với source đầu tiên
+                    // Lưu danh sách sources
                     currentSourcesRef.current = filteredSources;
-                    await setupPlayerWithSource(0, sessionId);
+
+                    // Kiểm tra cache source đã hoạt động trước đó cho kênh này
+                    const chCacheKey =
+                        getChannelParamId(selectedChannel) ||
+                        selectedChannel.id;
+                    const cachedSource =
+                        workingSourceCacheRef.current.get(chCacheKey);
+                    const startIndex =
+                        cachedSource &&
+                        cachedSource.sourceIndex < filteredSources.length
+                            ? cachedSource.sourceIndex
+                            : 0;
+
+                    if (startIndex > 0) {
+                        console.log(
+                            `[Cache] Bắt đầu từ source ${startIndex + 1} (đã cache từ lần phát trước)`,
+                        );
+                    }
+
+                    await setupPlayerWithSource(startIndex, sessionId);
                 } else {
                     // Fallback: single source - setup trực tiếp
                     currentSourcesRef.current = [
@@ -2186,65 +2718,6 @@ export default function TV() {
         if (!document.getElementById(styleId)) {
             const s = document.createElement("style");
             s.id = styleId;
-            s.innerHTML = `
-                /* Modern rounded scrollbar */
-                .custom-scrollbar {
-                    scrollbar-width: thin;
-                    scrollbar-color: rgba(6,182,212,0.6) rgba(255,255,255,0.03);
-                }
-                .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
-                .custom-scrollbar::-webkit-scrollbar-track {
-                    background: rgba(255,255,255,0.02);
-                    border-radius: 9999px;
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb {
-                    background: rgba(6,182,212,0.5);
-                    border-radius: 9999px;
-                    border: 1px solid rgba(255,255,255,0.05);
-                }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                    background: rgba(6,182,212,0.8);
-                }
-
-                /* Pulsating Live dot animation */
-                @keyframes pulse-live {
-                    0% { transform: scale(0.95); opacity: 0.8; }
-                    50% { transform: scale(1.2); opacity: 1; box-shadow: 0 0 8px #ef4444; }
-                    100% { transform: scale(0.95); opacity: 0.8; }
-                }
-                .animate-pulse-live {
-                    animation: pulse-live 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-                }
-
-                /* Floating glow background effect */
-                @keyframes float-glow {
-                    0% { transform: translate(0, 0); opacity: 0.3; }
-                    33% { transform: translate(10%, 15%); opacity: 0.5; }
-                    66% { transform: translate(-5%, 20%); opacity: 0.4; }
-                    100% { transform: translate(0, 0); opacity: 0.3; }
-                }
-                .bg-float-glow {
-                    animation: float-glow 20s ease-in-out infinite;
-                }
-
-                /* Premium Card Border Glow */
-                .premium-card-border {
-                    position: relative;
-                }
-                .premium-card-border::after {
-                    content: '';
-                    position: absolute;
-                    inset: -1px;
-                    background: linear-gradient(135deg, rgba(6,182,212,0.3), transparent 60%);
-                    border-radius: inherit;
-                    z-index: -1;
-                    opacity: 0;
-                    transition: opacity 0.3s ease;
-                }
-                .premium-card-border:hover::after {
-                    opacity: 1;
-                }
-            `;
             document.head.appendChild(s);
         }
         return () => {};
@@ -2253,8 +2726,20 @@ export default function TV() {
     // toMs & getStartEndMs đã được đưa ra ngoài component
 
     // PiP giả lập: khi frame player gốc ra khỏi viewport thì nổi ở góc phải dưới
+    // Gộp logic + throttle scroll handler để giảm lag
     useEffect(() => {
+        // Reset PiP khi đổi kênh
+        setIsPseudoPip(false);
+        setPipCorner("bottom-right");
+
+        let rafId = null;
         const evaluatePseudoPip = () => {
+            // Bỏ PiP trên Web (Desktop - màn hình >= 1024px)
+            if (window.innerWidth >= 1024) {
+                setIsPseudoPip(false);
+                return;
+            }
+
             const frame = playerFrameRef.current;
             if (!frame) {
                 setIsPseudoPip(false);
@@ -2262,35 +2747,32 @@ export default function TV() {
             }
 
             const rect = frame.getBoundingClientRect();
-            const isOutOfViewport =
-                rect.bottom <= 0 || rect.top >= window.innerHeight;
-            setIsPseudoPip((prev) =>
-                prev === isOutOfViewport ? prev : isOutOfViewport,
-            );
+            // Kích hoạt khi video gốc biến mất khỏi màn hình
+            const isOutOfViewport = rect.bottom <= 0;
+            setIsPseudoPip(isOutOfViewport);
         };
 
-        const handleScroll = () => {
-            evaluatePseudoPip();
+        // Dùng requestAnimationFrame để throttle, tránh gọi setState quá nhiều lần
+        const handleScrollThrottled = () => {
+            if (rafId) return;
+            rafId = requestAnimationFrame(() => {
+                evaluatePseudoPip();
+                rafId = null;
+            });
         };
 
-        const handleResize = () => {
-            evaluatePseudoPip();
-        };
-
-        window.addEventListener("scroll", handleScroll, { passive: true });
-        window.addEventListener("resize", handleResize);
+        window.addEventListener("scroll", handleScrollThrottled, {
+            passive: true,
+        });
+        window.addEventListener("resize", handleScrollThrottled);
 
         evaluatePseudoPip();
 
         return () => {
-            window.removeEventListener("scroll", handleScroll);
-            window.removeEventListener("resize", handleResize);
+            window.removeEventListener("scroll", handleScrollThrottled);
+            window.removeEventListener("resize", handleScrollThrottled);
+            if (rafId) cancelAnimationFrame(rafId);
         };
-    }, [selectedChannel?.id]);
-
-    useEffect(() => {
-        // Reset trạng thái PiP giả lập khi đổi kênh
-        setIsPseudoPip(false);
     }, [selectedChannel?.id]);
 
     useEffect(() => {
@@ -2353,34 +2835,187 @@ export default function TV() {
         return groups.flatMap((g) => g.channels);
     }, [groups]);
 
-    // Chuyển kênh trước/sau
+    // Scroll thanh tab nhóm kênh trái/phải
+    const scrollTabs = useCallback((direction) => {
+        const el = tabsRef.current;
+        if (!el) return;
+        const scrollAmount = direction === "left" ? -300 : 300;
+        el.scrollBy({ left: scrollAmount, behavior: "smooth" });
+    }, []);
+
+    // Lấy danh sách kênh trong group hiện tại để điều hướng prev/next
+    const activeGroupChannels = useMemo(() => {
+        if (!activeGroupId || !groups.length) return allChannels;
+        const group = groups.find((g) => g && g.id === activeGroupId);
+        return group?.channels || allChannels;
+    }, [activeGroupId, groups, allChannels]);
+
+    // Chuyển kênh trước/sau (hỗ trợ chuyển group nếu ở đầu/cuối danh sách)
     const handlePrevChannel = useCallback(() => {
-        if (!selectedChannel || allChannels.length === 0) return;
-        const currentIndex = allChannels.findIndex(
+        if (
+            !selectedChannel ||
+            activeGroupChannels.length === 0 ||
+            groups.length === 0
+        )
+            return;
+        const currentIndex = activeGroupChannels.findIndex(
             (c) => c.id === selectedChannel.id,
         );
-        const prevIndex =
-            currentIndex <= 0 ? allChannels.length - 1 : currentIndex - 1;
-        setSelectedChannel(allChannels[prevIndex]);
-    }, [selectedChannel, allChannels]);
+
+        if (currentIndex <= 0) {
+            // Đã ở kênh đầu tiên -> lùi về group trước đó
+            let currentGroupIndex = groups.findIndex(
+                (g) => g.id === activeGroupId,
+            );
+            if (currentGroupIndex === -1) currentGroupIndex = 0;
+
+            let prevGroupIndex =
+                (currentGroupIndex - 1 + groups.length) % groups.length;
+            // Bỏ qua các group không có kênh
+            while (
+                groups[prevGroupIndex].channels.length === 0 &&
+                prevGroupIndex !== currentGroupIndex
+            ) {
+                prevGroupIndex =
+                    (prevGroupIndex - 1 + groups.length) % groups.length;
+            }
+
+            const prevGroup = groups[prevGroupIndex];
+            setActiveGroupId(prevGroup.id);
+            setSelectedChannel(
+                prevGroup.channels[prevGroup.channels.length - 1],
+            );
+
+            // Tự động cuộn tab đến group mới
+            requestAnimationFrame(() => {
+                if (tabsRef.current) {
+                    const activeTab = tabsRef.current.querySelector(
+                        `button:nth-child(${prevGroupIndex + 1})`,
+                    );
+                    if (activeTab) {
+                        activeTab.scrollIntoView({
+                            behavior: "smooth",
+                            block: "nearest",
+                            inline: "center",
+                        });
+                    }
+                }
+            });
+        } else {
+            // Lùi về kênh trước trong cùng group
+            setSelectedChannel(activeGroupChannels[currentIndex - 1]);
+        }
+    }, [selectedChannel, activeGroupChannels, groups, activeGroupId]);
 
     const handleNextChannel = useCallback(() => {
-        if (!selectedChannel || allChannels.length === 0) return;
-        const currentIndex = allChannels.findIndex(
+        if (
+            !selectedChannel ||
+            activeGroupChannels.length === 0 ||
+            groups.length === 0
+        )
+            return;
+        const currentIndex = activeGroupChannels.findIndex(
             (c) => c.id === selectedChannel.id,
         );
-        const nextIndex =
-            currentIndex >= allChannels.length - 1 ? 0 : currentIndex + 1;
-        setSelectedChannel(allChannels[nextIndex]);
-    }, [selectedChannel, allChannels]);
+
+        if (currentIndex >= activeGroupChannels.length - 1) {
+            // Đã ở kênh cuối cùng -> tiến sang group tiếp theo
+            let currentGroupIndex = groups.findIndex(
+                (g) => g.id === activeGroupId,
+            );
+            if (currentGroupIndex === -1) currentGroupIndex = 0;
+
+            let nextGroupIndex = (currentGroupIndex + 1) % groups.length;
+            // Bỏ qua các group không có kênh
+            while (
+                groups[nextGroupIndex].channels.length === 0 &&
+                nextGroupIndex !== currentGroupIndex
+            ) {
+                nextGroupIndex = (nextGroupIndex + 1) % groups.length;
+            }
+
+            const nextGroup = groups[nextGroupIndex];
+            setActiveGroupId(nextGroup.id);
+            setSelectedChannel(nextGroup.channels[0]);
+
+            // Tự động cuộn tab đến group mới
+            requestAnimationFrame(() => {
+                if (tabsRef.current) {
+                    const activeTab = tabsRef.current.querySelector(
+                        `button:nth-child(${nextGroupIndex + 1})`,
+                    );
+                    if (activeTab) {
+                        activeTab.scrollIntoView({
+                            behavior: "smooth",
+                            block: "nearest",
+                            inline: "center",
+                        });
+                    }
+                }
+            });
+        } else {
+            // Tiến tới kênh tiếp theo trong cùng group
+            setSelectedChannel(activeGroupChannels[currentIndex + 1]);
+        }
+    }, [selectedChannel, activeGroupChannels, groups, activeGroupId]);
+
+    const handleManualSelectSource = useCallback(
+        (idx) => {
+            if (!selectedChannel || !selectedChannel.configSources[idx]) return;
+
+            // Reset trackings để bắt đầu lại từ nguồn này
+            errorCountRef.current = 0;
+            triedSourcesRef.current.clear();
+
+            const playerDiv = document.getElementById("tv-player");
+            if (playerDiv) playerDiv.innerHTML = "";
+
+            setCurrentSourceIdx(idx);
+            setupShakaPlayer(selectedChannel.configSources[idx], idx);
+        },
+        [selectedChannel, setupShakaPlayer],
+    );
+
+    const toggleFavorite = useCallback((channelId) => {
+        setFavorites((prev) => {
+            const newFavs = prev.includes(channelId)
+                ? prev.filter((id) => id !== channelId)
+                : [...prev, channelId];
+            localStorage.setItem("tv_favorites", JSON.stringify(newFavs));
+            return newFavs;
+        });
+    }, []);
+
+    const recordPlay = useCallback((channelId) => {
+        setPlayCounts((prev) => {
+            const newCounts = {
+                ...prev,
+                [channelId]: (prev[channelId] || 0) + 1,
+            };
+            localStorage.setItem("tv_play_counts", JSON.stringify(newCounts));
+            return newCounts;
+        });
+    }, []);
 
     const handleSelectChannel = useCallback((channel) => {
+        // Lưu vị trí cuộn hiện tại
+        scrollPosRef.current = window.scrollY;
+
+        // Tăng lượt xem
+        recordPlay(channel.id);
+
         // Clear immediately to avoid seeing old video frame
         const playerDiv = document.getElementById("tv-player");
         if (playerDiv) playerDiv.innerHTML = "";
 
         setSelectedChannel(channel);
-        window.scrollTo({ top: 0, behavior: "smooth" });
+
+        // Đảm bảo không nhảy lên đầu sau khi state update
+        requestAnimationFrame(() => {
+            if (window.scrollY !== scrollPosRef.current) {
+                window.scrollTo(0, scrollPosRef.current);
+            }
+        });
     }, []);
 
     const toggleGroup = useCallback((groupName) => {
@@ -2437,8 +3072,14 @@ export default function TV() {
                     <div className="flex h-full flex-col gap-4 lg:col-span-3">
                         <ChannelInfo
                             selectedChannel={selectedChannel}
+                            currentSourceIdx={currentSourceIdx}
+                            showSourceDropdown={showSourceDropdown}
+                            setShowSourceDropdown={setShowSourceDropdown}
+                            onSelectSource={handleManualSelectSource}
                             onPrev={handlePrevChannel}
                             onNext={handleNextChannel}
+                            isFavorite={favorites.includes(selectedChannel?.id)}
+                            onToggleFavorite={toggleFavorite}
                         />
 
                         <div className="border-white/8 flex flex-1 items-start justify-center overflow-hidden rounded-xl border bg-black/40">
@@ -2452,7 +3093,7 @@ export default function TV() {
                                         id="tv-player"
                                         className={
                                             isPseudoPip
-                                                ? "z-80 fixed bottom-4 right-4 aspect-video w-[min(360px,calc(100vw-1rem))] overflow-hidden rounded-lg border border-white/20 bg-black shadow-2xl"
+                                                ? "z-80 fixed left-0 top-0 aspect-video w-full border-b border-white/20 bg-black shadow-2xl"
                                                 : "h-full w-full"
                                         }
                                     />
@@ -2477,71 +3118,197 @@ export default function TV() {
                             onToggle={() => setShowEpg((v) => !v)}
                         />
                     </div>
-                    {/* Right column fills remaining space; channel scroller moved below full-width */}
                 </div>
 
-                {/* Channel groups: collapsible section */}
-                <div className="w-full space-y-4">
-                    {/* Channel groups: each group has its own horizontal scroller */}
-                    {groups.map((group) => {
-                        const isExpanded = expandedGroups.has(group.name);
-                        return (
-                            <div
-                                key={group.id}
-                                className="relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-4 shadow-xl transition-all hover:bg-white/[0.07]"
+                {/* Tabs & Channel Grid section */}
+                <div className="mt-2 flex w-full flex-col gap-6">
+                    {/* Tab Navigation - Group List with Arrows */}
+                    <div className="relative flex items-center">
+                        {/* Left Arrow */}
+                        <button
+                            onClick={() => scrollTabs("left")}
+                            className="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/5 text-white/60 transition-all hover:bg-cyan-500 hover:text-black hover:shadow-[0_0_15px_rgba(6,182,212,0.4)]"
+                        >
+                            <svg
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
                             >
-                                {/* Subtle inner highlight */}
-                                <div className="bg-linear-to-b from-white/2 pointer-events-none absolute inset-0 to-transparent" />
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={3}
+                                    d="M15 19l-7-7 7-7"
+                                />
+                            </svg>
+                        </button>
 
-                                <button
-                                    onClick={() => toggleGroup(group.name)}
-                                    className="relative z-10 flex w-full items-center justify-between transition-colors hover:text-cyan-400"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div
-                                            className={
-                                                "flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 transition-transform " +
-                                                (isExpanded
-                                                    ? "rotate-90"
-                                                    : "rotate-0")
-                                            }
-                                        >
+                        <div
+                            ref={tabsRef}
+                            className="horizontal scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto scroll-smooth pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                        >
+                            {groups.map((group) => {
+                                const isActive = activeGroupId === group.id;
+                                return (
+                                    <button
+                                        key={group.id}
+                                        onClick={() =>
+                                            setActiveGroupId(group.id)
+                                        }
+                                        className={
+                                            "relative flex shrink-0 items-center gap-2 rounded-full px-5 py-2 text-sm font-bold tracking-tight transition-all duration-300 " +
+                                            (isActive
+                                                ? "bg-cyan-500 text-black shadow-[0_0_20px_rgba(6,182,212,0.4)]"
+                                                : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white")
+                                        }
+                                    >
+                                        {group.id === "favorites" && (
                                             <svg
-                                                className="h-4 w-4 text-cyan-400"
-                                                fill="none"
-                                                stroke="currentColor"
+                                                className="h-4 w-4"
+                                                fill="currentColor"
                                                 viewBox="0 0 24 24"
                                             >
-                                                <path
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                    strokeWidth={2.5}
-                                                    d="M9 5l7 7-7 7"
-                                                />
+                                                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
                                             </svg>
-                                        </div>
-                                        <div className="text-base font-bold tracking-tight text-white/90">
-                                            {group.name}
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-white/30">
-                                        {group.channels.length} Kênh
-                                    </div>
-                                </button>
-                                {isExpanded && (
-                                    <div className="relative z-10 mt-4">
-                                        <ChannelScroller
-                                            channels={group.channels}
-                                            selectedChannel={selectedChannel}
-                                            onSelectChannel={
-                                                handleSelectChannel
+                                        )}
+                                        {group.id === "most_watched" && (
+                                            <svg
+                                                className="h-4 w-4"
+                                                fill="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8c0-3.12-1.12-6.57-2.61-8.52-1.38-1.81-3.89-4.81-3.89-4.81zM12 19c-2.76 0-5-2.24-5-5 0-1.47.64-2.82 1.67-3.74.39-.35.9-.62 1.4-.79.43-.14.65-.58.55-1.01-.13-.53-.22-1.07-.22-1.64 0 1.25.79 2.21 2.07 2.21 1.26 0 2.1-.96 2.1-2.21 0-.32-.04-.62-.12-.9.23.27.46.56.66.86.83 1.23 1.39 2.48 1.39 3.51 0 2.76-2.24 5-5 5z" />
+                                            </svg>
+                                        )}
+                                        {group.name}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* Right Arrow */}
+                        <button
+                            onClick={() => scrollTabs("right")}
+                            className="ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/5 text-white/60 transition-all hover:bg-cyan-500 hover:text-black hover:shadow-[0_0_15px_rgba(6,182,212,0.4)]"
+                        >
+                            <svg
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={3}
+                                    d="M9 5l7 7-7 7"
+                                />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+                        {(
+                            groups.find((g) => g && g.id === activeGroupId)
+                                ?.channels || []
+                        ).map((channel) => {
+                            const isSelected =
+                                selectedChannel?.id === channel.id;
+                            return (
+                                <div
+                                    key={channel.id}
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={() => handleSelectChannel(channel)}
+                                    onKeyDown={(e) => {
+                                        if (
+                                            e.key === "Enter" ||
+                                            e.key === " "
+                                        ) {
+                                            e.preventDefault();
+                                            handleSelectChannel(channel);
+                                        }
+                                    }}
+                                    className={
+                                        "group relative flex cursor-pointer flex-col items-center gap-3 rounded-2xl border p-4 transition-all duration-300 " +
+                                        (isSelected
+                                            ? "border-cyan-500/50 bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.15)] ring-1 ring-cyan-500/30"
+                                            : "bg-white/2 border-white/5 hover:scale-[1.03] hover:border-white/20 hover:bg-white/5")
+                                    }
+                                >
+                                    {/* Favorite Toggle on Card */}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleFavorite(channel.id);
+                                        }}
+                                        className={
+                                            "absolute right-2 top-2 z-20 p-1.5 transition-all duration-300 " +
+                                            (favorites.includes(channel.id)
+                                                ? "scale-110 text-red-500"
+                                                : "text-white/10 opacity-0 hover:text-white/40 group-hover:opacity-100")
+                                        }
+                                    >
+                                        <svg
+                                            className="h-4 w-4"
+                                            fill={
+                                                favorites.includes(channel.id)
+                                                    ? "currentColor"
+                                                    : "none"
                                             }
-                                        />
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                                            />
+                                        </svg>
+                                    </button>
+                                    <div className="relative flex h-16 w-16 items-center justify-center">
+                                        {channel.logo ? (
+                                            <img
+                                                src={channel.logo}
+                                                alt={channel.name}
+                                                onError={
+                                                    handleImageFallbackError
+                                                }
+                                                className={
+                                                    "h-full w-full object-contain transition-transform duration-500 group-hover:scale-110 " +
+                                                    (isSelected
+                                                        ? "drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]"
+                                                        : "opacity-80 group-hover:opacity-100")
+                                                }
+                                                loading="lazy"
+                                            />
+                                        ) : (
+                                            <div className="flex h-full w-full items-center justify-center rounded-xl bg-zinc-800/60 p-2 ring-1 ring-white/10">
+                                                <span className="text-2xl font-bold opacity-30">
+                                                    {channel.name[0]}
+                                                </span>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </div>
-                        );
-                    })}
+                                    <div
+                                        className={
+                                            "line-clamp-1 w-full text-center text-xs font-bold tracking-tight transition-colors " +
+                                            (isSelected
+                                                ? "text-cyan-400"
+                                                : "text-white/70 group-hover:text-white")
+                                        }
+                                    >
+                                        {channel.name}
+                                    </div>
+
+                                    {/* Hover glow effect */}
+                                    <div className="bg-radial pointer-events-none absolute inset-0 -z-10 from-cyan-500/10 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
 
                 {showScrollTopButton && (
@@ -2551,7 +3318,6 @@ export default function TV() {
                         }
                         className="z-90 fixed bottom-4 left-4 flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-zinc-900/90 text-white shadow-xl backdrop-blur-sm transition-colors hover:bg-zinc-800"
                         aria-label="Trở về đầu trang"
-                        title="Trở về đầu trang"
                     >
                         <svg
                             className="h-5 w-5"
