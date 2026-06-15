@@ -12,13 +12,6 @@ import "shaka-player/dist/controls.css";
 import "../styles/shaka-player.css";
 
 const IMAGE_PROXY_PREFIX = "https://external-content.duckduckgo.com/iu/?u=";
-// Danh sách các CORS Proxy dự phòng
-const CORS_PROXIES = [
-    { url: "https://proxy.cors.sh/", encode: false },
-    { url: "https://api.allorigins.win/raw?url=", encode: true },
-    { url: "https://thingproxy.freeboard.io/fetch/", encode: false },
-    { url: "https://corsproxy.io/?url=", encode: true },
-];
 const FALLBACK_LOGO_DATA_URI =
     "data:image/svg+xml;utf8," +
     encodeURIComponent(`
@@ -1358,16 +1351,7 @@ export default function TV() {
         }
     }
 
-    // Index của proxy đang hoạt động tốt (0-3)
-    const currentProxyIndexRef = useRef(null);
-    if (currentProxyIndexRef.current === null) {
-        try {
-            const saved = localStorage.getItem("tv-working-proxy-index");
-            currentProxyIndexRef.current = saved ? parseInt(saved, 10) : 0;
-        } catch (e) {
-            currentProxyIndexRef.current = 0;
-        }
-    }
+    // Cơ chế CORS proxy đã bị loại bỏ
 
     // getChannelParamId & findChannelByParamId đã được đưa ra ngoài component
 
@@ -1963,85 +1947,15 @@ export default function TV() {
             }
         }
 
-        // Cấu hình network request filters - CORS proxy qua corsproxy.io
-        // Cấu hình network request filters - Multi CORS proxy
+        // Cấu hình network request filters (không dùng proxy)
         {
             const networkingEngine = player.getNetworkingEngine();
             if (networkingEngine) {
-                // Chỉ kích hoạt proxy nếu clearKeyMode là một trong các chế độ proxy
-                const isProxyMode =
-                    typeof clearKeyMode === "string" &&
-                    clearKeyMode.startsWith("cors-proxy");
-
-                let proxyIndex = 0;
-                if (clearKeyMode.startsWith("cors-proxy-")) {
-                    proxyIndex = parseInt(
-                        clearKeyMode.replace("cors-proxy-", ""),
-                        10,
-                    );
-                } else if (clearKeyMode === "cors-proxy") {
-                    proxyIndex = currentProxyIndexRef.current;
-                }
-
                 networkingEngine.registerRequestFilter((type, request) => {
-                    if (
-                        !isProxyMode ||
-                        !request.uris ||
-                        request.uris.length === 0
-                    )
-                        return;
-
-                    const isManifest =
-                        type ===
-                        shaka.net.NetworkingEngine.RequestType.MANIFEST;
-                    const isLicense =
-                        type === shaka.net.NetworkingEngine.RequestType.LICENSE;
-                    const isSegment =
-                        type === shaka.net.NetworkingEngine.RequestType.SEGMENT;
-
-                    // Chỉ proxy khi ở chế độ proxy explicitly
-                    if (isProxyMode) {
-                        const proxy =
-                            CORS_PROXIES[proxyIndex % CORS_PROXIES.length];
-                        request.uris = request.uris.map((uri) => {
-                            if (
-                                uri.includes("proxy.cors.sh") ||
-                                uri.includes("allorigins") ||
-                                uri.includes("corsproxy.io")
-                            )
-                                return uri;
-
-                            const targetUri = proxy.encode
-                                ? encodeURIComponent(uri)
-                                : uri;
-                            return proxy.url + targetUri;
-                        });
-
-                        // Thêm API key cho proxy.cors.sh
-                        if (proxy.url === "https://proxy.cors.sh/") {
-                            request.headers["x-cors-api-key"] =
-                                "temp_a7e2e393ae9dafa7dae7412bb23fadee";
-                        }
-
-                        // Một số proxy yêu cầu hoặc hỗ trợ nhận header qua các header tùy chỉnh
-                        // Hoặc đơn giản là forward các header chuẩn nếu proxy đó hỗ trợ
-                        if (source.userAgent) {
-                            request.headers["X-Cors-User-Agent"] =
-                                source.userAgent;
-                            // Thử cả header chuẩn, một số proxy minh bạch (transparent) sẽ forward
-                            request.headers["User-Agent"] = source.userAgent;
-                        }
-                        if (source.referrer) {
-                            request.headers["X-Cors-Referer"] = source.referrer;
-                            request.headers["Referer"] = source.referrer;
-                        }
-                    } else {
-                        // Ngay cả khi không dùng proxy, vẫn thử set header (dù trình duyệt có thể chặn Referer/UA)
-                        if (source.userAgent)
-                            request.headers["User-Agent"] = source.userAgent;
-                        if (source.referrer)
-                            request.headers["Referer"] = source.referrer;
-                    }
+                    if (source.userAgent)
+                        request.headers["User-Agent"] = source.userAgent;
+                    if (source.referrer)
+                        request.headers["Referer"] = source.referrer;
                 });
             }
         }
@@ -2097,51 +2011,7 @@ export default function TV() {
                 // Đã thử hết 3 modes, chuyển sang source tiếp theo
             }
 
-            // CORS retry: thử lần lượt các proxy trong danh sách
-            const isCorsError =
-                error?.code === 1001 ||
-                error?.code === 1002 ||
-                error?.category === 1;
-
-            if (isCorsError) {
-                // Tương tự logic retry ở trên
-                let currentTryIdx = 0;
-                if (
-                    typeof clearKeyMode === "string" &&
-                    clearKeyMode.startsWith("cors-proxy-")
-                ) {
-                    currentTryIdx =
-                        parseInt(clearKeyMode.replace("cors-proxy-", ""), 10) +
-                        1;
-                } else {
-                    currentTryIdx = 0;
-                }
-
-                if (currentTryIdx < CORS_PROXIES.length) {
-                    const nextProxyMode = `cors-proxy-${currentTryIdx}`;
-                    console.log(
-                        `[CORS Proxy] Thử proxy tiếp theo: index ${currentTryIdx}`,
-                    );
-                    showToast(
-                        `Lỗi mạng, thử proxy dự phòng ${currentTryIdx + 1}...`,
-                        {
-                            type: "warn",
-                            duration: 2500,
-                        },
-                    );
-                    scheduleRetry(
-                        () =>
-                            setupShakaPlayer(
-                                source,
-                                sourceIndex,
-                                nextProxyMode,
-                                sessionId,
-                            ),
-                        300,
-                    );
-                    return;
-                }
-            }
+            // Đã loại bỏ CORS retry qua proxy
 
             // Thử source tiếp theo
             const nextIndex = sourceIndex + 1;
@@ -2176,22 +2046,6 @@ export default function TV() {
                 );
             }
 
-            // Cache proxy thành công vào localStorage
-            if (
-                typeof clearKeyMode === "string" &&
-                clearKeyMode.startsWith("cors-proxy-")
-            ) {
-                const successIdx = parseInt(
-                    clearKeyMode.replace("cors-proxy-", ""),
-                    10,
-                );
-                currentProxyIndexRef.current = successIdx;
-                localStorage.setItem(
-                    "tv-working-proxy-index",
-                    successIdx.toString(),
-                );
-            }
-
             // Cache source index hoạt động cho channel hiện tại
             // Lưu vào cả ref và localStorage để persist qua reload
             if (selectedChannel) {
@@ -2200,7 +2054,6 @@ export default function TV() {
                 const cacheEntry = {
                     sourceIndex,
                     clearKeyMode: clearKeyMode,
-                    useCorsProxy: clearKeyMode.includes("cors-proxy"),
                 };
                 workingSourceCacheRef.current.set(chCacheKey, cacheEntry);
                 try {
@@ -2269,34 +2122,7 @@ export default function TV() {
                 // Đã thử hết 3 modes, chuyển sang source tiếp theo
             }
 
-            // CORS retry: khi load fail do network error (CORS block)
-            // Shaka network errors: 1001 = BAD_HTTP_STATUS, 1002 = HTTP_ERROR
-            // TypeError thường là dấu hiệu CORS bị chặn hoàn toàn (fetch failed)
-            const isCorsError =
-                error?.code === 1001 ||
-                error?.code === 1002 ||
-                error?.category === 1 ||
-                error instanceof TypeError;
-            if (isCorsError && clearKeyMode !== "cors-proxy") {
-                console.log(
-                    "[CORS Proxy] Manifest load bị lỗi mạng, thử lại qua CORS proxy...",
-                );
-                showToast("Đang thử qua CORS proxy...", {
-                    type: "warn",
-                    duration: 2500,
-                });
-                scheduleRetry(
-                    () =>
-                        setupShakaPlayer(
-                            source,
-                            sourceIndex,
-                            "cors-proxy",
-                            sessionId,
-                        ),
-                    300,
-                );
-                return;
-            }
+            // Đã loại bỏ CORS retry khi load manifest bị lỗi mạng
 
             // Thử source tiếp theo
             const nextIndex = sourceIndex + 1;
