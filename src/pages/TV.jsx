@@ -145,9 +145,7 @@ const fetchChannels = async () => {
                     channels: channelsInGroup,
                 };
             })
-            .filter((g) => g.channels.length > 0)
-            // Sắp xếp các nhóm theo sortOrder
-            .sort((a, b) => a.sortOrder - b.sortOrder);
+            .filter((g) => g.channels.length > 0);
 
         if (mappedGroups.length > 0) {
             console.log(
@@ -1351,7 +1349,6 @@ export default function TV() {
         }
     }
 
-    // Cơ chế CORS proxy đã bị loại bỏ
 
     // getChannelParamId & findChannelByParamId đã được đưa ra ngoài component
 
@@ -1947,7 +1944,7 @@ export default function TV() {
             }
         }
 
-        // Cấu hình network request filters (không dùng proxy)
+        // Cấu hình network request filters để gán các headers tùy chỉnh (User-Agent, Referer)
         {
             const networkingEngine = player.getNetworkingEngine();
             if (networkingEngine) {
@@ -2010,8 +2007,6 @@ export default function TV() {
                 }
                 // Đã thử hết 3 modes, chuyển sang source tiếp theo
             }
-
-            // Đã loại bỏ CORS retry qua proxy
 
             // Thử source tiếp theo
             const nextIndex = sourceIndex + 1;
@@ -2121,8 +2116,6 @@ export default function TV() {
                 }
                 // Đã thử hết 3 modes, chuyển sang source tiếp theo
             }
-
-            // Đã loại bỏ CORS retry khi load manifest bị lỗi mạng
 
             // Thử source tiếp theo
             const nextIndex = sourceIndex + 1;
