@@ -11,6 +11,7 @@ import shaka from "shaka-player/dist/shaka-player.ui.js";
 import "shaka-player/dist/controls.css";
 import "../styles/shaka-player.css";
 
+const PROXY_WORKER_URL = import.meta.env.VITE_PROXY_WORKER_URL || "";
 const IMAGE_PROXY_PREFIX = "https://external-content.duckduckgo.com/iu/?u=";
 const FALLBACK_LOGO_DATA_URI =
     "data:image/svg+xml;utf8," +
@@ -44,10 +45,8 @@ const toProxyImageUrl = (rawUrl) => {
 };
 
 const fetchChannels = async () => {
-    const NEW_API_URL =
-        "https://silent-fog-532f.tcphuongivs.workers.dev/index.json";
-    const ACCESS_TOKEN =
-        "d=8jB9wAKv=a6rBmss+eCGY,@*Y9M<PY9HM?b3>0>rDa6so<j]KP@Hb77^Rf-vz@";
+    const NEW_API_URL = import.meta.env.VITE_TV_API_URL || "";
+    const ACCESS_TOKEN = import.meta.env.VITE_TV_API_ACCESS_TOKEN || "";
 
     let apiGroups = null;
     let apiEpgs = [];
@@ -1710,6 +1709,7 @@ export default function TV() {
         source,
         sourceIndex,
         clearKeyMode = "hex",
+        useProxy = false,
         sessionId = playSessionRef.current,
     ) => {
         if (sessionId !== playSessionRef.current) return;
@@ -1721,6 +1721,7 @@ export default function TV() {
             licenseType: source.licenseType,
             clearKeys: source.clearKeys,
             clearKeyMode,
+            useProxy,
         });
 
         const sources = currentSourcesRef.current;
@@ -1855,104 +1856,171 @@ export default function TV() {
         // Cấu hình DRM clearkey nếu có
         // Retry chain: hex -> server -> none -> next source
         // drm.clearKeys luôn cần hex string; server mode dùng base64url JSON
-        if (source.clearKeys && source.clearKeys.length > 0) {
-            try {
-                if (clearKeyMode === "none") {
-                    // Mode 3: Bỏ DRM, phát trực tiếp (stream có thể không mã hóa thật)
-                    console.log("[Shaka DRM] Bỏ qua DRM config (mode: none)");
-                } else if (clearKeyMode === "server") {
-                    // Mode 2: Tạo ClearKey license server qua data URI
-                    // Bypass vấn đề manifest khai báo Widevine nhưng thực tế dùng ClearKey
-                    const base64Keys = source.clearKeys
-                        .map((ck) => {
-                            // Chuyển về base64url cho JSON format
-                            let kidB64, keyB64;
+        if (source.licenseType === "clearkey") {
+            if (source.clearKeys && source.clearKeys.length > 0) {
+                try {
+                    if (clearKeyMode === "none") {
+                        // Mode 3: Bỏ DRM, phát trực tiếp (stream có thể không mã hóa thật)
+                        console.log("[Shaka DRM] Bỏ qua DRM config (mode: none)");
+                    } else if (clearKeyMode === "server") {
+                        // Mode 2: Tạo ClearKey license server qua data URI
+                        // Bypass vấn đề manifest khai báo Widevine nhưng thực tế dùng ClearKey
+                        const base64Keys = source.clearKeys
+                            .map((ck) => {
+                                // Chuyển về base64url cho JSON format
+                                let kidB64, keyB64;
+                                if (ck.isBase64) {
+                                    kidB64 = String(ck.kid || "");
+                                    keyB64 = String(ck.key || "");
+                                } else {
+                                    const kidHex = String(ck.kid || "")
+                                        .replace(/[^a-fA-F0-9]/g, "")
+                                        .toLowerCase();
+                                    const keyHex = String(ck.key || "")
+                                        .replace(/[^a-fA-F0-9]/g, "")
+                                        .toLowerCase();
+                                    kidB64 = hexToBase64Url(kidHex);
+                                    keyB64 = hexToBase64Url(keyHex);
+                                }
+                                return { kty: "oct", k: keyB64, kid: kidB64 };
+                            })
+                            .filter((k) => k.k && k.kid);
+
+                        const licenseJson = JSON.stringify({
+                            keys: base64Keys,
+                            type: "temporary",
+                        });
+                        const licenseDataUri = `data:application/json;base64,${btoa(licenseJson)}`;
+
+                        player.configure({
+                            drm: {
+                                servers: {
+                                    "org.w3c.clearkey": licenseDataUri,
+                                },
+                            },
+                        });
+                        console.log(
+                            "[Shaka DRM] Configured ClearKey license server (data URI):",
+                            base64Keys,
+                        );
+                    } else {
+                        // Mode 1 (hex): drm.clearKeys - Shaka luôn yêu cầu hex string
+                        const clearKeyConfig = {};
+
+                        source.clearKeys.forEach((ck) => {
+                            let kidHex, keyHex;
                             if (ck.isBase64) {
-                                kidB64 = String(ck.kid || "");
-                                keyB64 = String(ck.key || "");
+                                // Base64url -> hex (ví dụ: Dreamworks JSON format)
+                                kidHex = base64UrlToHex(ck.kid);
+                                keyHex = base64UrlToHex(ck.key);
                             } else {
-                                const kidHex = String(ck.kid || "")
+                                // Hex trực tiếp, loại bỏ ký tự không hợp lệ và đảm bảo chiều dài chẵn
+                                kidHex = String(ck.kid || "")
                                     .replace(/[^a-fA-F0-9]/g, "")
                                     .toLowerCase();
-                                const keyHex = String(ck.key || "")
+                                keyHex = String(ck.key || "")
                                     .replace(/[^a-fA-F0-9]/g, "")
                                     .toLowerCase();
-                                kidB64 = hexToBase64Url(kidHex);
-                                keyB64 = hexToBase64Url(keyHex);
                             }
-                            return { kty: "oct", k: keyB64, kid: kidB64 };
-                        })
-                        .filter((k) => k.k && k.kid);
+                            // Đảm bảo chiều dài chẵn (Shaka yêu cầu string hex even-length)
+                            if (kidHex.length % 2 !== 0) kidHex = "0" + kidHex;
+                            if (keyHex.length % 2 !== 0) keyHex = "0" + keyHex;
 
-                    const licenseJson = JSON.stringify({
-                        keys: base64Keys,
-                        type: "temporary",
-                    });
-                    const licenseDataUri = `data:application/json;base64,${btoa(licenseJson)}`;
+                            if (kidHex && keyHex) {
+                                clearKeyConfig[kidHex] = keyHex;
+                            }
+                        });
 
+                        player.configure({
+                            drm: {
+                                clearKeys: clearKeyConfig,
+                            },
+                        });
+                        console.log(
+                            "[Shaka DRM] Configured clearKeys (hex):",
+                            clearKeyConfig,
+                        );
+                    }
+                } catch (e) {
+                    console.warn("Error configuring clearKeys:", e);
+                }
+            } else if (source.licenseKey && source.licenseKey.startsWith("http")) {
+                // Cấu hình ClearKey License Server URL thực tế
+                try {
                     player.configure({
                         drm: {
                             servers: {
-                                "org.w3c.clearkey": licenseDataUri,
+                                "org.w3c.clearkey": source.licenseKey,
                             },
                         },
                     });
                     console.log(
-                        "[Shaka DRM] Configured ClearKey license server (data URI):",
-                        base64Keys,
+                        "[Shaka DRM] Configured ClearKey license server URL:",
+                        source.licenseKey,
                     );
-                } else {
-                    // Mode 1 (hex): drm.clearKeys - Shaka luôn yêu cầu hex string
-                    const clearKeyConfig = {};
-
-                    source.clearKeys.forEach((ck) => {
-                        let kidHex, keyHex;
-                        if (ck.isBase64) {
-                            // Base64url -> hex (ví dụ: Dreamworks JSON format)
-                            kidHex = base64UrlToHex(ck.kid);
-                            keyHex = base64UrlToHex(ck.key);
-                        } else {
-                            // Hex trực tiếp, loại bỏ ký tự không hợp lệ và đảm bảo chiều dài chẵn
-                            kidHex = String(ck.kid || "")
-                                .replace(/[^a-fA-F0-9]/g, "")
-                                .toLowerCase();
-                            keyHex = String(ck.key || "")
-                                .replace(/[^a-fA-F0-9]/g, "")
-                                .toLowerCase();
-                        }
-                        // Đảm bảo chiều dài chẵn (Shaka yêu cầu string hex even-length)
-                        if (kidHex.length % 2 !== 0) kidHex = "0" + kidHex;
-                        if (keyHex.length % 2 !== 0) keyHex = "0" + keyHex;
-
-                        if (kidHex && keyHex) {
-                            clearKeyConfig[kidHex] = keyHex;
-                        }
-                    });
-
-                    player.configure({
-                        drm: {
-                            clearKeys: clearKeyConfig,
-                        },
-                    });
-                    console.log(
-                        "[Shaka DRM] Configured clearKeys (hex):",
-                        clearKeyConfig,
-                    );
+                } catch (e) {
+                    console.warn("Error configuring ClearKey license server URL:", e);
                 }
-            } catch (e) {
-                console.warn("Error configuring clearKeys:", e);
             }
         }
 
-        // Cấu hình network request filters để gán các headers tùy chỉnh (User-Agent, Referer)
+        // Cấu hình network request filters để gán các headers tùy chỉnh (User-Agent, Referer) và CORS Proxy
         {
             const networkingEngine = player.getNetworkingEngine();
             if (networkingEngine) {
                 networkingEngine.registerRequestFilter((type, request) => {
-                    if (source.userAgent)
-                        request.headers["User-Agent"] = source.userAgent;
-                    if (source.referrer)
-                        request.headers["Referer"] = source.referrer;
+                    const originalUri = request.uris[0] || "";
+                    const shouldProxy =
+                        useProxy &&
+                        originalUri &&
+                        !originalUri.startsWith("data:");
+
+                    if (shouldProxy) {
+                        // Sao chép các headers gốc để gửi qua proxy
+                        const headersToSend = {};
+                        for (const key in request.headers) {
+                            if (key.toLowerCase() !== "content-type") {
+                                headersToSend[key] = request.headers[key];
+                            }
+                        }
+
+                        // Xử lý request body (nếu có, ví dụ như LICENSE request challenge)
+                        let bodyPayload = undefined;
+                        if (request.body) {
+                            try {
+                                // Giải mã ArrayBuffer/Uint8Array thành string UTF-8
+                                bodyPayload = new TextDecoder("utf-8").decode(request.body);
+                            } catch (e) {
+                                // Fallback sang Latin-1 để giữ nguyên byte mapping
+                                bodyPayload = Array.from(
+                                    new Uint8Array(request.body),
+                                    (byte) => String.fromCharCode(byte),
+                                ).join("");
+                            }
+                        }
+
+                        const payload = {
+                            url: originalUri,
+                            method: request.method || "GET",
+                            headers: headersToSend,
+                            body: bodyPayload,
+                            referer: source.referrer || null,
+                            origin: source.origin || null,
+                        };
+
+                        request.uris = [PROXY_WORKER_URL];
+                        request.method = "POST";
+                        request.headers["Content-Type"] = "application/json";
+
+                        const encoder = new TextEncoder();
+                        request.body = encoder.encode(JSON.stringify(payload));
+                    } else {
+                        // Phát trực tiếp không qua proxy
+                        if (source.userAgent)
+                            request.headers["User-Agent"] = source.userAgent;
+                        if (source.referrer)
+                            request.headers["Referer"] = source.referrer;
+                    }
                 });
             }
         }
@@ -1999,6 +2067,7 @@ export default function TV() {
                                 source,
                                 sourceIndex,
                                 retry,
+                                useProxy,
                                 sessionId,
                             ),
                         300,
@@ -2006,6 +2075,34 @@ export default function TV() {
                     return;
                 }
                 // Đã thử hết 3 modes, chuyển sang source tiếp theo
+            }
+
+            // Thử lại bằng CORS Proxy nếu gặp lỗi mạng/CORS và chưa từng dùng proxy
+            const isCorsError =
+                error?.code === 1001 ||
+                error?.code === 1002 ||
+                error?.category === 1;
+
+            if (isCorsError && !useProxy) {
+                console.log(
+                    "[CORS Retry] Shaka error event detected CORS/Network error. Retrying with proxy...",
+                );
+                showToast("Lỗi CORS/mạng, đang thử lại qua proxy...", {
+                    type: "warn",
+                    duration: 2500,
+                });
+                scheduleRetry(
+                    () =>
+                        setupShakaPlayer(
+                            source,
+                            sourceIndex,
+                            clearKeyMode,
+                            true, // kích hoạt useProxy
+                            sessionId,
+                        ),
+                    300,
+                );
+                return;
             }
 
             // Thử source tiếp theo
@@ -2049,6 +2146,7 @@ export default function TV() {
                 const cacheEntry = {
                     sourceIndex,
                     clearKeyMode: clearKeyMode,
+                    useProxy: useProxy,
                 };
                 workingSourceCacheRef.current.set(chCacheKey, cacheEntry);
                 try {
@@ -2108,6 +2206,7 @@ export default function TV() {
                                 source,
                                 sourceIndex,
                                 retry,
+                                useProxy,
                                 sessionId,
                             ),
                         300,
@@ -2115,6 +2214,35 @@ export default function TV() {
                     return;
                 }
                 // Đã thử hết 3 modes, chuyển sang source tiếp theo
+            }
+
+            // Thử lại bằng CORS Proxy nếu gặp lỗi mạng/CORS và chưa từng dùng proxy
+            const isCorsError =
+                error?.code === 1001 ||
+                error?.code === 1002 ||
+                error?.category === 1 ||
+                error instanceof TypeError;
+
+            if (isCorsError && !useProxy) {
+                console.log(
+                    "[CORS Retry] Shaka load failed with CORS/Network error. Retrying with proxy...",
+                );
+                showToast("Lỗi tải nguồn, đang thử lại qua proxy...", {
+                    type: "warn",
+                    duration: 2500,
+                });
+                scheduleRetry(
+                    () =>
+                        setupShakaPlayer(
+                            source,
+                            sourceIndex,
+                            clearKeyMode,
+                            true, // kích hoạt useProxy
+                            sessionId,
+                        ),
+                    300,
+                );
+                return;
             }
 
             // Thử source tiếp theo
@@ -2208,8 +2336,24 @@ export default function TV() {
             return;
         }
 
+        const chCacheKey =
+            getChannelParamId(selectedChannel) || selectedChannel.id;
+        const cachedSource = workingSourceCacheRef.current.get(chCacheKey);
+        let startMode = "hex";
+        let startUseProxy = false;
+        if (cachedSource && cachedSource.sourceIndex === sourceIndex) {
+            startMode = cachedSource.clearKeyMode || "hex";
+            startUseProxy = cachedSource.useProxy || false;
+        }
+
         shaka.polyfill.installAll();
-        await setupShakaPlayer(source, sourceIndex, "hex", sessionId);
+        await setupShakaPlayer(
+            source,
+            sourceIndex,
+            startMode,
+            startUseProxy,
+            sessionId,
+        );
     };
 
     // --- LOAD CHANNEL KHI selectedChannel THAY ĐỔI ---

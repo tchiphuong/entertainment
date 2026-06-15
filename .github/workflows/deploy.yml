@@ -53,6 +53,9 @@ jobs:
                   # TV
                   VITE_API_ENDPOINT: ${{ secrets.VITE_API_ENDPOINT }}
                   VITE_TV_CHANNEL_SOURCES: ${{ secrets.VITE_TV_CHANNEL_SOURCES }}
+                  VITE_TV_API_URL: ${{ secrets.VITE_TV_API_URL }}
+                  VITE_TV_API_ACCESS_TOKEN: ${{ secrets.VITE_TV_API_ACCESS_TOKEN }}
+                  VITE_PROXY_WORKER_URL: ${{ secrets.VITE_PROXY_WORKER_URL }}
                   VITE_EPG_API_URL: ${{ secrets.VITE_EPG_API_URL }}
                   # Players
                   VITE_JWPLAYER_LIBRARY: ${{ secrets.VITE_JWPLAYER_LIBRARY }}
