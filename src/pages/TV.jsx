@@ -628,52 +628,60 @@ const ChannelInfo = React.memo(
                             )}
                             <div className="animate-pulse-live absolute -right-1 -top-1 h-3 w-3 rounded-full bg-red-500 shadow-[0_0_10px_#06b6d4]" />
                         </div>
-                        <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                                <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400 ring-1 ring-inset ring-red-500/20">
-                                    Live
-                                </span>
-                                <div className="text-[11px] font-medium uppercase tracking-wide text-white/40">
-                                    Đang phát
+                        <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
+                            <div className="flex min-w-0 flex-col">
+                                <div className="flex items-center gap-2">
+                                    <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400 ring-1 ring-inset ring-red-500/20">
+                                        Live
+                                    </span>
+                                    <div className="text-[11px] font-medium uppercase tracking-wide text-white/40">
+                                        Đang phát
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="mt-0.5 flex items-center gap-2">
-                                <div className="line-clamp-1 text-xl font-bold tracking-tight text-white">
-                                    {selectedChannel.name}
-                                </div>
-                                <button
-                                    onClick={() =>
-                                        onToggleFavorite(selectedChannel.id)
-                                    }
-                                    className={
-                                        "transition-all duration-300 " +
-                                        (isFavorite
-                                            ? "scale-110 text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]"
-                                            : "text-white/20 hover:text-white/50")
-                                    }
-                                >
-                                    <svg
-                                        className="h-5 w-5"
-                                        fill={
-                                            isFavorite ? "currentColor" : "none"
+                                <div className="mt-0.5 flex items-center gap-2">
+                                    <div className="line-clamp-1 text-xl font-bold tracking-tight text-white">
+                                        {selectedChannel.name}
+                                    </div>
+                                    <button
+                                        onClick={() =>
+                                            onToggleFavorite(selectedChannel.id)
                                         }
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
+                                        className={
+                                            "transition-all duration-300 " +
+                                            (isFavorite
+                                                ? "scale-110 text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]"
+                                                : "text-white/20 hover:text-white/50")
+                                        }
                                     >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-                                        />
-                                    </svg>
-                                </button>
+                                        <svg
+                                            className="h-5 w-5"
+                                            fill={
+                                                isFavorite ? "currentColor" : "none"
+                                            }
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                                            />
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
 
-                            {/* Custom Source Selection Dropdown */}
-                            {selectedChannel.configSources &&
-                                selectedChannel.configSources.length > 0 && (
-                                    <div className="mt-3 flex items-center gap-3">
+                            {/* Source Selection Block */}
+                            {selectedChannel.configSources && selectedChannel.configSources.length > 1 && (
+                                <div className="ml-auto flex shrink-0 items-center gap-3 border-l border-white/10 pl-4">
+                                    <div className="hidden items-center gap-1.5 sm:flex">
+                                        <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
+                                        <span className="text-[10px] font-bold uppercase tracking-tight text-white/40">
+                                            Nguồn {currentSourceIdx + 1}/{selectedChannel.configSources.length}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
                                         <div className="relative">
                                             <button
                                                 onClick={() =>
@@ -682,15 +690,13 @@ const ChannelInfo = React.memo(
                                                     )
                                                 }
                                                 className={
-                                                    "flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[11px] font-bold transition-all " +
+                                                    "flex h-7 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-bold transition-all " +
                                                     (showSourceDropdown
                                                         ? "border-cyan-500/50 bg-cyan-500/20 text-white shadow-[0_0_15px_rgba(6,182,212,0.3)]"
                                                         : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:bg-white/10 hover:text-white")
                                                 }
                                             >
-                                                <span>
-                                                    Nguồn {currentSourceIdx + 1}
-                                                </span>
+                                                <span>Nguồn {currentSourceIdx + 1}</span>
                                                 <svg
                                                     className={
                                                         "h-3 w-3 transition-transform duration-300 " +
@@ -702,98 +708,48 @@ const ChannelInfo = React.memo(
                                                     stroke="currentColor"
                                                     viewBox="0 0 24 24"
                                                 >
-                                                    <path
-                                                        strokeLinecap="round"
-                                                        strokeLinejoin="round"
-                                                        strokeWidth={3}
-                                                        d="M19 9l-7 7-7-7"
-                                                    />
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M19 9l-7 7-7-7" />
                                                 </svg>
                                             </button>
 
                                             {showSourceDropdown && (
                                                 <>
-                                                    {/* Backdrop to close on click outside */}
-                                                    <div
-                                                        className="fixed inset-0 z-40"
-                                                        onClick={() =>
-                                                            setShowSourceDropdown(
-                                                                false,
-                                                            )
-                                                        }
-                                                    />
-
-                                                    {/* Dropdown Menu */}
-                                                    <div className="animate-in fade-in slide-in-from-top-2 absolute left-0 top-full z-50 mt-2 min-w-[120px] overflow-hidden rounded-xl border border-white/10 bg-zinc-900/90 shadow-2xl backdrop-blur-xl duration-200">
+                                                    <div className="fixed inset-0 z-40" onClick={() => setShowSourceDropdown(false)} />
+                                                    <div className="animate-in fade-in slide-in-from-top-2 absolute left-0 top-full z-50 mt-1.5 min-w-[120px] overflow-hidden rounded-xl border border-white/10 bg-zinc-900/90 shadow-2xl backdrop-blur-xl duration-200">
                                                         <div className="flex flex-col p-1.5">
-                                                            {selectedChannel.configSources.map(
-                                                                (_, idx) => {
-                                                                    const isSelected =
-                                                                        currentSourceIdx ===
-                                                                        idx;
-                                                                    return (
-                                                                        <button
-                                                                            key={
-                                                                                idx
-                                                                            }
-                                                                            onClick={() => {
-                                                                                onSelectSource(
-                                                                                    idx,
-                                                                                );
-                                                                                setShowSourceDropdown(
-                                                                                    false,
-                                                                                );
-                                                                            }}
-                                                                            className={
-                                                                                "flex items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-bold transition-all " +
-                                                                                (isSelected
-                                                                                    ? "bg-cyan-500 text-black"
-                                                                                    : "text-white/60 hover:bg-white/10 hover:text-white")
-                                                                            }
-                                                                        >
-                                                                            <span>
-                                                                                Nguồn{" "}
-                                                                                {idx +
-                                                                                    1}
-                                                                            </span>
-                                                                            {isSelected && (
-                                                                                <svg
-                                                                                    className="h-3 w-3"
-                                                                                    fill="none"
-                                                                                    stroke="currentColor"
-                                                                                    viewBox="0 0 24 24"
-                                                                                >
-                                                                                    <path
-                                                                                        strokeLinecap="round"
-                                                                                        strokeLinejoin="round"
-                                                                                        strokeWidth={
-                                                                                            3
-                                                                                        }
-                                                                                        d="M5 13l4 4L19 7"
-                                                                                    />
-                                                                                </svg>
-                                                                            )}
-                                                                        </button>
-                                                                    );
-                                                                },
-                                                            )}
+                                                            {selectedChannel.configSources.map((_, idx) => {
+                                                                const isSelected = currentSourceIdx === idx;
+                                                                return (
+                                                                    <button
+                                                                        key={idx}
+                                                                        onClick={() => {
+                                                                            onSelectSource(idx);
+                                                                            setShowSourceDropdown(false);
+                                                                        }}
+                                                                        className={"flex items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-bold transition-all " + (isSelected ? "bg-cyan-500 text-black" : "text-white/60 hover:bg-white/10 hover:text-white")}
+                                                                    >
+                                                                        <span>Nguồn {idx + 1}</span>
+                                                                        {isSelected && <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                                                                    </button>
+                                                                );
+                                                            })}
                                                         </div>
                                                     </div>
                                                 </>
                                             )}
                                         </div>
-                                        <div className="flex items-center gap-1.5">
-                                            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
-                                            <span className="text-[10px] font-bold uppercase tracking-tight text-white/40">
-                                                Nguồn {currentSourceIdx + 1} /{" "}
-                                                {
-                                                    selectedChannel
-                                                        .configSources.length
-                                                }
-                                            </span>
-                                        </div>
+                                        <button
+                                            onClick={() => onSelectSource((currentSourceIdx + 1) % selectedChannel.configSources.length)}
+                                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-white/60 transition-colors hover:bg-white/20 hover:text-white"
+                                            title="Đổi sang nguồn tiếp theo"
+                                        >
+                                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                                            </svg>
+                                        </button>
                                     </div>
-                                )}
+                                </div>
+                            )}
                         </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -1022,10 +978,10 @@ const ScheduleList = React.memo(
                             />
                         </svg>
                         Lịch Phát Sóng
-                        {/* Mũi tên chỉ trên mobile */}
+                        {/* Mũi tên toggle */}
                         <svg
                             className={
-                                "h-3 w-3 text-white/40 transition-transform lg:hidden " +
+                                "h-3 w-3 text-white/40 transition-transform " +
                                 (expanded !== false ? "rotate-90" : "rotate-0")
                             }
                             fill="none"
@@ -1968,8 +1924,17 @@ export default function TV() {
         {
             const networkingEngine = player.getNetworkingEngine();
             if (networkingEngine) {
+                // Map để lưu trữ tạm thời original URLs cho việc khôi phục Base URI
+                const originalUriMap = new Map();
+
                 networkingEngine.registerRequestFilter((type, request) => {
                     const originalUri = request.uris[0] || "";
+                    
+                    // Ngăn chặn vòng lặp lồng nhau vô tận nếu URL đã bị proxy
+                    if (PROXY_WORKER_URL && originalUri.startsWith(PROXY_WORKER_URL)) {
+                        return;
+                    }
+
                     const shouldProxy =
                         useProxy &&
                         originalUri &&
@@ -1999,16 +1964,31 @@ export default function TV() {
                             }
                         }
 
+                        let fallbackOrigin = null;
+                        let fallbackReferer = null;
+                        try {
+                            const urlObj = new URL(originalUri);
+                            fallbackOrigin = urlObj.origin;
+                            fallbackReferer = urlObj.origin + "/";
+                        } catch(e) {}
+
                         const payload = {
                             url: originalUri,
                             method: request.method || "GET",
                             headers: headersToSend,
                             body: bodyPayload,
-                            referer: source.referrer || null,
-                            origin: source.origin || null,
+                            referer: source.referrer || fallbackReferer,
+                            origin: source.origin || fallbackOrigin,
                         };
 
-                        request.uris = [PROXY_WORKER_URL];
+                        // Tạo một request ID ngẫu nhiên để track URL gốc
+                        const reqId = Math.random().toString(36).substring(2, 10);
+                        originalUriMap.set(reqId, originalUri);
+
+                        // Đính kèm reqId vào Proxy URL để responseFilter nhận diện
+                        const proxyUrlWithId = PROXY_WORKER_URL + (PROXY_WORKER_URL.includes("?") ? "&" : "?") + "proxyReqId=" + reqId;
+
+                        request.uris = [proxyUrlWithId];
                         request.method = "POST";
                         request.headers["Content-Type"] = "application/json";
 
@@ -2020,6 +2000,22 @@ export default function TV() {
                             request.headers["User-Agent"] = source.userAgent;
                         if (source.referrer)
                             request.headers["Referer"] = source.referrer;
+                    }
+                });
+
+                // Khôi phục URL thực tế từ response để Shaka Player dùng làm Base URL
+                networkingEngine.registerResponseFilter((type, response) => {
+                    if (response.uri && response.uri.includes("proxyReqId=")) {
+                        try {
+                            const urlObj = new URL(response.uri);
+                            const reqId = urlObj.searchParams.get("proxyReqId");
+                            if (reqId && originalUriMap.has(reqId)) {
+                                response.uri = originalUriMap.get(reqId);
+                                originalUriMap.delete(reqId);
+                            }
+                        } catch (e) {
+                            // Bỏ qua lỗi URL parse
+                        }
                     }
                 });
             }
@@ -3032,7 +3028,7 @@ export default function TV() {
 
             <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-4 p-4">
                 <div className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-5">
-                    <div className="flex h-full flex-col gap-4 lg:col-span-3">
+                    <div className={`relative flex h-full flex-col gap-4 ${showEpg ? 'lg:col-span-3' : 'lg:col-span-5'}`}>
                         <ChannelInfo
                             selectedChannel={selectedChannel}
                             currentSourceIdx={currentSourceIdx}
@@ -3049,7 +3045,7 @@ export default function TV() {
                             <div className="w-full">
                                 <div
                                     ref={playerFrameRef}
-                                    className="mx-auto aspect-video w-full max-w-[1100px]"
+                                    className="mx-auto aspect-video w-full max-h-[75vh]"
                                 >
                                     <div
                                         ref={videoRef}
@@ -3063,10 +3059,21 @@ export default function TV() {
                                 </div>
                             </div>
                         </div>
+
+                        {/* Nút đóng/mở EPG dạng ngăn kéo trên Desktop */}
+                        <button
+                            onClick={() => setShowEpg(!showEpg)}
+                            className="absolute -right-4 top-1/2 z-50 hidden -translate-y-1/2 items-center justify-center rounded-l-xl border border-r-0 border-white/10 bg-black/60 py-8 text-white/50 backdrop-blur-md transition-all hover:bg-black/80 hover:text-white lg:flex"
+                            title={showEpg ? "Đóng Lịch Phát Sóng" : "Mở Lịch Phát Sóng"}
+                        >
+                            <svg className={`h-3 w-3 transition-transform ${showEpg ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
                     </div>
 
-                    {/* EPG: Desktop luôn hiện, Mobile collapsible qua header ScheduleList */}
-                    <div className="custom-scrollbar flex h-full flex-col space-y-4 overflow-auto rounded-xl lg:col-span-2">
+                    {/* EPG: Toggleable qua header ScheduleList */}
+                    <div className={`custom-scrollbar flex h-full flex-col space-y-4 overflow-auto rounded-xl lg:col-span-2 ${showEpg ? '' : 'max-lg:!flex lg:hidden'}`}>
                         <ScheduleList
                             schedule={schedule}
                             loading={scheduleLoading}
