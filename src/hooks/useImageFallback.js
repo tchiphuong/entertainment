@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 
 // Fallback SVG image used when movie poster or thumbnail is missing or broken
-const FALLBACK_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(`
+export const FALLBACK_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(`
     <svg xmlns="http://www.w3.org/2000/svg"
      viewBox="0 0 96 96"
      width="64"

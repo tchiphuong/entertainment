@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -28,7 +28,6 @@ export default function VodLanding() {
     const { getImageUrl, handleImageError } = useImageFallback();
 
     const [currentHeroIndex, setCurrentHeroIndex] = useState(0);
-    const [scrollY, setScrollY] = useState(0);
     const sliderTimerRef = useRef(null);
     const touchStartX = useRef(0);
     const touchEndX = useRef(0);
@@ -79,9 +78,6 @@ export default function VodLanding() {
 
     useEffect(() => {
         document.title = "Entertainment - VOD Hub";
-        const handleScroll = () => setScrollY(window.scrollY);
-        window.addEventListener("scroll", handleScroll);
-        return () => window.removeEventListener("scroll", handleScroll);
     }, []);
 
     const startSlider = useCallback(() => {
@@ -424,9 +420,9 @@ export default function VodLanding() {
 
                     {/* Slider Indicators */}
                     <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 flex-row gap-1 md:gap-3">
-                        {heroMovies.map((_, idx) => (
+                        {heroMovies.map((movie, idx) => (
                             <button
-                                key={idx}
+                                key={movie.slug || idx}
                                 onClick={() => {
                                     setCurrentHeroIndex(idx);
                                     startSlider();
@@ -539,30 +535,30 @@ export default function VodLanding() {
                                 {t("footer.info")}
                             </h4>
                             <div className="flex flex-col gap-2.5 text-xs font-medium">
-                                <a
-                                    href="#"
+                                <Link
+                                    to="/"
                                     className="transition-colors hover:text-white"
                                 >
                                     {t("footer.terms")}
-                                </a>
-                                <a
-                                    href="#"
+                                </Link>
+                                <Link
+                                    to="/"
                                     className="transition-colors hover:text-white"
                                 >
                                     {t("footer.privacy")}
-                                </a>
-                                <a
-                                    href="#"
+                                </Link>
+                                <Link
+                                    to="/"
                                     className="transition-colors hover:text-white"
                                 >
                                     {t("footer.about")}
-                                </a>
-                                <a
-                                    href="#"
+                                </Link>
+                                <Link
+                                    to="/"
                                     className="transition-colors hover:text-white"
                                 >
                                     {t("footer.contact")}
-                                </a>
+                                </Link>
                             </div>
                         </div>
                         <div className="hidden space-y-4 md:block">
@@ -626,7 +622,6 @@ function MovieRow({
     link,
     getImageUrl,
     handleImageError,
-    navigate,
     onDelete,
     onClearAll,
 }) {

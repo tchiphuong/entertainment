@@ -1,6 +1,7 @@
 # Node.js
 node_modules/
 dist/
+dist-ssr/
 build/
 *.log
 npm-debug.log*
@@ -12,6 +13,10 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# Linter & Testing
+.eslintcache
+coverage/
+
 # IDE
 .vscode/
 .idea/
@@ -21,3 +26,6 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# AI Tools (Uncomment the line below to ignore AI configs)
+# .agents/

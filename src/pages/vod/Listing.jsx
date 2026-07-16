@@ -1,17 +1,15 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
     useParams,
     useNavigate,
     Link,
     useSearchParams,
-    useLocation,
 } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useVodData } from "../../hooks/useVodData";
 import { MovieGridSkeleton } from "../../components/vod/VodSkeletons";
 import { useImageFallback } from "../../hooks/useImageFallback";
 import VodMovieCard from "../../components/vod/VodMovieCard";
-import VodCategoryMenu from "../../components/vod/VodCategoryMenu";
 import VodLayout from "../../components/layout/VodLayout";
 import clsx from "clsx";
 import { useVodContext } from "../../contexts/VodContext";
@@ -26,7 +24,6 @@ import {
 import { useAuth } from "../../contexts/AuthContext";
 import {
     fetchHistoryFromFirestore,
-    fetchFavoritesFromFirestore,
 } from "../../services/firebaseHelpers";
 
 const filterMetadataCache = new Map();
@@ -35,127 +32,380 @@ const generateVisiblePages = (totalPages, currentPage) => {
     const pages = [];
     if (totalPages <= 5) {
         for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else if (currentPage <= 3) {
+        for (let i = 1; i <= 5; i++) pages.push(i);
+    } else if (currentPage >= totalPages - 2) {
+        for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
     } else {
-        if (currentPage <= 3) {
-            for (let i = 1; i <= 5; i++) pages.push(i);
-        } else if (currentPage >= totalPages - 2) {
-            for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
-        } else {
-            for (let i = currentPage - 2; i <= currentPage + 2; i++)
-                pages.push(i);
-        }
+        for (let i = currentPage - 2; i <= currentPage + 2; i++)
+            pages.push(i);
     }
     return pages;
 };
 
-export default function Listing() {
-    const { country, category } = useParams();
-    const [searchParams, setSearchParams] = useSearchParams();
-    const navigate = useNavigate();
-    const location = useLocation();
-    const { t, i18n } = useTranslation();
+const fetchWithFallback = async (url) => {
+    try {
+        const res = await fetch(url);
+        if (res.ok) {
+            const data = await res.json();
+            return data?.items || data?.data?.items || data?.result || [];
+        }
+    } catch (e) {
+        console.error("Fetch merged filter failed:", e);
+    }
+    return [];
+};
 
-    const pageSize = 12;
-    const { getImageUrl, handleImageError } = useImageFallback();
-    const { currentUser } = useAuth();
-    const [historyItems, setHistoryItems] = useState([]);
-    const [favoriteItems, setFavoriteItems] = useState([]);
-    const [historyLoading, setHistoryLoading] = useState(false);
-    const [favoriteLoading, setFavoriteLoading] = useState(false);
-    const { favorites: rawFavorites } = useVodContext();
-    const [showFilters, setShowFilters] = useState(false);
-
-    // Metadata từ API dựa trên activeSource
-    const [availableCategories, setAvailableCategories] = useState([]);
-    const [availableCountries, setAvailableCountries] = useState([]);
-    const [metadataLoading, setMetadataLoading] = useState(false);
-
-    const isHistoryCategory = category === "history";
-    const isFavoritesCategory = category === "favorites";
-    const isLibraryCategory = isHistoryCategory || isFavoritesCategory;
-
-    // Get filters from URL - Use a more robust way to get params
-    const getUrlParam = (name) => {
-        const fromParams = searchParams.get(name);
-        if (fromParams) return fromParams;
-        // Backup: parse directly from window.location in case searchParams is laggy
-        return new URLSearchParams(window.location.search).get(name) || "";
-    };
-
-    const currentQuery = getUrlParam("q");
-    const currentPage = parseInt(getUrlParam("page") || "1");
-    const currentYear = getUrlParam("year");
-    const activeSource = getUrlParam("source") || "all";
-    const currentCountry = getUrlParam("country") || country || "";
-
-    const DANH_SACH_TYPES = [
-        "phim-bo",
-        "phim-le",
-        "hoat-hinh",
-        "tv-shows",
-        "phim-vietsub",
-        "phim-thuyet-minh",
-        "phim-long-tieng",
-        "phim-bo-dang-chieu",
-        "phim-bo-hoan-thanh",
-        "phim-sap-chieu",
-    ];
-    const isListType = category && DANH_SACH_TYPES.includes(category);
-
-    const activeListContext =
-        getUrlParam("type_list") || (isListType ? category : "");
-    const currentCategory =
-        getUrlParam("category") || (isListType ? "" : category) || "";
-
-    const normalizeLibraryItems = (rawItems) => {
-        return (Array.isArray(rawItems) ? rawItems : [])
-            .filter((item) => item?.slug)
-            .map((item) => {
-                const poster =
-                    item.poster || item.poster_url || item.thumb_url || "";
-
-                // Ưu tiên dùng trường source có sẵn, nếu không mới đoán từ server
-                let itemSource = item.source;
-                if (!itemSource) {
-                    const server = String(item.server || "").toLowerCase();
-                    itemSource = SOURCES.SOURCE_K;
-                    if (
-                        server.includes(SOURCES.SOURCE_O) ||
-                        server.includes("source_o")
-                    )
-                        itemSource = SOURCES.SOURCE_O;
-                    else if (
-                        server.includes(SOURCES.SOURCE_C) ||
-                        server.includes("source_c")
-                    )
-                        itemSource = SOURCES.SOURCE_C;
-                }
-
-                return {
-                    ...item,
-                    source: itemSource,
-                    name: item.name || t("vods.unknownTitle"),
-                    poster_url: poster,
-                    thumb_url: poster,
-                    poster,
-                    thumbnail: poster,
-                    quality: item.current_episode?.value || "",
-                    lang: item.lang || "",
-                };
+const mergeLists = (list1, list2, list3) => {
+    const map = new Map();
+    for (const item of [...list1, ...list2, ...list3]) {
+        if (item?.slug && item?.name) {
+            map.set(item.slug, {
+                slug: item.slug,
+                name: item.name,
             });
-    };
+        }
+    }
+    return Array.from(map.values()).sort((a, b) =>
+        a.name.localeCompare(b.name, "vi")
+    );
+};
 
-    const getSlugName = (slug, list) => {
-        if (!slug) return "";
-        const item = list?.find((i) => i.slug === slug);
-        return item
-            ? item.name
-            : slug
-                  .split("-")
-                  .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-                  .join(" ");
-    };
+const fetchFallbackMetadata = async (setAvailableCategories, setAvailableCountries) => {
+    try {
+        const [gRes, cRes] = await Promise.all([
+            fetch(`${import.meta.env.VITE_SOURCE_K_API}/the-loai`),
+            fetch(`${import.meta.env.VITE_SOURCE_K_API}/quoc-gia`),
+        ]);
+        const [gData, cData] = await Promise.all([gRes.json(), cRes.json()]);
+        if (gData?.items) setAvailableCategories(gData.items);
+        if (cData?.items) setAvailableCountries(cData.items);
+    } catch (fallbackError) {
+        console.error("Fallback metadata fetch failed:", fallbackError);
+    }
+};
 
+const getMergedMetadata = async () => {
+    const [kGenres, kCountries, oGenres, oCountries] = await Promise.all([
+        fetchWithFallback(`${import.meta.env.VITE_SOURCE_K_API}/the-loai`),
+        fetchWithFallback(`${import.meta.env.VITE_SOURCE_K_API}/quoc-gia`),
+        fetchWithFallback(`${import.meta.env.VITE_SOURCE_O_API}/v1/api/the-loai`),
+        fetchWithFallback(`${import.meta.env.VITE_SOURCE_O_API}/v1/api/quoc-gia`),
+    ]);
+
+    return {
+        genres: mergeLists(SOURCE_C_CATEGORIES, kGenres, oGenres),
+        countries: mergeLists(SOURCE_C_COUNTRIES, kCountries, oCountries),
+    };
+};
+
+const getSourceCMetadata = () => {
+    const sortedCat = [...SOURCE_C_CATEGORIES].sort((a, b) =>
+        a.name.localeCompare(b.name, "vi")
+    );
+    const sortedCou = [...SOURCE_C_COUNTRIES].sort((a, b) =>
+        a.name.localeCompare(b.name, "vi")
+    );
+    return { genres: sortedCat, countries: sortedCou };
+};
+
+const getSingleSourceMetadata = async (sourceId) => {
+    let domain = "";
+    let genresPath = "/v1/api/the-loai";
+    let countriesPath = "/v1/api/quoc-gia";
+
+    if (sourceId === SOURCES.SOURCE_K) {
+        domain = import.meta.env.VITE_SOURCE_K_API;
+        genresPath = "/the-loai";
+        countriesPath = "/quoc-gia";
+    } else if (sourceId === SOURCES.SOURCE_O) {
+        domain = import.meta.env.VITE_SOURCE_O_API;
+    }
+
+    if (!domain) throw new Error("No domain for source");
+
+    const [gRes, cRes] = await Promise.all([
+        fetch(`${domain}${genresPath}`),
+        fetch(`${domain}${countriesPath}`),
+    ]);
+
+    const gData = gRes.ok ? await gRes.json() : null;
+    const cData = cRes.ok ? await cRes.json() : null;
+
+    const genreItems = gData?.items || gData?.data?.items || gData?.result || [];
+    const countryItems = cData?.items || cData?.data?.items || cData?.result || [];
+
+    const newGenres = genreItems
+        .map((i) => ({ slug: i.slug, name: i.name }))
+        .sort((a, b) => a.name.localeCompare(b.name, "vi"));
+    const newCountries = countryItems
+        .map((i) => ({ slug: i.slug, name: i.name }))
+        .sort((a, b) => a.name.localeCompare(b.name, "vi"));
+
+    return { genres: newGenres, countries: newCountries };
+};
+
+export const buildSourceKOConfig = (sourceId, paramsContext) => {
+    const {
+        currentQuery,
+        currentYear,
+        currentCategory,
+        currentCountry,
+        activeListContext,
+    } = paramsContext;
+
+    let typeVal = "";
+    let useV1Val = false;
+    let urlParams = {};
+
+    if (currentQuery) {
+        typeVal = "tim-kiem";
+        useV1Val = true;
+        urlParams = {
+            keyword: currentQuery,
+            year: currentYear,
+            category: currentCategory,
+            country: currentCountry,
+        };
+    } else if (activeListContext) {
+        const isNonV1 = [
+            "phim-bo-dang-chieu",
+            "phim-bo-hoan-thanh",
+            "phim-sap-chieu",
+        ].includes(activeListContext);
+        typeVal = `danh-sach/${activeListContext}`;
+        useV1Val = !isNonV1;
+        if (!isNonV1) {
+            urlParams = {
+                year: currentYear,
+                country: currentCountry,
+                category: currentCategory,
+            };
+        }
+    } else if (currentCategory) {
+        typeVal = `the-loai/${currentCategory}`;
+        useV1Val = true;
+        urlParams = { year: currentYear, country: currentCountry };
+    } else if (currentCountry) {
+        typeVal = `quoc-gia/${currentCountry}`;
+        useV1Val = true;
+        urlParams = { year: currentYear };
+    } else if (currentYear) {
+        typeVal =
+            sourceId === SOURCES.SOURCE_O
+                ? `nam-phat-hanh/${currentYear}`
+                : `nam/${currentYear}`;
+        useV1Val = true;
+    } else {
+        typeVal = "danh-sach/phim-moi-cap-nhat";
+    }
+
+    return { typeVal, useV1Val, urlParams };
+};
+
+export const buildSourceCConfig = (paramsContext) => {
+    const {
+        currentQuery,
+        currentYear,
+        currentCategory,
+        currentCountry,
+        activeListContext,
+    } = paramsContext;
+
+    if (
+        currentCountry &&
+        !SOURCE_C_COUNTRIES.some((c) => c.slug === currentCountry)
+    ) {
+        return null;
+    }
+    if (
+        currentCategory &&
+        !SOURCE_C_CATEGORIES.some((c) => c.slug === currentCategory)
+    ) {
+        return null;
+    }
+
+    const activeFiltersCount = [
+        activeListContext,
+        currentCategory,
+        currentCountry,
+        currentYear,
+        currentQuery,
+    ].filter(Boolean).length;
+    if (activeFiltersCount > 1) {
+        return null;
+    }
+
+    let typeVal = "";
+    let urlParams = {};
+
+    if (currentQuery) {
+        typeVal = "search";
+        urlParams = { keyword: currentQuery };
+    } else if (activeListContext) {
+        typeVal = `danh-sach/${activeListContext}`;
+    } else if (currentCategory) {
+        typeVal = `the-loai/${currentCategory}`;
+    } else if (currentCountry) {
+        typeVal = `quoc-gia/${currentCountry}`;
+    } else if (currentYear) {
+        typeVal = `nam-phat-hanh/${currentYear}`;
+    } else {
+        typeVal = "phim-moi-cap-nhat";
+    }
+
+    return { typeVal, useV1Val: false, urlParams };
+};
+
+export const buildSourceConfig = (sourceId, paramsContext, overrides = {}) => {
+    const { currentPage, pageSize } = paramsContext;
+
+    let configResult = null;
+
+    if (sourceId === SOURCES.SOURCE_K || sourceId === SOURCES.SOURCE_O) {
+        configResult = buildSourceKOConfig(sourceId, paramsContext);
+    } else if (sourceId === SOURCES.SOURCE_C) {
+        configResult = buildSourceCConfig(paramsContext);
+    }
+
+    if (!configResult) return null;
+
+    const { typeVal, useV1Val, urlParams } = configResult;
+
+    const cleanParams = {};
+    Object.entries(urlParams).forEach(([k, v]) => {
+        if (v && v.toString().trim() !== "") cleanParams[k] = v;
+    });
+
+    return {
+        id: overrides.id || sourceId,
+        title: overrides.title || sourceId,
+        type: typeVal,
+        source: sourceId,
+        useV1: useV1Val,
+        page: currentPage,
+        limit: pageSize,
+        params: cleanParams,
+    };
+};
+
+export const aggregateItems = ({
+    isHistoryCategory,
+    historyItems,
+    isFavoritesCategory,
+    favoriteItems,
+    isMergedView,
+    sections,
+    SOURCES,
+}) => {
+    let items = [];
+    let totalPages = 1;
+    let totalItemsCount = 0;
+
+    if (isHistoryCategory) {
+        items = historyItems;
+        totalItemsCount = historyItems.length;
+    } else if (isFavoritesCategory) {
+        items = favoriteItems;
+        totalItemsCount = favoriteItems.length;
+    } else if (isMergedView) {
+        const mergedItems = [];
+        const seenSlugs = new Set();
+
+        [SOURCES.SOURCE_O, SOURCES.SOURCE_K, SOURCES.SOURCE_C].forEach((id) => {
+            const section = sections[id];
+            if (section?.items) {
+                section.items.forEach((item) => {
+                    if (!seenSlugs.has(item.slug)) {
+                        seenSlugs.add(item.slug);
+                        mergedItems.push(item);
+                    }
+                });
+            }
+        });
+        items = mergedItems;
+        const sectionValues = Object.values(sections);
+        totalPages =
+            sectionValues.length > 0
+                ? Math.max(...sectionValues.map((s) => s.totalPages || 1))
+                : 1;
+        totalItemsCount =
+            sectionValues.length > 0
+                ? Math.max(...sectionValues.map((s) => s.totalItems || 0))
+                : 0;
+    } else {
+        const section = sections["listing"] || {};
+        items = section.items || [];
+        totalPages = section.totalPages || 1;
+        totalItemsCount = section.totalItems || 0;
+    }
+
+    return { items, totalPages, totalItemsCount };
+};
+
+const SKELETON_COUNTRIES = Array.from({ length: 8 }, (_, i) => `country-skel-${i}`);
+const SKELETON_CATEGORIES = Array.from({ length: 10 }, (_, i) => `category-skel-${i}`);
+
+export const normalizeLibraryItems = (rawItems, t) => {
+    return (Array.isArray(rawItems) ? rawItems : [])
+        .filter((item) => item?.slug)
+        .map((item) => {
+            const poster =
+                item.poster || item.poster_url || item.thumb_url || "";
+
+            let itemSource = item.source;
+            if (!itemSource) {
+                const server = String(item.server || "").toLowerCase();
+                itemSource = SOURCES.SOURCE_K;
+                if (
+                    server.includes(SOURCES.SOURCE_O) ||
+                    server.includes("source_o")
+                )
+                    itemSource = SOURCES.SOURCE_O;
+                else if (
+                    server.includes(SOURCES.SOURCE_C) ||
+                    server.includes("source_c")
+                )
+                    itemSource = SOURCES.SOURCE_C;
+            }
+
+            return {
+                ...item,
+                source: itemSource,
+                name: item.name || t("vods.unknownTitle"),
+                poster_url: poster,
+                thumb_url: poster,
+                poster,
+                thumbnail: poster,
+                quality: item.current_episode?.value || "",
+                lang: item.lang || "",
+            };
+        });
+};
+
+export const getSlugName = (slug, list) => {
+    if (!slug) return "";
+    const item = list?.find((i) => i.slug === slug);
+    return item
+        ? item.name
+        : slug
+              .split("-")
+              .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+              .join(" ");
+};
+
+export const generateListingTitle = ({
+    currentQuery,
+    activeListContext,
+    currentCategory,
+    currentCountry,
+    currentYear,
+    isHistoryCategory,
+    isFavoritesCategory,
+    availableCategories,
+    availableCountries,
+    t,
+}) => {
     let titleParts = [];
     if (currentQuery) {
         titleParts.push(
@@ -188,16 +438,35 @@ export default function Listing() {
             titleParts.push(t("vods.newMovies") || "Phim mới cập nhật");
         }
     }
+    return titleParts.join(" • ");
+};
 
-    const finalTitle = titleParts.join(" • ");
+export const getUpdatedSearchParams = (currentParams, key, value) => {
+    const params = new URLSearchParams(currentParams);
+    const current = params.get(key) || "";
+    if (current === value && key !== "source") {
+        params.delete(key);
+    } else if (key === "source" && value === "all") {
+        params.delete(key);
+    } else if (!value) {
+        params.delete(key);
+    } else {
+        params.set(key, value);
+    }
+    params.set("page", "1");
+    return params;
+};
 
-    // Fetch metadata theo nguồn đang chọn
+export const useVodMetadata = (activeSource, filterMetadataCache) => {
+    const [availableCategories, setAvailableCategories] = useState([]);
+    const [availableCountries, setAvailableCountries] = useState([]);
+    const [metadataLoading, setMetadataLoading] = useState(false);
+
     useEffect(() => {
         const fetchMetadata = async () => {
             const cacheKey = activeSource || "all";
             if (filterMetadataCache.has(cacheKey)) {
                 const cachedData = filterMetadataCache.get(cacheKey);
-                // Nếu là cache lỗi, kệ nó, đừng gán state rỗng làm trắng trang lọc
                 if (!cachedData.isError) {
                     setAvailableCategories(cachedData.genres);
                     setAvailableCountries(cachedData.countries);
@@ -208,144 +477,26 @@ export default function Listing() {
 
             setMetadataLoading(true);
             try {
+                let metadata;
                 if (activeSource === "all" || !activeSource) {
-                    const fetchWithFallback = async (url) => {
-                        try {
-                            const res = await fetch(url);
-                            if (res.ok) {
-                                const data = await res.json();
-                                return (
-                                    data?.items ||
-                                    data?.data?.items ||
-                                    data?.result ||
-                                    []
-                                );
-                            }
-                        } catch (e) {
-                            console.error("Fetch merged filter failed:", e);
-                        }
-                        return [];
-                    };
-
-                    const [kGenres, kCountries, oGenres, oCountries] =
-                        await Promise.all([
-                            fetchWithFallback(
-                                `${import.meta.env.VITE_SOURCE_K_API}/the-loai`,
-                            ),
-                            fetchWithFallback(
-                                `${import.meta.env.VITE_SOURCE_K_API}/quoc-gia`,
-                            ),
-                            fetchWithFallback(
-                                `${import.meta.env.VITE_SOURCE_O_API}/v1/api/the-loai`,
-                            ),
-                            fetchWithFallback(
-                                `${import.meta.env.VITE_SOURCE_O_API}/v1/api/quoc-gia`,
-                            ),
-                        ]);
-
-                    const mergeLists = (list1, list2, list3) => {
-                        const map = new Map();
-                        [...list1, ...list2, ...list3].forEach((item) => {
-                            if (item && item.slug && item.name) {
-                                map.set(item.slug, {
-                                    slug: item.slug,
-                                    name: item.name,
-                                });
-                            }
-                        });
-                        return Array.from(map.values()).sort((a, b) =>
-                            a.name.localeCompare(b.name, "vi"),
-                        );
-                    };
-
-                    const mergedGenres = mergeLists(
-                        SOURCE_C_CATEGORIES,
-                        kGenres,
-                        oGenres,
-                    );
-                    const mergedCountries = mergeLists(
-                        SOURCE_C_COUNTRIES,
-                        kCountries,
-                        oCountries,
-                    );
-
-                    filterMetadataCache.set(cacheKey, {
-                        genres: mergedGenres,
-                        countries: mergedCountries,
-                    });
-
-                    setAvailableCategories(mergedGenres);
-                    setAvailableCountries(mergedCountries);
-                    setMetadataLoading(false);
-                    return;
+                    metadata = await getMergedMetadata();
+                } else if (activeSource === SOURCES.SOURCE_C) {
+                    metadata = getSourceCMetadata();
+                } else {
+                    metadata = await getSingleSourceMetadata(activeSource);
                 }
 
-                const sourceToFetch = activeSource;
-                let domain = "";
-                let genresPath = "/v1/api/the-loai";
-                let countriesPath = "/v1/api/quoc-gia";
-
-                if (sourceToFetch === SOURCES.SOURCE_C) {
-                    const sortedCat = [...SOURCE_C_CATEGORIES].sort((a, b) =>
-                        a.name.localeCompare(b.name, "vi"),
-                    );
-                    const sortedCou = [...SOURCE_C_COUNTRIES].sort((a, b) =>
-                        a.name.localeCompare(b.name, "vi"),
-                    );
-
-                    filterMetadataCache.set(cacheKey, {
-                        genres: sortedCat,
-                        countries: sortedCou,
-                    });
-
-                    setAvailableCategories(sortedCat);
-                    setAvailableCountries(sortedCou);
-                    setMetadataLoading(false);
-                    return;
-                }
-
-                if (sourceToFetch === SOURCES.SOURCE_K) {
-                    domain = import.meta.env.VITE_SOURCE_K_API;
-                    genresPath = "/the-loai";
-                    countriesPath = "/quoc-gia";
-                } else if (sourceToFetch === SOURCES.SOURCE_O) {
-                    domain = import.meta.env.VITE_SOURCE_O_API;
-                }
-
-                if (!domain) throw new Error("No domain for source");
-
-                const [gRes, cRes] = await Promise.all([
-                    fetch(`${domain}${genresPath}`),
-                    fetch(`${domain}${countriesPath}`),
-                ]);
-
-                const gData = gRes.ok ? await gRes.json() : null;
-                const cData = cRes.ok ? await cRes.json() : null;
-
-                const genreItems =
-                    gData?.items || gData?.data?.items || gData?.result || [];
-                const countryItems =
-                    cData?.items || cData?.data?.items || cData?.result || [];
-
-                const newGenres = genreItems
-                    .map((i) => ({ slug: i.slug, name: i.name }))
-                    .sort((a, b) => a.name.localeCompare(b.name, "vi"));
-                const newCountries = countryItems
-                    .map((i) => ({ slug: i.slug, name: i.name }))
-                    .sort((a, b) => a.name.localeCompare(b.name, "vi"));
-
-                // Cache results (even if empty to prevent repeated failed calls)
+                const isError = metadata.genres.length === 0 && metadata.countries.length === 0;
                 filterMetadataCache.set(cacheKey, { 
-                    genres: newGenres, 
-                    countries: newCountries,
-                    isError: newGenres.length === 0 && newCountries.length === 0
+                    genres: metadata.genres, 
+                    countries: metadata.countries,
+                    isError
                 });
 
-                setAvailableCategories(newGenres);
-                setAvailableCountries(newCountries);
+                setAvailableCategories(metadata.genres);
+                setAvailableCountries(metadata.countries);
             } catch (error) {
                 console.error("Error fetching source metadata:", error);
-                // Negative cache: mark as failed to avoid re-fetching
                 filterMetadataCache.set(activeSource || "all", { 
                     genres: [], 
                     countries: [],
@@ -353,27 +504,7 @@ export default function Listing() {
                 });
 
                 if (activeSource !== SOURCES.SOURCE_K) {
-                    try {
-                        const [gRes, cRes] = await Promise.all([
-                            fetch(
-                                `${import.meta.env.VITE_SOURCE_K_API}/the-loai`,
-                            ),
-                            fetch(
-                                `${import.meta.env.VITE_SOURCE_K_API}/quoc-gia`,
-                            ),
-                        ]);
-                        const [gData, cData] = await Promise.all([
-                            gRes.json(),
-                            cRes.json(),
-                        ]);
-                        if (gData?.items) setAvailableCategories(gData.items);
-                        if (cData?.items) setAvailableCountries(cData.items);
-                    } catch (fallbackError) {
-                        console.error(
-                            "Fallback metadata fetch failed:",
-                            fallbackError,
-                        );
-                    }
+                    await fetchFallbackMetadata(setAvailableCategories, setAvailableCountries);
                 }
             } finally {
                 setMetadataLoading(false);
@@ -381,162 +512,14 @@ export default function Listing() {
         };
 
         fetchMetadata();
-    }, [activeSource]);
+    }, [activeSource, filterMetadataCache]);
 
-    // Xử lý chọn filter inline (toggle)
-    const handleFilterSelect = useCallback(
-        (key, value) => {
-            const params = new URLSearchParams(searchParams);
-            const current = params.get(key) || "";
-            if (current === value && key !== "source") {
-                params.delete(key); // Bỏ chọn nếu đang chọn cùng một value
-            } else {
-                if (key === "source" && value === "all") {
-                    params.delete(key); // "all" là mặc định nên clear param khỏi url
-                } else if (!value) {
-                    params.delete(key);
-                } else {
-                    params.set(key, value);
-                }
-            }
-            params.set("page", "1");
-            setSearchParams(params);
-        },
-        [searchParams, setSearchParams],
-    );
+    return { availableCategories, availableCountries, metadataLoading };
+};
 
-    const buildSourceConfig = (sourceId, overrides = {}) => {
-        let typeVal = "";
-        let useV1Val = false;
-        let urlParams = {};
-
-        if (sourceId === SOURCES.SOURCE_K || sourceId === SOURCES.SOURCE_O) {
-            if (currentQuery) {
-                typeVal = "tim-kiem";
-                useV1Val = true;
-                urlParams = {
-                    keyword: currentQuery,
-                    year: currentYear,
-                    category: currentCategory,
-                    country: currentCountry,
-                };
-            } else if (activeListContext) {
-                const isNonV1 = [
-                    "phim-bo-dang-chieu",
-                    "phim-bo-hoan-thanh",
-                    "phim-sap-chieu",
-                ].includes(activeListContext);
-                typeVal = `danh-sach/${activeListContext}`;
-                useV1Val = !isNonV1;
-                if (!isNonV1) {
-                    urlParams = {
-                        year: currentYear,
-                        country: currentCountry,
-                        category: currentCategory,
-                    };
-                }
-            } else if (currentCategory) {
-                typeVal = `the-loai/${currentCategory}`;
-                useV1Val = true;
-                urlParams = { year: currentYear, country: currentCountry };
-            } else if (currentCountry) {
-                typeVal = `quoc-gia/${currentCountry}`;
-                useV1Val = true;
-                urlParams = { year: currentYear };
-            } else if (currentYear) {
-                typeVal =
-                    sourceId === SOURCES.SOURCE_O
-                        ? `nam-phat-hanh/${currentYear}`
-                        : `nam/${currentYear}`;
-                useV1Val = true;
-            } else {
-                typeVal = "danh-sach/phim-moi-cap-nhat";
-                useV1Val = false;
-            }
-        } else if (sourceId === SOURCES.SOURCE_C) {
-            useV1Val = false;
-
-            // Kiểm tra xem NguonC có thực sự hỗ trợ danh mục / quốc gia này không
-            if (
-                currentCountry &&
-                !SOURCE_C_COUNTRIES.some((c) => c.slug === currentCountry)
-            ) {
-                return null;
-            }
-            if (
-                currentCategory &&
-                !SOURCE_C_CATEGORIES.some((c) => c.slug === currentCategory)
-            ) {
-                return null;
-            }
-
-            // NguonC API không hỗ trợ Gom Filter (Mix params), do đó nếu người dùng chọn >= 2 bộ lọc, skip NguonC
-            const activeFiltersCount = [
-                activeListContext,
-                currentCategory,
-                currentCountry,
-                currentYear,
-                currentQuery,
-            ].filter(Boolean).length;
-            if (activeFiltersCount > 1) {
-                return null;
-            }
-
-            if (currentQuery) {
-                typeVal = "search";
-                urlParams = { keyword: currentQuery };
-            } else if (activeListContext) {
-                typeVal = `danh-sach/${activeListContext}`;
-            } else if (currentCategory) {
-                typeVal = `the-loai/${currentCategory}`;
-            } else if (currentCountry) {
-                typeVal = `quoc-gia/${currentCountry}`;
-            } else if (currentYear) {
-                typeVal = `nam-phat-hanh/${currentYear}`;
-            } else {
-                typeVal = "phim-moi-cap-nhat";
-            }
-        }
-
-        // Loại bỏ rỗng
-        const cleanParams = {};
-        Object.entries(urlParams).forEach(([k, v]) => {
-            if (v && v.toString().trim() !== "") cleanParams[k] = v;
-        });
-
-        return {
-            id: overrides.id || sourceId,
-            title: overrides.title || sourceId,
-            type: typeVal,
-            source: sourceId,
-            useV1: useV1Val,
-            page: currentPage,
-            limit: pageSize,
-            params: cleanParams,
-        };
-    };
-
-    const isMergedView =
-        activeSource === "all" || (!activeSource && currentQuery);
-
-    const searchCategories = (
-        isMergedView
-            ? [
-                  buildSourceConfig(SOURCES.SOURCE_O, { title: "OPhim" }),
-                  buildSourceConfig(SOURCES.SOURCE_K, { title: "KKPhim" }),
-                  buildSourceConfig(SOURCES.SOURCE_C, { title: "NguonC" }),
-              ]
-            : isLibraryCategory
-              ? []
-              : [
-                    buildSourceConfig(activeSource || SOURCES.SOURCE_K, {
-                        id: "listing",
-                        title: finalTitle,
-                    }),
-                ]
-    ).filter(Boolean);
-
-    const { sections, loading: apiLoading } = useVodData(searchCategories);
+export const useVodHistory = (isHistoryCategory, currentUser, t) => {
+    const [historyItems, setHistoryItems] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
 
     useEffect(() => {
         const loadHistory = async () => {
@@ -545,19 +528,14 @@ export default function Listing() {
             setHistoryLoading(true);
             try {
                 let rawHistory = [];
-
                 if (currentUser?.uid) {
-                    rawHistory = await fetchHistoryFromFirestore(
-                        currentUser.uid,
-                    );
+                    rawHistory = await fetchHistoryFromFirestore(currentUser.uid);
                 } else {
                     const localHistory = localStorage.getItem("viewHistory");
                     rawHistory = localHistory ? JSON.parse(localHistory) : [];
                 }
 
-                const normalizedHistory = normalizeLibraryItems(rawHistory);
-
-                setHistoryItems(normalizedHistory);
+                setHistoryItems(normalizeLibraryItems(rawHistory, t));
             } catch (error) {
                 console.error("Load history category error:", error);
                 setHistoryItems([]);
@@ -567,113 +545,33 @@ export default function Listing() {
         };
 
         loadHistory();
-    }, [isHistoryCategory, currentUser?.uid]);
+    }, [isHistoryCategory, currentUser?.uid, t]);
+
+    return { historyItems, historyLoading };
+};
+
+export const useVodFavorites = (isFavoritesCategory, rawFavorites, t) => {
+    const [favoriteItems, setFavoriteItems] = useState([]);
+    const [favoriteLoading, setFavoriteLoading] = useState(false);
 
     useEffect(() => {
         if (!isFavoritesCategory) return;
-        const normalizedFavorites = normalizeLibraryItems(rawFavorites);
-        setFavoriteItems(normalizedFavorites);
+        setFavoriteItems(normalizeLibraryItems(rawFavorites, t));
         setFavoriteLoading(false);
-    }, [isFavoritesCategory, rawFavorites]);
+    }, [isFavoritesCategory, rawFavorites, t]);
 
-    // Aggregate items
-    let items = [];
-    let totalPages = 1;
-    let totalItemsCount = 0;
+    return { favoriteItems, favoriteLoading };
+};
 
-    if (isHistoryCategory) {
-        items = historyItems;
-        totalPages = 1;
-        totalItemsCount = historyItems.length;
-    } else if (isFavoritesCategory) {
-        items = favoriteItems;
-        totalPages = 1;
-        totalItemsCount = favoriteItems.length;
-    } else if (isMergedView) {
-        // Merge items from all sections and deduplicate by slug
-        const mergedItems = [];
-        const seenSlugs = new Set();
-
-        // Thứ tự ưu tiên: OPhim (Source O) > KKPhim (Source K) > NguonC (Source C)
-        [SOURCES.SOURCE_O, SOURCES.SOURCE_K, SOURCES.SOURCE_C].forEach((id) => {
-            const section = sections[id];
-            if (section && section.items) {
-                section.items.forEach((item) => {
-                    if (!seenSlugs.has(item.slug)) {
-                        seenSlugs.add(item.slug);
-                        mergedItems.push(item);
-                    }
-                });
-            }
-        });
-        items = mergedItems;
-        // For multi-source search, pagination is complex, take the max as a hint
-        const sectionValues = Object.values(sections);
-        totalPages =
-            sectionValues.length > 0
-                ? Math.max(...sectionValues.map((s) => s.totalPages || 1))
-                : 1;
-        totalItemsCount =
-            sectionValues.length > 0
-                ? Math.max(...sectionValues.map((s) => s.totalItems || 0))
-                : 0;
-    } else {
-        const section = sections["listing"] || {};
-        items = section.items || [];
-        totalPages = section.totalPages || 1;
-        totalItemsCount = section.totalItems || 0;
-    }
-
-    // Scroll to top on page change
-    useEffect(() => {
-        window.scrollTo({ top: 0, behavior: "smooth" });
-    }, [currentPage]);
-
-    // Xóa LoadingSpinner toàn trang để render Layout ngay lập tức
-    // if (loading) return <LoadingSpinner isLoading={true} />;
-
-    const section = sections["listing"] || {};
-    // const items = section.items || []; // Removed, handled above
-    // const totalPages = section.totalPages || 1; // Removed, handled above
-    const apiMetadata = section.cat || null;
-
-    const handlePageChange = (newPage) => {
-        if (newPage >= 1 && newPage <= totalPages) {
-            const newParams = new URLSearchParams(searchParams);
-            newParams.set("page", newPage);
-            setSearchParams(newParams);
-        }
-    };
-
-    const isLoading = isHistoryCategory
-        ? historyLoading
-        : isFavoritesCategory
-          ? favoriteLoading
-          : apiLoading;
-
-    const urlFilters = useMemo(
-        () => ({
-            source: activeSource,
-            country: currentCountry,
-            category: currentCategory,
-            year: currentYear,
-            keyword: currentQuery,
-        }),
-        [
-            activeSource,
-            currentCountry,
-            currentCategory,
-            currentYear,
-            currentQuery,
-        ],
-    );
-
-    // Thanh tìm kiếm inline với debounce
+export const useSearchInput = (currentQuery, searchParams, setSearchParams) => {
     const [searchInput, setSearchInput] = useState(currentQuery || "");
     const searchTimerRef = useRef(null);
     const searchInputRef = useRef(null);
 
-    // Xóa tất cả filter
+    useEffect(() => {
+        setSearchInput(currentQuery || "");
+    }, [currentQuery]);
+
     const clearAllFilters = useCallback(() => {
         const params = new URLSearchParams();
         if (searchInput.trim()) params.set("q", searchInput.trim());
@@ -681,12 +579,6 @@ export default function Listing() {
         setSearchParams(params);
     }, [searchInput, setSearchParams]);
 
-    // Đồng bộ searchInput khi URL thay đổi (ví dụ bấm back)
-    useEffect(() => {
-        setSearchInput(currentQuery || "");
-    }, [currentQuery]);
-
-    // Xử lý input thay đổi với debounce
     const handleSearchChange = useCallback(
         (value) => {
             setSearchInput(value);
@@ -700,14 +592,13 @@ export default function Listing() {
                     params.delete("q");
                 }
                 params.set("page", "1");
-                params.delete("source"); // Search tổng hợp
+                params.delete("source");
                 setSearchParams(params);
             }, 600);
         },
         [searchParams, setSearchParams],
     );
 
-    // Submit ngay khi nhấn Enter
     const handleSearchSubmit = useCallback(
         (e) => {
             e.preventDefault();
@@ -725,7 +616,6 @@ export default function Listing() {
         [searchInput, searchParams, setSearchParams],
     );
 
-    // Xóa ô tìm kiếm
     const clearSearch = useCallback(() => {
         setSearchInput("");
         if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -736,12 +626,194 @@ export default function Listing() {
         searchInputRef.current?.focus();
     }, [searchParams, setSearchParams]);
 
-    // Cleanup timer
     useEffect(() => {
         return () => {
             if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
         };
     }, []);
+
+    return {
+        searchInput,
+        searchInputRef,
+        handleSearchChange,
+        handleSearchSubmit,
+        clearSearch,
+        clearAllFilters,
+    };
+};
+
+const DANH_SACH_TYPES = new Set([
+    "phim-bo",
+    "phim-le",
+    "hoat-hinh",
+    "tv-shows",
+    "phim-vietsub",
+    "phim-thuyet-minh",
+    "phim-long-tieng",
+    "phim-bo-dang-chieu",
+    "phim-bo-hoan-thanh",
+    "phim-sap-chieu",
+]);
+
+export const useListingParams = (category, country, searchParams) => {
+    const getUrlParam = (name) => {
+        const fromParams = searchParams.get(name);
+        if (fromParams) return fromParams;
+        return new URLSearchParams(window.location.search).get(name) || "";
+    };
+
+    const currentQuery = getUrlParam("q");
+    const currentPage = Number.parseInt(getUrlParam("page") || "1");
+    const currentYear = getUrlParam("year");
+    const activeSource = getUrlParam("source") || "all";
+    const currentCountry = getUrlParam("country") || country || "";
+
+    const isListType = category && DANH_SACH_TYPES.has(category);
+    const activeListContext = getUrlParam("type_list") || (isListType ? category : "");
+    const currentCategory = getUrlParam("category") || (isListType ? "" : category) || "";
+
+    const isHistoryCategory = category === "history";
+    const isFavoritesCategory = category === "favorites";
+    const isLibraryCategory = isHistoryCategory || isFavoritesCategory;
+    
+    const isMergedView = activeSource === "all" || (!activeSource && currentQuery);
+
+    return {
+        currentQuery,
+        currentPage,
+        currentYear,
+        activeSource,
+        currentCountry,
+        activeListContext,
+        currentCategory,
+        isHistoryCategory,
+        isFavoritesCategory,
+        isLibraryCategory,
+        isMergedView,
+    };
+};
+
+export default function Listing() {
+    const { country, category } = useParams();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const navigate = useNavigate();
+    const { t, i18n } = useTranslation();
+
+    const pageSize = 12;
+    const { getImageUrl, handleImageError } = useImageFallback();
+    const { currentUser } = useAuth();
+    const { favorites: rawFavorites } = useVodContext();
+    const [showFilters, setShowFilters] = useState(false);
+
+    const {
+        currentQuery,
+        currentPage,
+        currentYear,
+        activeSource,
+        currentCountry,
+        activeListContext,
+        currentCategory,
+        isHistoryCategory,
+        isFavoritesCategory,
+        isLibraryCategory,
+        isMergedView,
+    } = useListingParams(category, country, searchParams);
+
+    // Hooks thay thế logic tải Lịch sử và Yêu thích
+    const { availableCategories, availableCountries, metadataLoading } = useVodMetadata(activeSource, filterMetadataCache);
+    const { historyItems, historyLoading } = useVodHistory(isHistoryCategory, currentUser, t);
+    const { favoriteItems, favoriteLoading } = useVodFavorites(isFavoritesCategory, rawFavorites, t);
+
+    const finalTitle = generateListingTitle({
+        currentQuery,
+        activeListContext,
+        currentCategory,
+        currentCountry,
+        currentYear,
+        isHistoryCategory,
+        isFavoritesCategory,
+        availableCategories,
+        availableCountries,
+        t,
+    });
+
+    // Xử lý chọn filter inline (toggle)
+    const handleFilterSelect = useCallback(
+        (key, value) => {
+            setSearchParams(getUpdatedSearchParams(searchParams, key, value));
+        },
+        [searchParams, setSearchParams],
+    );
+
+    const paramsContext = {
+        currentQuery,
+        currentYear,
+        currentCategory,
+        currentCountry,
+        activeListContext,
+        currentPage,
+        pageSize,
+    };
+
+    let rawSearchCategories = [];
+    if (isMergedView) {
+        rawSearchCategories = [
+            buildSourceConfig(SOURCES.SOURCE_O, paramsContext, { title: "OPhim" }),
+            buildSourceConfig(SOURCES.SOURCE_K, paramsContext, { title: "KKPhim" }),
+            buildSourceConfig(SOURCES.SOURCE_C, paramsContext, { title: "NguonC" }),
+        ];
+    } else if (!isLibraryCategory) {
+        rawSearchCategories = [
+            buildSourceConfig(activeSource || SOURCES.SOURCE_K, paramsContext, {
+                id: "listing",
+                title: finalTitle,
+            }),
+        ];
+    }
+    const searchCategories = rawSearchCategories.filter(Boolean);
+
+    const { sections, loading: apiLoading } = useVodData(searchCategories);
+
+    // Aggregate items
+    const { items, totalPages, totalItemsCount } = aggregateItems({
+        isHistoryCategory,
+        historyItems,
+        isFavoritesCategory,
+        favoriteItems,
+        isMergedView,
+        sections,
+        SOURCES,
+    });
+
+    // Scroll to top on page change
+    useEffect(() => {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+    }, [currentPage]);
+
+    const handlePageChange = (newPage) => {
+        if (newPage >= 1 && newPage <= totalPages) {
+            const newParams = new URLSearchParams(searchParams);
+            newParams.set("page", newPage);
+            setSearchParams(newParams);
+        }
+    };
+
+    let isLoading = apiLoading;
+    if (isHistoryCategory) {
+        isLoading = historyLoading;
+    } else if (isFavoritesCategory) {
+        isLoading = favoriteLoading;
+    }
+
+    // Thanh tìm kiếm inline với debounce
+    const {
+        searchInput,
+        searchInputRef,
+        handleSearchChange,
+        handleSearchSubmit,
+        clearSearch,
+        clearAllFilters,
+    } = useSearchInput(currentQuery, searchParams, setSearchParams);
 
     return (
         <VodLayout>
@@ -966,9 +1038,9 @@ export default function Listing() {
                             </h4>
                             {metadataLoading ? (
                                 <div className="flex animate-pulse flex-wrap gap-2">
-                                    {[...Array(8)].map((_, i) => (
+                                    {SKELETON_COUNTRIES.map((id) => (
                                         <div
-                                            key={i}
+                                            key={id}
                                             className="h-7 w-20 rounded-full bg-zinc-800"
                                         />
                                     ))}
@@ -1005,9 +1077,9 @@ export default function Listing() {
                             </h4>
                             {metadataLoading ? (
                                 <div className="flex animate-pulse flex-wrap gap-2">
-                                    {[...Array(10)].map((_, i) => (
+                                    {SKELETON_CATEGORIES.map((id) => (
                                         <div
-                                            key={i}
+                                            key={id}
                                             className="h-7 w-24 rounded-full bg-zinc-800"
                                         />
                                     ))}
@@ -1194,7 +1266,7 @@ export default function Listing() {
                                     defaultValue={currentPage}
                                     onKeyDown={(e) => {
                                         if (e.key === "Enter") {
-                                            const val = parseInt(
+                                            const val = Number.parseInt(
                                                 e.target.value,
                                             );
                                             if (val >= 1 && val <= totalPages) {
@@ -1219,7 +1291,7 @@ export default function Listing() {
                                         e.currentTarget.parentElement.querySelector(
                                             "input",
                                         );
-                                    const val = parseInt(input.value);
+                                    const val = Number.parseInt(input.value);
                                     if (val >= 1 && val <= totalPages) {
                                         handlePageChange(val);
                                     }
