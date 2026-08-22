@@ -189,3 +189,52 @@ export function getMovieImage(imagePath, source, CONFIG = {}) {
 
     return cdnUrl;
 }
+
+/**
+ * Chuẩn hóa nhãn chất lượng phim (FHD, HD, CAM, v.v.)
+ * @param {string} quality 
+ * @returns {string}
+ */
+export function getQualityBadge(quality) {
+    const normalized = String(quality || "").toUpperCase();
+
+    if (
+        normalized.includes("FHD") ||
+        normalized.includes("FULL HD") ||
+        normalized.includes("1080")
+    ) {
+        return "FHD";
+    }
+
+    if (normalized.includes("HD") || normalized.includes("720")) {
+        return "HD";
+    }
+
+    if (normalized.includes("CAM") || normalized.includes("TS")) {
+        return "CAM";
+    }
+
+    return quality || "";
+}
+
+/**
+ * Trích xuất số season từ thông tin phim (tmdb object, name, origin_name, slug)
+ * @param {object} movie
+ * @returns {number|null}
+ */
+export function extractSeasonNumber(movie) {
+    if (!movie) return null;
+    if (movie.tmdb?.season && Number(movie.tmdb.season) > 0) {
+        return Number(movie.tmdb.season);
+    }
+    if (movie.season && Number(movie.season) > 0) {
+        return Number(movie.season);
+    }
+    const textToMatch = `${movie.slug || ""} ${movie.name || ""} ${movie.origin_name || ""}`;
+    const match = textToMatch.match(/(?:^|[\s_(\[-])(?:phan|phần|season|mùa|mua|ss|p\.?)\s*[-_]?\s*(\d+)(?:$|[\s_)\]-])/i);
+    if (match && match[1]) {
+        const num = parseInt(match[1], 10);
+        if (num > 0 && num <= 50) return num;
+    }
+    return null;
+}

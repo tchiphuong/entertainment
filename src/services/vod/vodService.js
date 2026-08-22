@@ -53,8 +53,13 @@ export const fetchSourceData = async (slug, source) => {
     const cachedData = getFromCache(cacheKey);
     if (cachedData) return cachedData;
 
+    const isTmdbSlug = typeof slug === "string" && slug.startsWith("tmdb-");
+    const tmdbId = isTmdbSlug ? slug.replace("tmdb-", "") : null;
+
     let url = "";
-    if (source === SOURCES.SOURCE_O) {
+    if (source === SOURCES.SOURCE_K && tmdbId) {
+        url = `${CONFIG.APP_DOMAIN_SOURCE_K}/tmdb/movie/${tmdbId}`;
+    } else if (source === SOURCES.SOURCE_O) {
         url = `${CONFIG.APP_DOMAIN_SOURCE_O}/v1/api/phim/${slug}`;
     } else if (source === SOURCES.SOURCE_K) {
         url = `${CONFIG.APP_DOMAIN_SOURCE_K}/phim/${slug}`;
@@ -65,7 +70,16 @@ export const fetchSourceData = async (slug, source) => {
     }
 
     try {
-        const res = await fetch(url);
+        let res = await fetch(url);
+        // Nếu là tmdbId và tra cứu movie bị 404, thử tiếp tv
+        if (!res.ok && source === SOURCES.SOURCE_K && tmdbId) {
+            const tvUrl = `${CONFIG.APP_DOMAIN_SOURCE_K}/tmdb/tv/${tmdbId}`;
+            const tvRes = await fetch(tvUrl);
+            if (tvRes.ok) {
+                res = tvRes;
+            }
+        }
+
         if (!res.ok) {
             const emptyResult = { movie: null, episodes: [] };
             // Cache 404 để tránh gọi lại API liên tục

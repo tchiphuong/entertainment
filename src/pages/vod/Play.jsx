@@ -2065,20 +2065,36 @@ export const MovieTitle = ({ movie, tmdbImages }) => {
 
     if (logoUrl) {
         return (
-            <div className="space-y-4">
-                <div className="h-[60px] w-full max-w-[280px] drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] md:h-[100px] md:max-w-[350px] lg:h-[120px] lg:max-w-[450px]">
-                    <img loading="lazy" src={logoUrl} alt={movie.name} className="h-full w-full object-contain object-left" />
+            <div className="w-full flex flex-row items-center gap-3 sm:gap-4 md:gap-6">
+                {/* Hình Logo bên trái */}
+                <div className="h-11 sm:h-16 md:h-[5.5rem] lg:h-28 w-auto max-w-[8.75rem] sm:max-w-[13.75rem] md:max-w-[21.25rem] lg:max-w-[26.25rem] shrink-0 drop-shadow-[0_0_1rem_rgba(255,255,255,0.3)]">
+                    <img loading="lazy" src={logoUrl} alt={movie.name} className="h-full w-auto object-contain object-left" />
                 </div>
-                <h1 className="text-xl font-black leading-tight tracking-tighter text-zinc-400 md:text-2xl lg:text-3xl">
-                    {movie.name}
-                </h1>
+                {/* Chữ Tên Phim bên phải */}
+                <div className="flex-1 min-w-0 flex flex-col justify-center space-y-0.5 md:space-y-1">
+                    <h1 className="text-xl font-black leading-tight tracking-tight text-white sm:text-2xl md:text-3xl lg:text-4xl">
+                        {movie.name}
+                    </h1>
+                    {movie.origin_name && (
+                        <p className="text-xs font-bold uppercase tracking-[0.15em] text-zinc-500 sm:text-sm md:text-base">
+                            {movie.origin_name}
+                        </p>
+                    )}
+                </div>
             </div>
         );
     }
     return (
-        <h1 className="text-4xl font-black leading-tight tracking-tighter text-white md:text-6xl lg:text-7xl">
-            {movie.name}
-        </h1>
+        <div className="space-y-2">
+            <h1 className="text-4xl font-black leading-tight tracking-tighter text-white md:text-6xl lg:text-7xl">
+                {movie.name}
+            </h1>
+            {movie.origin_name && (
+                <p className="text-lg font-bold uppercase tracking-[0.2em] text-zinc-600 md:text-xl">
+                    {movie.origin_name}
+                </p>
+            )}
+        </div>
     );
 };
 
@@ -2091,8 +2107,15 @@ export const MovieMetaTags = ({ movie, tmdbData }) => {
         return null;
     })();
 
+    let categories = [];
+    if (Array.isArray(movie.category)) {
+        categories = movie.category;
+    } else if (movie.category && typeof movie.category === "object") {
+        categories = Object.values(movie.category).flatMap((group) => group.list || []);
+    }
+
     return (
-        <div className="flex flex-wrap items-center gap-4 pt-2">
+        <div className="flex flex-wrap items-center gap-3 pt-2 md:gap-4">
             {year && (
                 <>
                     <span className="text-sm font-black text-white">{year}</span>
@@ -2116,32 +2139,32 @@ export const MovieMetaTags = ({ movie, tmdbData }) => {
                     {tmdbData.vote_average.toFixed(1)}
                 </span>
             )}
+
+            {/* Thể loại cùng hàng */}
+            {categories.length > 0 && (
+                <>
+                    <span className="h-1 w-1 rounded-full bg-zinc-800"></span>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {categories.map((cat, idx) => {
+                            const uniqueKey = `${cat.id || ''}-${cat.slug || ''}-${cat.name || ''}-${idx}`;
+                            return (
+                                <span
+                                    key={uniqueKey}
+                                    className="rounded-full border border-zinc-800 bg-zinc-900/50 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-zinc-400 transition-all hover:border-red-600 hover:text-white"
+                                >
+                                    {cat.name}
+                                </span>
+                            );
+                        })}
+                    </div>
+                </>
+            )}
         </div>
     );
 };
 
 export const MovieCategories = ({ movie }) => {
-    let categories = [];
-    if (Array.isArray(movie.category)) {
-        categories = movie.category;
-    } else if (movie.category && typeof movie.category === "object") {
-        categories = Object.values(movie.category).flatMap((group) => group.list || []);
-    }
-
-    if (categories.length === 0) return null;
-
-    return (
-        <div className="flex flex-wrap gap-2">
-            {categories.map((cat, idx) => {
-                const uniqueKey = `${cat.id || ''}-${cat.slug || ''}-${cat.name || ''}-${idx}`;
-                return (
-                    <span key={uniqueKey} className="rounded-full border border-zinc-800 bg-zinc-900/50 px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 transition-all hover:border-red-600 hover:text-white">
-                        {cat.name}
-                    </span>
-                );
-            })}
-        </div>
-    );
+    return null;
 };
 
 export const MovieDescription = ({ content }) => {
@@ -2880,7 +2903,7 @@ export default function VodPlay() {
                                 />
 
                                     {/* Settings Switches */}
-                                    <div className="mt-8 flex flex-wrap gap-8 border-t border-white/5 pt-6">
+                                    <div className="flex flex-wrap gap-8 border-t border-white/5 p-6">
                                         <div className="flex items-center gap-4">
                                             <button
                                                 type="button"
@@ -3054,10 +3077,34 @@ export default function VodPlay() {
                         {/* Movie Details Info Area */}
                         <div className="mt-12 space-y-20">
                             {/* Main Info */}
-                            <section className="flex flex-col gap-12 lg:flex-row lg:items-start">
-                                {/* Poster Side */}
-                                <div className="hidden shrink-0 lg:block">
-                                    <div className="aspect-2/3 relative w-[300px] overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10">
+                            <section className="flex flex-col lg:flex-row gap-6 md:gap-8 lg:gap-12 items-start">
+                                {/* Media Side: Thumbnail ngang cho Mobile, Poster đứng cho PC */}
+                                <div className="w-full lg:w-auto lg:shrink-0">
+                                    {/* 1. Thumbnail ngang cho Mobile / Tablet (< lg) */}
+                                    <div className="aspect-video relative w-full overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10 lg:hidden">
+                                        <img
+                                            loading="lazy"
+                                            src={
+                                                tmdbData?.backdrop_path
+                                                    ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.BACKDROP}${tmdbData.backdrop_path}`
+                                                    : getMovieImage(
+                                                          movie.thumb_url ||
+                                                              movie.poster_url,
+                                                          movie.source,
+                                                      )
+                                            }
+                                            alt={movie.name}
+                                            className="h-full w-full object-cover transition-transform duration-700 hover:scale-105"
+                                            onError={(e) => {
+                                                e.target.onerror = null;
+                                                e.target.src = FALLBACK_IMAGE;
+                                            }}
+                                        />
+                                        <div className="bg-linear-to-t absolute inset-0 from-zinc-950 via-transparent to-transparent opacity-60"></div>
+                                    </div>
+
+                                    {/* 2. Poster đứng cho PC / Desktop (>= lg) */}
+                                    <div className="aspect-2/3 relative hidden overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10 lg:block lg:w-[18.75rem] xl:w-[21.25rem]">
                                         <img
                                             loading="lazy"
                                             src={
@@ -3081,18 +3128,12 @@ export default function VodPlay() {
                                 </div>
 
                                 {/* Text Info Side */}
-                                <div className="flex-1 space-y-10">
+                                <div className="flex-1 space-y-8 md:space-y-10 w-full">
                                     <header className="space-y-6">
-                                        <div className="space-y-2">
-                                            <MovieTitle movie={movie} tmdbImages={tmdbImages} />
-                                            <p className="text-lg font-bold uppercase tracking-[0.2em] text-zinc-600 md:text-xl">
-                                                {movie.origin_name}
-                                            </p>
-                                        </div>
+                                        <MovieTitle movie={movie} tmdbImages={tmdbImages} />
                                         <MovieMetaTags movie={movie} tmdbData={tmdbData} />
                                     </header>
 
-                                    <MovieCategories movie={movie} />
                                     <MovieDescription content={movie.content} />
                                 </div>
                             </section>

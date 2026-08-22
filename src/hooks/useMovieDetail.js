@@ -51,13 +51,15 @@ export const useMovieDetail = (slug, initialSource = null) => {
         setError(null);
 
         try {
-            // Thứ tự ưu tiên cứng: O > K > C
-            const priorityOrder = [
-                SOURCES.SOURCE_O,
-                SOURCES.SOURCE_K,
-                SOURCES.SOURCE_C,
-            ];
-            const sources = initialSource
+            const isTmdb = typeof slug === "string" && slug.startsWith("tmdb-");
+            const tmdbIdFromSlug = isTmdb ? slug.replace("tmdb-", "") : null;
+
+            // Thứ tự ưu tiên: nếu là TMDB thì ưu tiên Source K (KKPhim hỗ trợ native endpoint /tmdb/{type}/{id})
+            const priorityOrder = isTmdb || initialSource === SOURCES.SOURCE_TMDB
+                ? [SOURCES.SOURCE_K, SOURCES.SOURCE_O, SOURCES.SOURCE_C]
+                : [SOURCES.SOURCE_O, SOURCES.SOURCE_K, SOURCES.SOURCE_C];
+
+            const sources = initialSource && initialSource !== SOURCES.SOURCE_TMDB
                 ? [
                       initialSource,
                       ...priorityOrder.filter((s) => s !== initialSource),
@@ -66,34 +68,61 @@ export const useMovieDetail = (slug, initialSource = null) => {
 
             const mappedData = {};
             let firstMovieData = null;
-
-            // Gọi đồng thời tất cả các nguồn
-            const fetchPromises = sources.map(async (src) => {
-                try {
-                    const res = await vodService.fetchSourceData(slug, src);
-                    return { src, res };
-                } catch (e) {
-                    console.warn(`Error fetching from ${src}:`, e.message);
-                    return { src, res: null };
-                }
-            });
-
-            const results = await Promise.all(fetchPromises);
-
-            // Lưu kết quả theo nguồn để truy vấn nhanh
             const resultsBySource = {};
-            for (const { src, res } of results) {
-                resultsBySource[src] = res;
+            const results = [];
+
+            // Nếu là TMDB ID, gọi Source K trước để lấy data và real slug
+            if (isTmdb) {
+                try {
+                    const kRes = await vodService.fetchSourceData(slug, SOURCES.SOURCE_K);
+                    results.push({ src: SOURCES.SOURCE_K, res: kRes });
+                    resultsBySource[SOURCES.SOURCE_K] = kRes;
+                    const realSlug = kRes?.movie?.slug;
+                    if (realSlug) {
+                        // Gọi thêm các nguồn khác với real slug
+                        const otherPromises = [SOURCES.SOURCE_O, SOURCES.SOURCE_C].map(async (src) => {
+                            try {
+                                const res = await vodService.fetchSourceData(realSlug, src);
+                                return { src, res };
+                            } catch (e) {
+                                return { src, res: null };
+                            }
+                        });
+                        const otherResults = await Promise.all(otherPromises);
+                        for (const item of otherResults) {
+                            results.push(item);
+                            resultsBySource[item.src] = item.res;
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Error fetching TMDB detail from Source K:", e.message);
+                }
+            } else {
+                // Gọi đồng thời tất cả các nguồn theo slug thông thường
+                const fetchPromises = sources.map(async (src) => {
+                    try {
+                        const res = await vodService.fetchSourceData(slug, src);
+                        return { src, res };
+                    } catch (e) {
+                        console.warn(`Error fetching from ${src}:`, e.message);
+                        return { src, res: null };
+                    }
+                });
+
+                const fetchResults = await Promise.all(fetchPromises);
+                for (const item of fetchResults) {
+                    results.push(item);
+                    resultsBySource[item.src] = item.res;
+                }
             }
 
-            // Tìm TMDB ID theo thứ tự ưu tiên cứng: O → K → C
-            // (bất kể initialSource là gì)
+            // Tìm TMDB ID theo thứ tự ưu tiên
             const tmdbPriority = [
                 SOURCES.SOURCE_O,
                 SOURCES.SOURCE_K,
                 SOURCES.SOURCE_C,
             ];
-            let foundTmdbId = null;
+            let foundTmdbId = tmdbIdFromSlug || null;
             let foundTmdbType = null;
             let bestTmdbInfo = null;
             for (const src of tmdbPriority) {

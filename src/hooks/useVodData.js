@@ -6,6 +6,8 @@ import {
     TMDB_IMAGE_SIZES,
 } from "../constants/vodConstants";
 import { vodCache } from "../utils/vodCache";
+import { tmdbService } from "../services/vod/tmdbService";
+import { extractSeasonNumber } from "../utils/vodHelpers";
 
 const CONFIG = {
     APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
@@ -68,6 +70,27 @@ const normalizeMovie = (item, source) => {
         m.tmdbId = item.tmdb_id;
         m.episode_current = item.episode_current;
         m.content = item.description;
+    } else if (source === SOURCES.SOURCE_TMDB) {
+        // Source TMDB (The Movie Database)
+        m.tmdbId = item.id || item.tmdbId;
+        m.name = item.title || item.name || item.original_title || item.original_name || "";
+        m.origin_name = item.original_title || item.original_name || "";
+        const posterPath = item.poster_path;
+        const backdropPath = item.backdrop_path;
+        m.poster_url = posterPath
+            ? (posterPath.startsWith("http") ? posterPath : `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.POSTER}${posterPath}`)
+            : (item.poster_url || "");
+        m.thumb_url = backdropPath
+            ? (backdropPath.startsWith("http") ? backdropPath : `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.BACKDROP}${backdropPath}`)
+            : (item.thumb_url || m.poster_url);
+        m.slug = item.slug || (item.id ? `tmdb-${item.id}` : "");
+        const releaseDate = item.release_date || item.first_air_date;
+        m.year = releaseDate ? new Date(releaseDate).getFullYear() : (item.year || null);
+        const vote = typeof item.vote_average === "number" ? item.vote_average : item.rating;
+        m.quality = vote && vote > 0 ? `${Number(vote).toFixed(1)}` : (item.quality || "HD");
+        m.rating = vote;
+        m.lang = item.original_language || item.lang || "en";
+        m.content = item.overview || item.content || "";
     } else if (source === SOURCES.SOURCE_K) {
         // Source K (PhimAPI): poster_url (portrait), thumb_url (landscape)
         m.poster_url = item.poster_url;
@@ -161,6 +184,10 @@ const parseApiJson = (json, limit = 12) => {
                 pag.totalPages ||
                 Math.ceil(totalItems / (pag.totalItemsPerPage || limit));
         }
+    } else if (json.results && Array.isArray(json.results)) {
+        items = json.results;
+        totalPages = json.total_pages || 1;
+        totalItems = json.total_results || items.length;
     } else if (Array.isArray(json.data)) {
         items = json.data;
         totalItems = items.length;
@@ -175,7 +202,7 @@ const tmdbCache = new Map();
 // VOD Data Cache now uses persistent storage via vodCache
 // Logic mirrored from vodCache.js
 
-const getVodCacheKey = (cat) => {
+const getVodCacheKey = (cat, lang = "vi-VN") => {
     return JSON.stringify({
         id: cat.id,
         type: cat.type,
@@ -184,81 +211,16 @@ const getVodCacheKey = (cat) => {
         page: cat.page || 1,
         params: cat.params || {},
         limit: cat.limit,
+        lang,
     });
-};
-
-// Helper to fetch TMDB branding & images (Poster, Backdrop, Logo)
-const fetchTmdbMetadata = async (
-    tmdbId,
-    type = "movie",
-    language = "vi-VN",
-) => {
-    const cacheKey = `${type}_${tmdbId}_${language}`;
-    if (tmdbCache.has(cacheKey)) return tmdbCache.get(cacheKey);
-
-    try {
-        const apiKey = CONFIG.TMDB_API_KEY;
-        const endpoint = type === "tv" ? "tv" : "movie";
-        const url = `${CONFIG.TMDB_BASE_URL}/${endpoint}/${tmdbId}?api_key=${apiKey}&language=${language}`;
-
-        const res = await fetch(url);
-        if (!res.ok) return null;
-        const data = await res.json();
-
-        let brandLogoPath = null;
-
-        if (type === "tv" && data.networks?.length > 0) {
-            const net =
-                data.networks.find((n) => n.logo_path) || data.networks[0];
-            brandLogoPath = net.logo_path;
-        } else if (data.production_companies?.length > 0) {
-            const comp =
-                data.production_companies.find((c) => c.logo_path) ||
-                data.production_companies[0];
-            brandLogoPath = comp.logo_path;
-        }
-
-        // Fetch extra images for title logo
-        const imgUrl = `${CONFIG.TMDB_BASE_URL}/${endpoint}/${tmdbId}/images?api_key=${apiKey}`;
-        const imgRes = await fetch(imgUrl);
-        let titleLogoPath = null;
-        if (imgRes.ok) {
-            const imgData = await imgRes.json();
-            if (imgData.logos?.length > 0) {
-                const viLogo = imgData.logos.find((l) => l.iso_639_1 === "vi");
-                const enLogo = imgData.logos.find((l) => l.iso_639_1 === "en");
-                const logo = viLogo || enLogo || null;
-                if (logo) titleLogoPath = logo.file_path;
-            }
-        }
-
-        const metadata = {
-            brandLogo: brandLogoPath
-                ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.LOGO}${brandLogoPath}`
-                : null,
-            titleLogo: titleLogoPath
-                ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.POSTER}${titleLogoPath}`
-                : null,
-            poster: data.poster_path
-                ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.POSTER}${data.poster_path}`
-                : null,
-            backdrop: data.backdrop_path
-                ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.BACKDROP}${data.backdrop_path}`
-                : null,
-            nameVi: data.title || data.name || null,
-        };
-
-        tmdbCache.set(cacheKey, metadata);
-        return metadata;
-    } catch (e) {
-        console.warn("fetchTmdbMetadata error:", e);
-        return null;
-    }
 };
 
 export const useVodData = (passedCategories) => {
     const { i18n } = useTranslation();
-    const tmdbLang = i18n.language === "vi" ? "vi-VN" : "en-US";
+    const tmdbLang =
+        i18n?.language && i18n.language.startsWith("en")
+            ? "en-US"
+            : "vi-VN";
     const CATEGORIES = Array.isArray(passedCategories) ? passedCategories : [];
     const [sections, setSections] = useState({});
     const [heroMovies, setHeroMovies] = useState([]);
@@ -272,7 +234,7 @@ export const useVodData = (passedCategories) => {
         setLoading(true);
         try {
             const fetchPromises = CATEGORIES.map(async (cat) => {
-                const cacheKey = getVodCacheKey(cat);
+                const cacheKey = getVodCacheKey(cat, tmdbLang);
                 const cached = vodCache.get(cacheKey);
 
                 if (cached) {
@@ -332,6 +294,15 @@ export const useVodData = (passedCategories) => {
                             : `/${cat.type}`
                         : "";
                     url = `${CONFIG.APP_DOMAIN_SOURCE_C}/api/films${endpoint}${endpoint.includes("?") ? "&" : "?"}${params.toString()}`;
+                } else if (cat.source === SOURCES.SOURCE_TMDB) {
+                    const endpoint = cat.type
+                        ? cat.type.startsWith("/")
+                            ? cat.type.slice(1)
+                            : cat.type
+                        : "trending/movie/week";
+                    const tmdbApiKey = CONFIG.TMDB_API_KEY;
+                    const tmdbBaseUrl = CONFIG.TMDB_BASE_URL || "https://api.themoviedb.org/3";
+                    url = `${tmdbBaseUrl}/${endpoint}?api_key=${tmdbApiKey}&language=${tmdbLang}&page=${page}`;
                 } else if (cat.source === SOURCES.SOURCE_O) {
                     const prefix = cat.useV1 ? "/v1/api" : "";
                     const endpoint = cat.type
@@ -379,6 +350,50 @@ export const useVodData = (passedCategories) => {
                         items.map(async (item) => {
                             const normalized = normalizeMovie(item, cat.source);
                             normalized._rawItem = item;
+
+                            // Tự động enrich hình ảnh chất lượng cao và poster tiếng Việt từ TMDB
+                            const tmdbId =
+                                normalized.tmdbId ||
+                                item.tmdb?.id ||
+                                item.tmdb_id ||
+                                item.movie?.tmdb?.id;
+                            const tmdbType =
+                                item.tmdb?.type ||
+                                (normalized.episode_current ? "tv" : "movie");
+                            const seasonNumber =
+                                extractSeasonNumber(item) ||
+                                extractSeasonNumber(normalized);
+
+                            if (tmdbId && cat.source !== SOURCES.SOURCE_TMDB) {
+                                try {
+                                    const metadata = await tmdbService.fetchTMDBMetadata({
+                                        tmdbId,
+                                        type: tmdbType,
+                                        language: tmdbLang,
+                                        seasonNumber,
+                                    });
+                                    if (metadata) {
+                                        normalized.tmdbBranding = metadata;
+                                        if (metadata.poster) {
+                                            normalized.poster_url = metadata.poster;
+                                            normalized.poster = metadata.poster;
+                                        }
+                                        if (metadata.backdrop) {
+                                            normalized.thumb_url = metadata.backdrop;
+                                            normalized.thumbnail = metadata.backdrop;
+                                        }
+                                        if (metadata.titleLogo) {
+                                            normalized.titleLogo = metadata.titleLogo;
+                                        }
+                                        if (metadata.nameVi && (!normalized.name || normalized.name === normalized.origin_name)) {
+                                            normalized.name = metadata.nameVi;
+                                        }
+                                    }
+                                } catch (errEnrich) {
+                                    // Fallback an toàn về ảnh gốc của nguồn phim
+                                }
+                            }
+
                             return normalized;
                         }),
                     );
@@ -445,73 +460,106 @@ export const useVodData = (passedCategories) => {
             }
 
             if (hasHeroSource && rawHeroPool.length > 0) {
-                // Giới hạn tổng số phim trên Slider (ví dụ 15-20 phim)
+                // Giữ nguyên từng Season độc lập (không gộp), mỗi season có poster/backdrop TMDB riêng
                 const finalPool = rawHeroPool.slice(0, 20);
 
                 // Cơ chế cache cho Hero Slider (tránh gọi TMDB liên tục)
-                const heroCacheKey = `hero_slider_detailed_${finalPool.map((m) => m.slug).join("_")}`;
+                const heroCacheKey = `hero_slider_season_dedup_${finalPool.map((m) => m.slug).join("_")}`;
                 const cachedHero = vodCache.get(heroCacheKey);
 
                 if (cachedHero) {
                     setHeroMovies(cachedHero);
                 } else {
-                    const detailedHeroMovies = await Promise.all(
-                        finalPool.map(async (m) => {
-                            try {
-                                let rawItem = m._rawItem || m; // Dữ liệu gốc trước normalize
-                                const source = m.source;
+                    const usedBackdrops = new Set();
+                    const usedPosters = new Set();
+                    const detailedHeroMovies = [];
 
-                                // Normalize từ dữ liệu thô (chỉ 1 lần duy nhất)
-                                const normalized = normalizeMovie(
-                                    rawItem,
-                                    source,
-                                );
-                                // Gắn lại titleLogo nếu có
-                                if (rawItem._titleLogo)
-                                    normalized.titleLogo = rawItem._titleLogo;
+                    for (const m of finalPool) {
+                        try {
+                            let rawItem = m._rawItem || m; // Dữ liệu gốc trước normalize
+                            const source = m.source;
 
-                                const tmdbId =
-                                    normalized.tmdbId || rawItem.tmdb?.id;
-                                const tmdbType =
-                                    rawItem.tmdb?.type ||
-                                    (normalized.episode_current
-                                        ? "tv"
-                                        : "movie");
+                            // Normalize từ dữ liệu thô (chỉ 1 lần duy nhất)
+                            const normalized = normalizeMovie(
+                                rawItem,
+                                source,
+                            );
+                            // Gắn lại titleLogo nếu có
+                            if (rawItem._titleLogo)
+                                normalized.titleLogo = rawItem._titleLogo;
 
-                                if (tmdbId || normalized.titleLogo) {
-                                    const metadata = tmdbId
-                                        ? await fetchTmdbMetadata(
-                                              tmdbId,
-                                              tmdbType,
-                                              tmdbLang,
-                                          )
-                                        : null;
+                            const tmdbId =
+                                normalized.tmdbId || rawItem.tmdb?.id;
+                            const tmdbType =
+                                rawItem.tmdb?.type ||
+                                (normalized.episode_current
+                                    ? "tv"
+                                    : "movie");
 
-                                    const branding = metadata || {};
-                                    if (normalized.titleLogo) {
-                                        branding.titleLogo =
-                                            normalized.titleLogo;
-                                    }
+                            const seasonNumber =
+                                extractSeasonNumber(rawItem) ||
+                                extractSeasonNumber(normalized);
 
-                                    normalized.tmdbBranding = branding;
-                                    // Priority: TMDB images > Source images
-                                    normalized.poster_url =
-                                        branding.poster ||
-                                        normalized.poster_url;
-                                    normalized.thumb_url =
-                                        branding.backdrop ||
-                                        normalized.thumb_url;
-                                    normalized.poster = normalized.poster_url;
-                                    normalized.thumbnail = normalized.thumb_url;
+                            // Lưu hình ảnh gốc do API nguồn trả về
+                            const apiPoster =
+                                normalized.poster_url ||
+                                rawItem.poster_url ||
+                                "";
+                            const apiThumb =
+                                normalized.thumb_url ||
+                                rawItem.thumb_url ||
+                                "";
+
+                            if (tmdbId || normalized.titleLogo) {
+                                const metadata = tmdbId
+                                    ? await tmdbService.fetchTMDBMetadata({
+                                          tmdbId,
+                                          type: tmdbType,
+                                          language: tmdbLang,
+                                          seasonNumber,
+                                      })
+                                    : null;
+
+                                const branding = metadata || {};
+                                if (normalized.titleLogo) {
+                                    branding.titleLogo =
+                                        normalized.titleLogo;
                                 }
 
-                                return normalized;
-                            } catch (e) {
-                                console.error("Error detailing hero movie:", e);
-                                return m;
+                                normalized.tmdbBranding = branding;
+
+                                // Xử lý Backdrop: Nếu TMDB bị trùng lặp giữa các season -> lấy hình của API nguồn trả về
+                                let selectedBackdrop = branding.backdrop;
+                                if (selectedBackdrop && usedBackdrops.has(selectedBackdrop)) {
+                                    selectedBackdrop = apiThumb || apiPoster;
+                                } else if (selectedBackdrop) {
+                                    usedBackdrops.add(selectedBackdrop);
+                                } else {
+                                    selectedBackdrop = apiThumb || apiPoster;
+                                }
+
+                                // Xử lý Poster: Nếu TMDB bị trùng lặp giữa các season -> lấy hình của API nguồn trả về
+                                let selectedPoster = branding.poster;
+                                if (selectedPoster && usedPosters.has(selectedPoster)) {
+                                    selectedPoster = apiPoster || apiThumb;
+                                } else if (selectedPoster) {
+                                    usedPosters.add(selectedPoster);
+                                } else {
+                                    selectedPoster = apiPoster || apiThumb;
+                                }
+
+                                normalized.poster_url = selectedPoster;
+                                normalized.thumb_url = selectedBackdrop;
+                                normalized.poster = selectedPoster;
+                                normalized.thumbnail = selectedBackdrop;
                             }
-                        }),
-                    );
+
+                            detailedHeroMovies.push(normalized);
+                        } catch (e) {
+                            console.error("Error detailing hero movie:", e);
+                            detailedHeroMovies.push(m);
+                        }
+                    }
                     setHeroMovies(detailedHeroMovies);
                     // Lưu vào cache với TTL tương đương Listing (10 phút)
                     vodCache.set(

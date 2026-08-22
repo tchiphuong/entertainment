@@ -10,6 +10,7 @@ import { useVodData } from "../../hooks/useVodData";
 import { useImageFallback } from "../../hooks/useImageFallback";
 import MovieLanguageBadges from "../../components/vod/MovieLanguageBadges";
 import VodMovieCard from "../../components/vod/VodMovieCard";
+import VodTopViewRow from "../../components/vod/VodTopViewRow";
 import { CATEGORIES, SOURCES } from "../../constants/vodConstants";
 import VodLayout from "../../components/layout/VodLayout";
 import { useVodContext } from "../../contexts/VodContext";
@@ -375,10 +376,12 @@ export default function VodLanding() {
                     ))}
 
                     {/* Navigation Arrows */}
-                    <div className="pointer-events-none absolute left-0 top-1/2 z-40 flex w-12 -translate-y-1/2 items-center justify-start pl-2 opacity-50 transition-opacity hover:opacity-100 md:w-24 md:pl-4 lg:pl-10">
+                    <div className="pointer-events-none absolute left-0 top-1/2 z-40 flex w-14 -translate-y-1/2 items-center justify-start pl-3 opacity-90 transition-opacity hover:opacity-100 md:w-24 md:pl-6 lg:pl-10">
                         <button
+                            type="button"
                             onClick={prevHero}
-                            className="group pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/20 text-white backdrop-blur-md transition-all hover:border-red-600 hover:bg-red-600 active:scale-90 md:h-14 md:w-14"
+                            className="group pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950/85 text-white shadow-2xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 hover:shadow-[0_0_20px_rgba(239,68,68,0.6)] active:scale-90 md:h-14 md:w-14"
+                            aria-label="Slide trước"
                         >
                             <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -396,10 +399,12 @@ export default function VodLanding() {
                             </svg>
                         </button>
                     </div>
-                    <div className="pointer-events-none absolute right-0 top-1/2 z-40 flex w-12 -translate-y-1/2 items-center justify-end pr-2 opacity-50 transition-opacity hover:opacity-100 md:w-24 md:pr-4 lg:pr-10">
+                    <div className="pointer-events-none absolute right-0 top-1/2 z-40 flex w-14 -translate-y-1/2 items-center justify-end pr-3 opacity-90 transition-opacity hover:opacity-100 md:w-24 md:pr-6 lg:pr-10">
                         <button
+                            type="button"
                             onClick={nextHero}
-                            className="group pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/20 text-white backdrop-blur-md transition-all hover:border-red-600 hover:bg-red-600 active:scale-90 md:h-14 md:w-14"
+                            className="group pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950/85 text-white shadow-2xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 hover:shadow-[0_0_20px_rgba(239,68,68,0.6)] active:scale-90 md:h-14 md:w-14"
+                            aria-label="Slide tiếp theo"
                         >
                             <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -440,7 +445,21 @@ export default function VodLanding() {
             )}
 
             <div className="relative z-20 mt-10 space-y-8 pb-32">
-                {historyLoading ? (
+                {/* Top View nằm trên đầu danh sách (trên cả Lịch sử xem) */}
+                {loading ? (
+                    <MovieRowSkeleton title={t("vods.topViews")} />
+                ) : (
+                    <VodTopViewRow
+                        title={t("vods.topViews")}
+                        items={sections["top-view"]?.items || []}
+                        source={SOURCES.SOURCE_TMDB}
+                        link="/vod/category/top-view?source=source_tmdb"
+                        getImageUrl={getImageUrl}
+                        handleImageError={handleImageError}
+                    />
+                )}
+
+                {(loading || historyLoading) ? (
                     <MovieRowSkeleton title={t("vods.history")} />
                 ) : (
                     <MovieRow
@@ -456,7 +475,7 @@ export default function VodLanding() {
                     />
                 )}
 
-                {favoriteLoading ? (
+                {(loading || favoriteLoading) ? (
                     <MovieRowSkeleton title={t("vods.favorites")} />
                 ) : (
                     <MovieRow
@@ -475,31 +494,35 @@ export default function VodLanding() {
                           (cat) =>
                               cat.isView !== false &&
                               cat.id !== "history" &&
-                              cat.id !== "favorites",
+                              cat.id !== "favorites" &&
+                              cat.id !== "top-view",
                       ).map((cat) => (
-                          <MovieRowSkeleton key={cat.id} title={cat.title} />
+                          <MovieRowSkeleton key={cat.id} title={t(cat.titleKey || cat.title)} />
                       ))
                     : CATEGORIES.filter(
                           (cat) =>
                               cat.isView !== false &&
                               cat.id !== "history" &&
-                              cat.id !== "favorites",
-                      ).map((cat) => (
-                          <MovieRow
-                              key={cat.id}
-                              title={t(cat.titleKey || cat.title)}
-                              items={sections[cat.id]?.items || []}
-                              source={cat.source}
-                              link={
-                                  cat.type?.startsWith("quoc-gia/")
-                                      ? `/vod/country/${cat.type.split("/")[1]}?source=${cat.source}`
-                                      : `/vod/category/${cat.id}?source=${cat.source}`
-                              }
-                              getImageUrl={getImageUrl}
-                              handleImageError={handleImageError}
-                              navigate={navigate}
-                          />
-                      ))}
+                              cat.id !== "favorites" &&
+                              cat.id !== "top-view",
+                      ).map((cat) => {
+                          const categoryLink = cat.type?.startsWith("quoc-gia/")
+                              ? `/vod/country/${cat.type.split("/")[1]}?source=${cat.source}`
+                              : `/vod/category/${cat.id}?source=${cat.source}`;
+
+                          return (
+                              <MovieRow
+                                  key={cat.id}
+                                  title={t(cat.titleKey || cat.title)}
+                                  items={sections[cat.id]?.items || []}
+                                  source={cat.source}
+                                  link={categoryLink}
+                                  getImageUrl={getImageUrl}
+                                  handleImageError={handleImageError}
+                                  navigate={navigate}
+                              />
+                          );
+                      })}
             </div>
 
             <footer className="border-t border-zinc-900 bg-zinc-950 px-4 py-24 text-zinc-500 md:px-12 lg:px-20">
@@ -709,11 +732,13 @@ function MovieRow({
             <div className="relative">
                 {showLeftArrow && (
                     <button
+                        type="button"
                         onClick={() => scroll("left")}
-                        className="z-60 absolute left-2 top-1/2 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-zinc-950/50 text-white opacity-0 transition-opacity hover:bg-zinc-950/80 group-hover/row:opacity-100 md:flex md:h-14 md:w-14"
+                        className="pointer-events-auto absolute left-2 top-1/2 z-50 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950/90 text-white shadow-2xl backdrop-blur-md opacity-0 transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 hover:shadow-[0_0_16px_rgba(239,68,68,0.6)] group-hover/row:opacity-100 md:flex md:h-13 md:w-13"
+                        aria-label="Cuộn sang trái"
                     >
                         <svg
-                            className="h-10 w-10"
+                            className="h-6 w-6"
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"
@@ -735,7 +760,7 @@ function MovieRow({
                     {items.map((item) => (
                         <div
                             key={item.slug}
-                            className="relative w-[13.75rem] shrink-0 transition-all duration-500 hover:z-50 md:w-[15rem] lg:w-[16.25rem] xl:w-[17.5rem]"
+                            className="relative w-[13.75rem] shrink-0 transition-all duration-500 hover:z-40 md:w-[15rem] lg:w-[16.25rem] xl:w-[17.5rem]"
                         >
                             <VodMovieCard
                                 movie={item}
@@ -749,11 +774,13 @@ function MovieRow({
                 </div>
                 {showRightArrow && (
                     <button
+                        type="button"
                         onClick={() => scroll("right")}
-                        className="z-60 absolute right-2 top-1/2 hidden h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-zinc-950/50 text-white opacity-0 transition-opacity hover:bg-zinc-950/80 group-hover/row:opacity-100 md:flex md:h-14 md:w-14"
+                        className="pointer-events-auto absolute right-2 top-1/2 z-50 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950/90 text-white shadow-2xl backdrop-blur-md opacity-0 transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 hover:shadow-[0_0_16px_rgba(239,68,68,0.6)] group-hover/row:opacity-100 md:flex md:h-13 md:w-13"
+                        aria-label="Cuộn sang phải"
                     >
                         <svg
-                            className="h-10 w-10"
+                            className="h-6 w-6"
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"

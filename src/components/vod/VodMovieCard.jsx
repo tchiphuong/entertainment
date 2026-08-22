@@ -3,28 +3,7 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useVodContext } from "../../contexts/VodContext";
 import MovieLanguageBadges from "./MovieLanguageBadges";
-
-function getQualityBadge(quality) {
-    const normalized = String(quality || "").toUpperCase();
-
-    if (
-        normalized.includes("FHD") ||
-        normalized.includes("FULL HD") ||
-        normalized.includes("1080")
-    ) {
-        return "FHD";
-    }
-
-    if (normalized.includes("HD") || normalized.includes("720")) {
-        return "HD";
-    }
-
-    if (normalized.includes("CAM") || normalized.includes("TS")) {
-        return "CAM";
-    }
-
-    return quality || "";
-}
+import { getQualityBadge } from "../../utils/vodHelpers";
 
 const VodMovieCard = memo(
     ({

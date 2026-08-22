@@ -23,6 +23,7 @@ i18n.use(LanguageDetector) // Tự động detect ngôn ngữ từ browser
             vi: { translation: vi },
             en: { translation: en },
         },
+        lng: (typeof window !== "undefined" && localStorage.getItem("i18nextLng")) || "vi",
         fallbackLng: "vi", // Ngôn ngữ mặc định
         debug: false, // Tắt debug log
 

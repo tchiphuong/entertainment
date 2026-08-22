@@ -3,6 +3,7 @@ export const SOURCES = {
     SOURCE_K: "source_k",
     SOURCE_O: "source_o",
     SOURCE_R: "source_r",
+    SOURCE_TMDB: "source_tmdb",
 };
 
 export const FILTER_YEARS = Array.from({ length: 26 }, (_, i) =>
@@ -17,15 +18,17 @@ export const FILTER_SOURCES = [
 ];
 
 export const FILTER_TYPE_LIST = [
-    { slug: "phim-bo-dang-chieu", name: "Đang Chiếu" },
-    { slug: "phim-bo-hoan-thanh", name: "Hoàn Thành" },
-    { slug: "hoat-hinh", name: "Hoạt Hình" },
-    { slug: "phim-long-tieng", name: "Lồng Tiếng" },
+    { slug: "top-view", name: "Top Lượt Xem" },
     { slug: "phim-bo", name: "Phim Bộ" },
     { slug: "phim-le", name: "Phim Lẻ" },
+    { slug: "hoat-hinh", name: "Phim Hoạt Hình" },
+    { slug: "phim-chieu-rap", name: "Phim Chiếu Rạp" },
+    { slug: "tv-shows", name: "TV Shows" },
+    { slug: "phim-bo-dang-chieu", name: "Đang Chiếu" },
+    { slug: "phim-bo-hoan-thanh", name: "Hoàn Thành" },
     { slug: "phim-sap-chieu", name: "Sắp Chiếu" },
     { slug: "phim-thuyet-minh", name: "Thuyết Minh" },
-    { slug: "tv-shows", name: "TV Shows" },
+    { slug: "phim-long-tieng", name: "Lồng Tiếng" },
     { slug: "phim-vietsub", name: "Vietsub" },
 ];
 
@@ -66,17 +69,25 @@ export const CATEGORIES = [
         useV1: false,
     },
     {
+        id: "top-view",
+        title: "Top Lượt Xem",
+        titleKey: "vods.topViews",
+        type: "trending/movie/week",
+        source: "source_tmdb",
+        isView: true,
+    },
+    {
         id: "phim-le",
-        title: "Phim Lẻ Mới",
-        titleKey: "vods.newSingleMovies",
+        title: "Phim Lẻ",
+        titleKey: "vods.movies",
         type: "danh-sach/phim-le",
         source: "source_k",
         useV1: true,
     },
     {
         id: "phim-bo",
-        title: "Phim Bộ Mới",
-        titleKey: "vods.newSeriesMovies",
+        title: "Phim Bộ",
+        titleKey: "vods.series",
         type: "danh-sach/phim-bo",
         source: "source_k",
         useV1: true,
@@ -99,7 +110,7 @@ export const CATEGORIES = [
     },
     {
         id: "hoat-hinh",
-        title: "Hoạt Hình",
+        title: "Phim Hoạt Hình",
         titleKey: "vods.animation",
         type: "danh-sach/hoat-hinh",
         source: "source_k",
@@ -139,7 +150,7 @@ export const CATEGORIES = [
     },
     {
         id: "horror",
-        title: "Kinh Dị",
+        title: "Phim Kinh Dị",
         titleKey: "vods.horror",
         type: "the-loai/kinh-di",
         source: "source_o",

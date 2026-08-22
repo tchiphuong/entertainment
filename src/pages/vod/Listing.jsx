@@ -266,6 +266,17 @@ export const buildSourceConfig = (sourceId, paramsContext, overrides = {}) => {
         configResult = buildSourceKOConfig(sourceId, paramsContext);
     } else if (sourceId === SOURCES.SOURCE_C) {
         configResult = buildSourceCConfig(paramsContext);
+    } else if (sourceId === SOURCES.SOURCE_TMDB) {
+        const timeframe = paramsContext.timeframe || "week";
+        let tmdbTypeVal = "trending/all/week";
+        if (timeframe === "day") tmdbTypeVal = "trending/all/day";
+        else if (timeframe === "month") tmdbTypeVal = "movie/popular";
+
+        configResult = {
+            typeVal: tmdbTypeVal,
+            useV1Val: false,
+            urlParams: { region: "VN" },
+        };
     }
 
     if (!configResult) return null;
@@ -413,13 +424,17 @@ export const generateListingTitle = ({
                 `Tìm kiếm: ${currentQuery}`,
         );
     } else {
-        if (activeListContext) {
-            titleParts.push(getSlugName(activeListContext, FILTER_TYPE_LIST));
-        }
-        if (currentCategory) {
-            titleParts.push(
-                `Thể loại: ${getSlugName(currentCategory, availableCategories)}`,
-            );
+        if (currentCategory === "top-view" || activeListContext === "top-view") {
+            titleParts.push(t("vods.topViews") || "Top Lượt Xem");
+        } else {
+            if (activeListContext) {
+                titleParts.push(getSlugName(activeListContext, FILTER_TYPE_LIST));
+            }
+            if (currentCategory) {
+                titleParts.push(
+                    `Thể loại: ${getSlugName(currentCategory, availableCategories)}`,
+                );
+            }
         }
         if (currentCountry) {
             titleParts.push(
@@ -677,6 +692,7 @@ export const useListingParams = (category, country, searchParams) => {
     const isLibraryCategory = isHistoryCategory || isFavoritesCategory;
     
     const isMergedView = activeSource === "all" || (!activeSource && currentQuery);
+    const currentTimeframe = getUrlParam("timeframe") || "week";
 
     return {
         currentQuery,
@@ -690,6 +706,7 @@ export const useListingParams = (category, country, searchParams) => {
         isFavoritesCategory,
         isLibraryCategory,
         isMergedView,
+        currentTimeframe,
     };
 };
 
@@ -717,6 +734,7 @@ export default function Listing() {
         isFavoritesCategory,
         isLibraryCategory,
         isMergedView,
+        currentTimeframe,
     } = useListingParams(category, country, searchParams);
 
     // Hooks thay thế logic tải Lịch sử và Yêu thích
@@ -753,6 +771,7 @@ export default function Listing() {
         activeListContext,
         currentPage,
         pageSize,
+        timeframe: currentTimeframe,
     };
 
     let rawSearchCategories = [];
@@ -897,6 +916,7 @@ export default function Listing() {
                                 </p>
                                 {!isLibraryCategory && (
                                     <button
+                                        type="button"
                                         onClick={() =>
                                             setShowFilters(!showFilters)
                                         }
@@ -963,7 +983,35 @@ export default function Listing() {
                             </div>
                         </div>
 
-                        <div className="flex items-center gap-4">
+                        <div className="flex flex-wrap items-center gap-4">
+                            {/* Thanh tab chọn timeframe cho Top View */}
+                            {currentCategory === "top-view" && (
+                                <div className="flex items-center gap-1 rounded-full border border-zinc-800 bg-zinc-950 p-1">
+                                    {[
+                                        { id: "day", label: t("vods.timeframeToday") || "Hôm nay" },
+                                        { id: "week", label: t("vods.timeframeWeek") || "Tuần này" },
+                                        { id: "month", label: t("vods.timeframeMonth") || "Tháng này" },
+                                    ].map((tab) => {
+                                        const isActive = currentTimeframe === tab.id;
+                                        return (
+                                            <button
+                                                key={tab.id}
+                                                type="button"
+                                                onClick={() => handleFilterSelect("timeframe", tab.id)}
+                                                className={clsx(
+                                                    "rounded-full px-3.5 py-1 text-xs font-bold transition-all",
+                                                    isActive
+                                                        ? "bg-red-600 text-white shadow-sm"
+                                                        : "text-zinc-400 hover:text-white"
+                                                )}
+                                            >
+                                                {tab.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
                             <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
                                 {t("vods.pageOf", {
                                     page: currentPage,

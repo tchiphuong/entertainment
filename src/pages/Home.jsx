@@ -1,8 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Select from "react-select";
-import moment from "moment";
 import LoadingSpinner from "../components/LoadingSpinner";
 
 // Lấy API endpoint từ biến môi trường
@@ -10,7 +8,6 @@ const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT;
 
 export default function Home() {
     const { t } = useTranslation();
-    const navigate = useNavigate();
     const [loading, setLoading] = useState(false);
     const [matches, setMatches] = useState([]);
     const [tournaments, setTournaments] = useState([]);
@@ -47,7 +44,7 @@ export default function Home() {
         const grouped = {};
         normal.forEach((match) => {
             let dateKey = match.date;
-            if (dateKey && dateKey.length === 8) {
+            if (dateKey?.length === 8) {
                 dateKey = `${dateKey.substring(0, 4)}-${dateKey.substring(4, 6)}-${dateKey.substring(6, 8)}`;
             }
             if (!grouped[dateKey]) {
