@@ -27,5 +27,5 @@ coverage/
 .DS_Store
 Thumbs.db
 
-# AI Tools (Uncomment the line below to ignore AI configs)
-# .agents/
+# AI Tools
+.agents/
