@@ -1,7 +1,9 @@
-module.exports = {
-    content: ["./index.html", "./src/**/*.jsx"],
+import tailwindScrollbarHide from "tailwind-scrollbar-hide";
+
+export default {
+    content: ["./index.html", "./src/**/*.{js,jsx}"],
     theme: {
         extend: {},
     },
-    plugins: [require("tailwind-scrollbar-hide")],
+    plugins: [tailwindScrollbarHide],
 };

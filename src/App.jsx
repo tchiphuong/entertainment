@@ -1,9 +1,8 @@
-import React from "react";
 import { Routes, Route } from "react-router-dom";
 import Home from "./pages/Home";
 import Vods from "./pages/Vods";
 import VodPlay from "./pages/VodPlay";
-import TV from "./pages/TV";
+import TvPage from "./pages/TV";
 import Schedule from "./pages/Schedule";
 
 // New VOD System Components
@@ -25,7 +24,8 @@ export default function App() {
                 <Route path="/vod/search" element={<Listing />} />
                 <Route path="/vod/country/:country" element={<Listing />} />
                 <Route path="/vod/category/:category" element={<Listing />} />
-                <Route path="/tv" element={<TV />} />
+                <Route path="/vod/actor/:actor" element={<Listing />} />
+                <Route path="/tv" element={<TvPage />} />
                 <Route path="/schedule" element={<Schedule />} />
             </Routes>
         </VodProvider>

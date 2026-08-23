@@ -1,4 +1,4 @@
-import React, {
+import {
     createContext,
     useContext,
     useState,
@@ -55,7 +55,7 @@ export function VodProvider({ children }) {
                     ? JSON.parse(localHistoryStr)
                     : [];
 
-                let rawHistory = localHistory;
+                let rawHistory = dedupeHistory(localHistory);
 
                 if (currentUser?.uid) {
                     // Nếu có User, lấy thêm từ Firestore rồi merge
@@ -66,6 +66,13 @@ export function VodProvider({ children }) {
                         ...localHistory,
                         ...firestoreHistory,
                     ]);
+                }
+
+                // Cập nhật lại localStorage nếu sau khi dedupe có gộp mục trùng
+                if (localHistory.length !== rawHistory.length) {
+                    try {
+                        localStorage.setItem("viewHistory", JSON.stringify(rawHistory));
+                    } catch {}
                 }
 
                 setHistory(rawHistory);

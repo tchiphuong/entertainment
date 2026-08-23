@@ -21,14 +21,16 @@ import {
 import { vodService } from "../../services/vod/vodService";
 import VodLayout from "../../components/layout/VodLayout";
 import { PlaySkeleton } from "../../components/vod/VodSkeletons";
+import ActorAvatar from "../../components/vod/ActorAvatar";
 import { useAuth } from "../../contexts/AuthContext";
 import {
     addHistoryToFirestore,
     fetchHistoryFromFirestore,
+    dedupeHistory,
 } from "../../services/firebaseHelpers";
 import shaka from "shaka-player/dist/shaka-player.ui.js";
 import "shaka-player/dist/controls.css";
-import "../../styles/shaka-player.css";
+import "../../assets/styles/shaka-player.css";
 
 const CONFIG = {
     API_ENDPOINT: import.meta.env.VITE_SOURCE_K_API + "/phim",
@@ -280,70 +282,26 @@ function useLocalStorage(key, initial) {
 }
 
 // Các hàm Helper để xử lý hình ảnh cho hàm getMovieImage
-const getPlaceholderUrl = () => {
-    return FALLBACK_IMAGE;
-};
-
-const getProxyDomain = (source) => {
-    return source === "source_k" ? CONFIG.APP_DOMAIN_SOURCE_K : CONFIG.APP_DOMAIN_SOURCE_O_FRONTEND;
-};
-
-const getCdnBaseUrl = (source) => {
-    return source === "source_k" ? CONFIG.APP_DOMAIN_SOURCE_K_CDN_IMAGE : CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE;
-};
-
-const isKnownCdnHostname = (hostname) => {
-    return hostname.includes("phimimg.com") || hostname.includes("phimapi.com") || hostname.includes("img.ophim.live");
-};
-
-const buildProxiedImageUrl = (imagePath, source) => {
-    if (source === "source_o") return imagePath; // Không cần proxy cho OPhim
-    const domain = getProxyDomain(source);
-    return `${domain}/image.php?url=${encodeURIComponent(imagePath)}`;
-};
-
-const handleAbsoluteImageUrl = (imagePath, source) => {
-    if (source !== "source_k" && source !== "source_o") {
-        return imagePath;
-    }
-
-    let hostname = "";
-    try {
-        hostname = new URL(imagePath).hostname || "";
-    } catch (error) {
-        console.warn(`Invalid URL provided for imagePath: ${imagePath}`, error);
-    }
-
-    if (isKnownCdnHostname(hostname)) {
-        return buildProxiedImageUrl(imagePath, source);
-    }
-    
-    return imagePath;
-};
-
-const handleRelativeImageUrl = (imagePath, source) => {
-    const cdnUrl = `${getCdnBaseUrl(source)}/${imagePath}`;
-    
-    if (source === "source_k" || source === "source_o") {
-        return buildProxiedImageUrl(cdnUrl, source);
-    }
-    
-    return cdnUrl;
-};
-
-// Helper để load hình ảnh theo source (Đã Refactored để giảm Cognitive Complexity)
+// Helper để load hình ảnh theo source
 function getMovieImage(imagePath, source) {
     if (!imagePath) {
-        return getPlaceholderUrl();
+        return FALLBACK_IMAGE;
     }
 
     const isAbsolute = imagePath.startsWith("http://") || imagePath.startsWith("https://");
-    
     if (isAbsolute) {
-        return handleAbsoluteImageUrl(imagePath, source);
+        return imagePath;
     }
-    
-    return handleRelativeImageUrl(imagePath, source);
+
+    if (source === SOURCES.SOURCE_C) {
+        return `${CONFIG.APP_DOMAIN_SOURCE_C}/api/uploads/films/${imagePath}`;
+    }
+
+    if (source === SOURCES.SOURCE_O) {
+        return `${CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE}/${imagePath}`;
+    }
+
+    return `${CONFIG.APP_DOMAIN_SOURCE_K_CDN_IMAGE}/${imagePath}`;
 }
 
 // --- Pure Helper Functions Extracted to Reduce Complexity ---
@@ -721,9 +679,27 @@ export const matchEpisodeBySavedSlug = (episodesList, savedEpisodeSlug) => {
     return null;
 };
 
-export const findTargetEpisodeFromHistory = (episodesList, slug, lastWatchedList) => {
+export const findTargetEpisodeFromHistory = (episodesList, slug, lastWatchedList, movie) => {
     const cleanSlug = slug.split("?")[0];
-    const historyItem = lastWatchedList.find((item) => item.slug === cleanSlug);
+    const targetTmdbId = String(
+        movie?.tmdb?.id ||
+        movie?.tmdb_id ||
+        movie?.tmdbId ||
+        (cleanSlug.startsWith("tmdb-") ? cleanSlug.replace("tmdb-", "") : "")
+    );
+    const historyItem = (lastWatchedList || []).find((item) => {
+        if (!item) return false;
+        if (item.slug === cleanSlug || (movie?.slug && item.slug === movie.slug)) return true;
+        const itemTmdbId = String(
+            item.tmdb?.id ||
+            item.tmdb_id ||
+            item.tmdbId ||
+            (item.slug?.startsWith("tmdb-") ? item.slug.replace("tmdb-", "") : "")
+        );
+        if (targetTmdbId && itemTmdbId && targetTmdbId === itemTmdbId) return true;
+        if (item.name && movie?.name && item.name.toLowerCase().trim() === movie.name.toLowerCase().trim()) return true;
+        return false;
+    });
 
     if (historyItem?.current_episode?.key !== undefined && episodesList.length > 0) {
         const result = matchEpisodeByCurrentKey(episodesList, historyItem.current_episode.key, historyItem.server);
@@ -747,18 +723,27 @@ export const findTargetEpisodeFromHistory = (episodesList, slug, lastWatchedList
 
 export const getTrailerEpisode = (movie, tmdbVideos) => {
     let trailerUrl = movie?.trailer_url;
-    if (!trailerUrl && tmdbVideos) {
-        const trailer = tmdbVideos.find(
-            (v) => (v.type === "Trailer" || v.type === "Teaser") && v.site === "YouTube",
-        );
-        if (trailer?.key) trailerUrl = `https://www.youtube.com/watch?v=${trailer.key}`;
+    const videoList = (Array.isArray(tmdbVideos) && tmdbVideos.length > 0)
+        ? tmdbVideos
+        : (movie?.tmdb?.videos?.results || movie?.videos?.results || []);
+
+    if (!trailerUrl && videoList.length > 0) {
+        const trailer =
+            videoList.find((v) => v.type === "Trailer" && v.site === "YouTube") ||
+            videoList.find((v) => (v.type === "Teaser" || v.type === "Clip" || v.type === "Featurette") && v.site === "YouTube") ||
+            videoList.find((v) => v.site === "YouTube");
+        if (trailer?.key) {
+            trailerUrl = `https://www.youtube.com/watch?v=${trailer.key}`;
+        }
     }
+
     if (trailerUrl) {
         return {
             server_name: "Trailer",
+            type_id: "trailer",
             server_data: [
                 {
-                    name: "Trailer",
+                    name: "Trailer Chính Thức",
                     slug: "trailer",
                     link_embed: ensureYoutubeEmbedUrl(trailerUrl),
                     link_m3u8: null,
@@ -1230,7 +1215,7 @@ export const setupVideoTracking = ({
     };
 };
 
-export const computeEpisodeListData = (activeEpisode, imdbEpisodes, movie) => {
+export const computeEpisodeListData = (activeEpisode, imdbEpisodes, movie, tmdbData) => {
     const map = new Map();
     (activeEpisode?.server_data || []).forEach((s, i) => {
         const raw = getEpisodeKey(s.slug, s.name);
@@ -1238,11 +1223,14 @@ export const computeEpisodeListData = (activeEpisode, imdbEpisodes, movie) => {
         if (!map.has(k)) {
             const epNum = Number.parseInt(k);
             const imdbEp = (!Number.isNaN(epNum) && epNum > 0)
-                ? imdbEpisodes.find((e) => (e.episode_number || e.episodeNumber) === epNum)
+                ? (imdbEpisodes || []).find((e) => (e.episode_number || e.episodeNumber) === epNum)
+                : undefined;
+            const tmdbBackdrop = tmdbData?.backdrop_path
+                ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.THUMBNAIL || "w780"}${tmdbData.backdrop_path}`
                 : undefined;
             const thumb = (imdbEp?.still_path
                 ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.STILL || "w300"}${imdbEp.still_path}`
-                : imdbEp?.primaryImage?.url) || getMovieImage(movie?.thumb_url, movie?.source);
+                : imdbEp?.primaryImage?.url) || tmdbBackdrop || getMovieImage(movie?.thumb_url || movie?.poster_url, movie?.source);
             map.set(k, { ...s, key: k, imdbEp, thumb });
         }
     });
@@ -1316,13 +1304,51 @@ export const processWatchlistUpdate = ({
     const episodeValue = formatEpisodeValue(currentMovie.episode_total, episode?.name, episodeKey, episodeSlug);
 
     let history = Array.isArray(viewHistory) ? [...viewHistory] : [];
-    const cleanSlug = slug.split("?")[0];
-    const movieIndex = history.findIndex((item) => item.slug === cleanSlug);
+    const routeSlug = slug.split("?")[0];
+    const canonicalSlug = (currentMovie.slug && !currentMovie.slug.startsWith("tmdb-"))
+        ? currentMovie.slug
+        : routeSlug;
+
+    const targetTmdbId = String(
+        currentMovie.tmdb?.id ||
+        currentMovie.tmdb_id ||
+        currentMovie.tmdbId ||
+        (routeSlug.startsWith("tmdb-") ? routeSlug.replace("tmdb-", "") : "")
+    );
+
+    const movieIndex = history.findIndex((item) => {
+        if (!item) return false;
+        if (item.slug === routeSlug || item.slug === canonicalSlug) return true;
+        const itemTmdbId = String(
+            item.tmdb?.id ||
+            item.tmdb_id ||
+            item.tmdbId ||
+            (item.slug?.startsWith("tmdb-") ? item.slug.replace("tmdb-", "") : "")
+        );
+        if (targetTmdbId && itemTmdbId && targetTmdbId === itemTmdbId) return true;
+        if (item.name && movieName && item.name.toLowerCase().trim() === movieName.toLowerCase().trim()) return true;
+        return false;
+    });
 
     history = updateWatchHistory(history, movieIndex, {
-        cleanSlug, movieName, moviePoster, movieServer, movieOriginName,
-        currentMovie, episodeKey, episodeValue, position
+        cleanSlug: canonicalSlug,
+        movieName,
+        moviePoster,
+        movieServer,
+        movieOriginName,
+        currentMovie: {
+            ...currentMovie,
+            slug: canonicalSlug,
+            tmdb_id: targetTmdbId || currentMovie.tmdb_id,
+            tmdb: currentMovie.tmdb || (targetTmdbId ? { id: targetTmdbId } : undefined),
+        },
+        episodeKey,
+        episodeValue,
+        position,
     });
+
+    // Dedupe toàn bộ lịch sử
+    history = dedupeHistory(history);
 
     viewHistoryRef.current = history;
     try {
@@ -1501,7 +1527,7 @@ export const usePlayerInitialization = ({
 }) => {
     useEffect(() => {
         if (movie && !hasInitializedRef.current) {
-            if (episodes.length > 0) {
+            if (episodes && episodes.length > 0) {
                 initializeFromUrl(episodes, movie);
             } else {
                 const trailerEp = getTrailerEpisode(movie, tmdbVideos);
@@ -1509,7 +1535,7 @@ export const usePlayerInitialization = ({
                     setEpisodes([trailerEp]);
                     setActiveEpisode(trailerEp);
                     initializeFromUrl([trailerEp], movie);
-                } else if (!movie.tmdb || tmdbVideos !== null) {
+                } else if (tmdbVideos !== null && tmdbVideos !== undefined) {
                     setErrorMessage(t("vodPlay.noPlayableLink"));
                 }
             }
@@ -1552,9 +1578,27 @@ export const destroyAllPlayersHelper = async (activeVideoElementRef, shakaUiOver
     if (currentUrlRef) currentUrlRef.current = null;
 };
 
-export const computeLastWatchedPosition = (episodeSlug, episodeName, viewHistory, slug) => {
+export const computeLastWatchedPosition = (episodeSlug, episodeName, viewHistory, slug, movie) => {
     const cleanSlug = slug.split("?")[0];
-    const movieData = (viewHistory || []).find((item) => item.slug === cleanSlug);
+    const targetTmdbId = String(
+        movie?.tmdb?.id ||
+        movie?.tmdb_id ||
+        movie?.tmdbId ||
+        (cleanSlug.startsWith("tmdb-") ? cleanSlug.replace("tmdb-", "") : "")
+    );
+    const movieData = (viewHistory || []).find((item) => {
+        if (!item) return false;
+        if (item.slug === cleanSlug || (movie?.slug && item.slug === movie.slug)) return true;
+        const itemTmdbId = String(
+            item.tmdb?.id ||
+            item.tmdb_id ||
+            item.tmdbId ||
+            (item.slug?.startsWith("tmdb-") ? item.slug.replace("tmdb-", "") : "")
+        );
+        if (targetTmdbId && itemTmdbId && targetTmdbId === itemTmdbId) return true;
+        if (item.name && movie?.name && item.name.toLowerCase().trim() === movie.name.toLowerCase().trim()) return true;
+        return false;
+    });
 
     if (!movieData?.episodes) return 0;
 
@@ -1786,21 +1830,21 @@ export const ImageModal = ({ showImageModal, setShowImageModal, modalImages, cur
                 tabIndex={-1}
             />
             <div className="relative flex h-full max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-zinc-950 shadow-2xl ring-1 ring-white/10">
-                <button onClick={() => setShowImageModal(false)} className="absolute right-6 top-6 z-20 cursor-pointer rounded-full bg-black/40 p-2 text-white backdrop-blur-md transition-all hover:scale-110 hover:bg-red-600">
+                <button type="button" onClick={() => setShowImageModal(false)} className="absolute right-6 top-6 z-20 cursor-pointer rounded-full bg-black/40 p-2 text-white backdrop-blur-md transition-all hover:scale-110 hover:bg-red-600">
                     <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
                 <div className="flex flex-1 items-center justify-center overflow-hidden border-b border-white/5">
                     <img loading="lazy" src={`https://image.tmdb.org/t/p/original${modalImages[currentImageIndex]?.file_path}`} alt={`Gallery item ${currentImageIndex + 1}`} className="max-h-full max-w-full object-contain" />
                 </div>
                 <div className="flex items-center justify-center gap-8 bg-zinc-900/50 px-6 py-6 backdrop-blur-xl">
-                    <button onClick={() => setCurrentImageIndex((prev) => prev > 0 ? prev - 1 : modalImages.length - 1)} className="group cursor-pointer rounded-full bg-zinc-800 p-4 text-white transition-all hover:bg-red-600 active:scale-95">
+                    <button type="button" onClick={() => setCurrentImageIndex((prev) => prev > 0 ? prev - 1 : modalImages.length - 1)} className="group cursor-pointer rounded-full bg-zinc-800 p-4 text-white transition-all hover:bg-red-600 active:scale-95">
                         <svg className="h-6 w-6 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
                     </button>
                     <div className="flex flex-col items-center">
                         <span className="text-xl font-black tracking-tighter text-white">{currentImageIndex + 1}</span>
                         <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">của {modalImages.length}</span>
                     </div>
-                    <button onClick={() => setCurrentImageIndex((prev) => prev < modalImages.length - 1 ? prev + 1 : 0)} className="group cursor-pointer rounded-full bg-zinc-800 p-4 text-white transition-all hover:bg-red-600 active:scale-95">
+                    <button type="button" onClick={() => setCurrentImageIndex((prev) => prev < modalImages.length - 1 ? prev + 1 : 0)} className="group cursor-pointer rounded-full bg-zinc-800 p-4 text-white transition-all hover:bg-red-600 active:scale-95">
                         <svg className="h-6 w-6 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
                     </button>
                 </div>
@@ -1823,7 +1867,7 @@ export const ShareModal = ({ showShareModal, setShowShareModal, movie, shareMess
             <div className="relative w-full max-w-md overflow-hidden rounded-2xl bg-zinc-900 shadow-2xl ring-1 ring-white/10">
                 <div className="flex items-center justify-between border-b border-white/5 px-8 py-6">
                     <h3 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-400">{t("vodPlay.shareMovie")}</h3>
-                    <button onClick={() => setShowShareModal(false)} className="cursor-pointer rounded-full p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-white">
+                    <button type="button" onClick={() => setShowShareModal(false)} className="cursor-pointer rounded-full p-2 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-white">
                         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                 </div>
@@ -1841,7 +1885,7 @@ export const ShareModal = ({ showShareModal, setShowShareModal, movie, shareMess
                         <p className="text-[10px] font-black uppercase tracking-widest text-zinc-600">{t("vodPlay.movieLink")}</p>
                         <div className="group relative flex items-center">
                             <input type="text" readOnly value={window.location.href} className="w-full rounded-xl border border-white/5 bg-zinc-950/50 py-4 pl-4 pr-24 text-sm font-bold text-zinc-400 focus:outline-none focus:ring-1 focus:ring-red-600" />
-                            <button onClick={() => copyToClipboard(window.location.href)} className="absolute right-1.5 rounded-lg bg-white px-4 py-2 text-[10px] font-black uppercase tracking-wider text-black transition-all hover:bg-red-600 hover:text-white active:scale-95">Sao chép</button>
+                            <button type="button" onClick={() => copyToClipboard(window.location.href)} className="absolute right-1.5 rounded-lg bg-white px-4 py-2 text-[10px] font-black uppercase tracking-wider text-black transition-all hover:bg-red-600 hover:text-white active:scale-95">Sao chép</button>
                         </div>
                         {shareMessage && (
                             <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-green-500">
@@ -1873,8 +1917,8 @@ export const CountdownOverlay = ({ showNextCountdown, countdownSeconds, COUNTDOW
                     <p className="text-sm font-bold text-zinc-400">Tập tiếp theo sẽ phát sau {countdownSeconds} giây</p>
                 </div>
                 <div className="flex items-center gap-3">
-                    <button onClick={cancelCountdown} className="rounded-full border border-zinc-700 bg-zinc-900/80 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-zinc-400 transition-all hover:border-zinc-500 hover:text-white active:scale-95">Hủy</button>
-                    <button onClick={skipCountdown} className="rounded-full bg-red-600 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-red-600/30 transition-all hover:bg-red-500 active:scale-95">Phát ngay</button>
+                    <button type="button" onClick={cancelCountdown} className="rounded-full border border-zinc-700 bg-zinc-900/80 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-zinc-400 transition-all hover:border-zinc-500 hover:text-white active:scale-95">Hủy</button>
+                    <button type="button" onClick={skipCountdown} className="rounded-full bg-red-600 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-red-600/30 transition-all hover:bg-red-500 active:scale-95">Phát ngay</button>
                 </div>
             </div>
         </div>
@@ -1882,37 +1926,43 @@ export const CountdownOverlay = ({ showNextCountdown, countdownSeconds, COUNTDOW
 };
 
 export const PlayerControlBar = ({ currentEpisodeId, handleCastTV, togglePiP, episodeListData, playPrevEpisode, playNextEpisode }) => {
+    const displayEpisodeName = currentEpisodeId 
+        ? (/^\d+$/.test(currentEpisodeId) ? `Tập ${currentEpisodeId}` : currentEpisodeId)
+        : "Chưa có nguồn";
+
     return (
         <div className="border-t border-white/5 bg-zinc-950 p-6">
             <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-4">
                     <div className="flex h-10 w-1 rounded-full bg-red-600"></div>
                     <div>
-                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Đang xem tập</h3>
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                            {currentEpisodeId ? "Đang xem tập" : "Trạng thái"}
+                        </h3>
                         <p className="text-lg font-black uppercase tracking-tighter text-white">
-                            {currentEpisodeId && (/^\d+$/.test(currentEpisodeId) ? `Tập ${currentEpisodeId}` : currentEpisodeId)}
+                            {displayEpisodeName}
                         </p>
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-4 md:justify-end">
                     <div className="flex items-center gap-2">
-                        <button onClick={handleCastTV} className="flex md:hidden h-11 items-center justify-center gap-2 rounded-full bg-blue-600/20 px-4 text-blue-500 ring-1 ring-blue-500/50 transition-all hover:bg-blue-600/30 active:scale-95" title="Cast TV">
+                        <button type="button" onClick={handleCastTV} className="flex md:hidden h-11 items-center justify-center gap-2 rounded-full bg-blue-600/20 px-4 text-blue-500 ring-1 ring-blue-500/50 transition-all hover:bg-blue-600/30 active:scale-95" title="Cast TV">
                             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2h-6M4 16c0-2.21 1.79-4 4-4m-4 8c0-4.42 3.58-8 8-8m-8 12a12 12 0 0112-12" /></svg>
                             <span className="text-[11px] font-black uppercase tracking-wider">Cast</span>
                         </button>
-                        <button onClick={togglePiP} className="flex h-11 items-center justify-center gap-2 rounded-full bg-zinc-900/50 px-4 text-white/70 ring-1 ring-white/10 transition-all hover:bg-zinc-800 hover:text-white active:scale-95" title="Picture-in-Picture">
+                        <button type="button" onClick={togglePiP} className="flex h-11 items-center justify-center gap-2 rounded-full bg-zinc-900/50 px-4 text-white/70 ring-1 ring-white/10 transition-all hover:bg-zinc-800 hover:text-white active:scale-95" title="Picture-in-Picture">
                             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16a2 2 0 012 2v12a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2zm0 2v12h16V6H4zm7 3h7v5h-7V9z" /></svg>
                             <span className="hidden sm:block text-[11px] font-black uppercase tracking-wider">PiP</span>
                         </button>
                     </div>
                     <div className="flex items-center gap-3">
-                        {episodeListData.length > 1 && (
+                        {episodeListData && episodeListData.length > 1 && (
                             <div className="flex items-center gap-3">
-                                <button onClick={playPrevEpisode} className="group flex h-11 cursor-pointer items-center gap-2 rounded-full bg-zinc-900/50 px-5 text-white/70 ring-1 ring-white/10 transition-all hover:bg-zinc-800 hover:text-white active:scale-95 sm:px-6" title="Tập trước (P)">
+                                <button type="button" onClick={playPrevEpisode} className="group flex h-11 cursor-pointer items-center gap-2 rounded-full bg-zinc-900/50 px-5 text-white/70 ring-1 ring-white/10 transition-all hover:bg-zinc-800 hover:text-white active:scale-95 sm:px-6" title="Tập trước (P)">
                                     <svg className="h-4 w-4 transition-transform group-hover:-translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
                                     <span className="hidden text-[11px] font-black uppercase tracking-wider sm:block">Tập trước</span>
                                 </button>
-                                <button onClick={playNextEpisode} className="group flex h-11 cursor-pointer items-center gap-2 rounded-full bg-red-600 px-5 text-white shadow-lg shadow-red-600/30 ring-1 ring-red-500/50 transition-all hover:bg-red-500 hover:shadow-red-500/40 active:scale-95 sm:px-6" title="Tập tiếp theo (N)">
+                                <button type="button" onClick={playNextEpisode} className="group flex h-11 cursor-pointer items-center gap-2 rounded-full bg-red-600 px-5 text-white shadow-lg shadow-red-600/30 ring-1 ring-red-500/50 transition-all hover:bg-red-500 hover:shadow-red-500/40 active:scale-95 sm:px-6" title="Tập tiếp theo (N)">
                                     <span className="hidden text-[11px] font-black uppercase tracking-wider sm:block">Tập tiếp</span>
                                     <span className="text-[11px] font-black uppercase tracking-wider sm:hidden">Tiếp</span>
                                     <svg className="h-4 w-4 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
@@ -1926,72 +1976,80 @@ export const PlayerControlBar = ({ currentEpisodeId, handleCastTV, togglePiP, ep
     );
 };
 
-export const ServerTabs = ({ episodes, activeEpisode, switchTab }) => (
-    <div className="relative border-b border-white/5 bg-zinc-900/50">
-        <button
-            onClick={() => {
-                const container = document.getElementById("server-tabs-container");
-                if (container) container.scrollBy({ left: -200, behavior: "smooth" });
-            }}
-            className="bg-linear-to-r absolute left-0 top-0 z-10 hidden h-full w-10 items-center justify-center from-zinc-900 to-transparent text-white transition-opacity hover:opacity-100 md:flex"
-        >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-            </svg>
-        </button>
-        <div id="server-tabs-container" className="no-scrollbar flex overflow-x-auto scroll-smooth">
-            {episodes.map((episode) => (
-                <button
-                    key={episode.server_name}
-                    onClick={() => switchTab(episode)}
-                    className={`relative flex h-16 shrink-0 items-center gap-2 px-8 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${
-                        activeEpisode?.server_name === episode.server_name
-                            ? "text-red-600"
-                            : "text-zinc-600 hover:text-zinc-400"
-                    }`}
-                >
-                    {episode.type_id === "sub" && (
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 012 2h-3l-4 4z" />
-                        </svg>
-                    )}
-                    {episode.type_id === "tm" && (
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                        </svg>
-                    )}
-                    {episode.type_id === "lt" && (
-                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                        </svg>
-                    )}
-                    {episode.server_name}
-                    {activeEpisode?.server_name === episode.server_name && (
-                        <div className="absolute bottom-0 left-0 h-1 w-full bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.5)]"></div>
-                    )}
-                </button>
-            ))}
-        </div>
-        <button
-            onClick={() => {
-                const container = document.getElementById("server-tabs-container");
-                if (container) container.scrollBy({ left: 200, behavior: "smooth" });
-            }}
-            className="bg-linear-to-l absolute right-0 top-0 z-10 hidden h-full w-10 items-center justify-center from-zinc-900 to-transparent text-white transition-opacity hover:opacity-100 md:flex"
-        >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
-            </svg>
-        </button>
-    </div>
-);
+export const ServerTabs = ({ episodes, activeEpisode, switchTab }) => {
+    if (!episodes || episodes.length === 0) return null;
 
-export const EpisodeGridItem = ({ k, server, isActive, isCompactView, openEpisode, getMovieImage, formatEpisodeName }) => {
+    return (
+        <div className="relative border-b border-white/5 bg-zinc-900/50">
+            <button
+                type="button"
+                onClick={() => {
+                    const container = document.getElementById("server-tabs-container");
+                    if (container) container.scrollBy({ left: -200, behavior: "smooth" });
+                }}
+                className="bg-linear-to-r absolute left-0 top-0 z-10 hidden h-full w-10 items-center justify-center from-zinc-900 to-transparent text-white transition-opacity hover:opacity-100 md:flex"
+            >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                </svg>
+            </button>
+            <div id="server-tabs-container" className="no-scrollbar flex overflow-x-auto scroll-smooth">
+                {episodes.map((episode) => (
+                    <button
+                        type="button"
+                        key={episode.server_name}
+                        onClick={() => switchTab(episode)}
+                        className={`relative flex h-16 shrink-0 items-center gap-2 px-8 text-[10px] font-black uppercase tracking-[0.2em] transition-all ${
+                            activeEpisode?.server_name === episode.server_name
+                                ? "text-red-600"
+                                : "text-zinc-600 hover:text-zinc-400"
+                        }`}
+                    >
+                        {episode.type_id === "sub" && (
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 012 2h-3l-4 4z" />
+                            </svg>
+                        )}
+                        {episode.type_id === "tm" && (
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                            </svg>
+                        )}
+                        {episode.type_id === "lt" && (
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                            </svg>
+                        )}
+                        {episode.server_name}
+                        {activeEpisode?.server_name === episode.server_name && (
+                            <div className="absolute bottom-0 left-0 h-1 w-full bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.5)]"></div>
+                        )}
+                    </button>
+                ))}
+            </div>
+            <button
+                type="button"
+                onClick={() => {
+                    const container = document.getElementById("server-tabs-container");
+                    if (container) container.scrollBy({ left: 200, behavior: "smooth" });
+                }}
+                className="bg-linear-to-l absolute right-0 top-0 z-10 hidden h-full w-10 items-center justify-center from-zinc-900 to-transparent text-white transition-opacity hover:opacity-100 md:flex"
+            >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                </svg>
+            </button>
+        </div>
+    );
+};
+
+export const EpisodeGridItem = ({ k, server, isActive, isCompactView, openEpisode, _getMovieImage, formatEpisodeName }) => {
     const imdbEp = server.imdbEp;
     const episodeThumb = server.thumb;
 
     return (
         <button
+            type="button"
             onClick={openEpisode}
             className={`group relative flex flex-col overflow-hidden rounded-xl border transition-all duration-300 active:scale-[0.98] ${
                 isActive
@@ -2067,7 +2125,7 @@ export const MovieTitle = ({ movie, tmdbImages }) => {
         return (
             <div className="w-full flex flex-row items-center gap-3 sm:gap-4 md:gap-6">
                 {/* Hình Logo bên trái */}
-                <div className="h-11 sm:h-16 md:h-[5.5rem] lg:h-28 w-auto max-w-[8.75rem] sm:max-w-[13.75rem] md:max-w-[21.25rem] lg:max-w-[26.25rem] shrink-0 drop-shadow-[0_0_1rem_rgba(255,255,255,0.3)]">
+                <div className="h-11 sm:h-16 md:h-22 lg:h-28 w-auto max-w-35 sm:max-w-55 md:max-w-85 lg:max-w-105 shrink-0 drop-shadow-[0_0_1rem_rgba(255,255,255,0.3)]">
                     <img loading="lazy" src={logoUrl} alt={movie.name} className="h-full w-auto object-contain object-left" />
                 </div>
                 {/* Chữ Tên Phim bên phải */}
@@ -2163,7 +2221,7 @@ export const MovieMetaTags = ({ movie, tmdbData }) => {
     );
 };
 
-export const MovieCategories = ({ movie }) => {
+export const MovieCategories = ({ _movie }) => {
     return null;
 };
 
@@ -2176,7 +2234,7 @@ export const MovieDescription = ({ content }) => {
             <div className="group/desc relative">
                 <div className={`overflow-hidden text-justify text-lg font-medium leading-relaxed text-zinc-400 transition-all duration-500 ${!showDescription ? "mask-linear-b max-h-32" : "max-h-[2000px]"}`} dangerouslySetInnerHTML={{ __html: content }}></div>
                 {!showDescription && <div className="bg-linear-to-t pointer-events-none absolute inset-x-0 bottom-0 h-24 from-zinc-950/80 to-transparent transition-opacity duration-500"></div>}
-                <button onClick={() => setShowDescription(!showDescription)} className="group/btn mt-6 flex cursor-pointer items-center gap-2 text-xs font-black uppercase tracking-widest text-white transition-all hover:text-red-600 active:scale-95">
+                <button type="button" onClick={() => setShowDescription(!showDescription)} className="group/btn mt-6 flex cursor-pointer items-center gap-2 text-xs font-black uppercase tracking-widest text-white transition-all hover:text-red-600 active:scale-95">
                     <span className="relative">
                         {showDescription ? "Thu gọn" : "Đọc thêm"}
                         <div className="absolute -bottom-1 left-0 h-0.5 w-full scale-x-0 bg-red-600 transition-transform duration-300 group-hover/btn:scale-x-100"></div>
@@ -2209,10 +2267,10 @@ export const MovieCast = ({ tmdbCredits, movie }) => {
             <div className="flex items-center justify-between">
                 <h3 className="text-sm font-black uppercase tracking-[0.3em] text-red-600">Dàn diễn viên</h3>
                 <div className="flex gap-2">
-                    <button onClick={() => scroll('left')} className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-zinc-900 text-white transition-colors hover:border-red-600 hover:text-red-600 active:scale-95">
+                    <button type="button" onClick={() => scroll('left')} className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-zinc-900 text-white transition-colors hover:border-red-600 hover:text-red-600 active:scale-95">
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                     </button>
-                    <button onClick={() => scroll('right')} className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-zinc-900 text-white transition-colors hover:border-red-600 hover:text-red-600 active:scale-95">
+                    <button type="button" onClick={() => scroll('right')} className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-white/10 bg-zinc-900 text-white transition-colors hover:border-red-600 hover:text-red-600 active:scale-95">
                         <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                     </button>
                 </div>
@@ -2222,21 +2280,28 @@ export const MovieCast = ({ tmdbCredits, movie }) => {
                 ref={scrollRef}
                 className="no-scrollbar flex gap-6 overflow-x-auto scroll-smooth snap-x snap-mandatory py-4 px-1"
             >
-                {castList.map((c) => (
-                    <div key={c.id} className="group shrink-0 space-y-4 snap-start w-[96px] md:w-[112px]">
-                        <div className="mx-auto h-24 w-24 overflow-hidden rounded-full ring-2 ring-transparent transition-all duration-300 group-hover:ring-red-600 md:h-28 md:w-28">
-                            {c.profile_path ? (
-                                <img loading="lazy" src={`${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.SMALL}${c.profile_path}`} alt={c.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                            ) : (
-                                <div className="flex h-full w-full items-center justify-center bg-zinc-900 text-2xl font-black text-zinc-700">{c.name?.charAt(0).toUpperCase()}</div>
-                            )}
-                        </div>
-                        <div className="text-center">
-                            <p className="line-clamp-1 text-xs font-black text-zinc-200 transition-colors group-hover:text-red-600">{c.name}</p>
-                            <p className="line-clamp-1 text-[9px] font-bold uppercase tracking-widest text-zinc-600">{c.character}</p>
-                        </div>
-                    </div>
-                ))}
+                {castList.map((c) => {
+                    const isTmdbId = typeof c.id === "number" && c.id > 10;
+                    const actorLink = isTmdbId
+                        ? `/vod/actor/${c.id}?name=${encodeURIComponent(c.name || "")}`
+                        : `/vod/actor/${encodeURIComponent(c.name || "")}`;
+
+                    return (
+                        <Link
+                            key={c.id}
+                            to={actorLink}
+                            className="group shrink-0 space-y-4 snap-start w-24 md:w-28 cursor-pointer block focus:outline-none"
+                        >
+                            <div className="mx-auto h-24 w-24 overflow-hidden rounded-full ring-2 ring-transparent transition-all duration-300 group-hover:ring-red-600 md:h-28 md:w-28">
+                                <ActorAvatar name={c.name} profilePath={c.profile_path} />
+                            </div>
+                            <div className="text-center">
+                                <p className="line-clamp-1 text-xs font-black text-zinc-200 transition-colors group-hover:text-red-600">{c.name}</p>
+                                <p className="line-clamp-1 text-[9px] font-bold uppercase tracking-widest text-zinc-600">{c.character}</p>
+                            </div>
+                        </Link>
+                    );
+                })}
             </div>
         </section>
     );
@@ -2343,8 +2408,8 @@ export default function VodPlay() {
 
     // Memo hoá danh sách tập phim để tránh tính toán lại mỗi lần render
     const episodeListData = useMemo(() => {
-        return computeEpisodeListData(activeEpisode, imdbEpisodes, movie);
-    }, [activeEpisode, imdbEpisodes, movie?.thumb_url, movie?.source]);
+        return computeEpisodeListData(activeEpisode, imdbEpisodes, movie, tmdbData);
+    }, [activeEpisode, imdbEpisodes, movie?.thumb_url, movie?.poster_url, movie?.source, tmdbData?.backdrop_path]);
 
     // Lưu trữ ảnh nền cố định để tránh load lại khi fetch movie details
     const [memoizedBackgrounds, setMemoizedBackgrounds] = useState(() => {
@@ -2498,7 +2563,7 @@ export default function VodPlay() {
 
     useEffect(() => {
         // Set tiêu đề mặc định khi load
-        document.title = slug ? t("vodPlay.loading") : "VOD Player";
+        document.title = slug ? `${t("vodPlay.loading") || "Đang tải..."} • VOD Player` : "VOD Player";
         if (slug) {
             // Reset flags khi load video khác
             hasInitializedRef.current = false;
@@ -2516,13 +2581,12 @@ export default function VodPlay() {
                     : null,
             );
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [slug, location.state]);
+    }, [slug, location.state, t]);
 
     // Cập nhật tiêu đề khi có dữ liệu movie
     useEffect(() => {
         if (movie?.name) {
-            document.title = movie.name;
+            document.title = `${movie.name} • VOD Player`;
         }
     }, [movie]);
 
@@ -2637,7 +2701,7 @@ export default function VodPlay() {
         // Update document title - chỉ update khi có đầy đủ thông tin
         if (movie?.name) {
             const episodeName = server.name || "Trailer";
-            document.title = `[${formatEpisodeName(episodeName)}] - ${movie.name}`;
+            document.title = `[${formatEpisodeName(episodeName)}] ${movie.name} • VOD Player`;
         }
 
         // Reset position restored ref để cho phép restore position cho episode mới
@@ -2731,7 +2795,7 @@ export default function VodPlay() {
     }
 
     // Share function - mở modal
-    function shareMovie(movie) {
+    function shareMovie(_movie) {
         setShowShareModal(true);
     }
 
@@ -2811,6 +2875,7 @@ export default function VodPlay() {
                             {/* Quick Actions */}
                             <div className="flex items-center gap-3">
                                 <button
+                                    type="button"
                                     onClick={() => toggleFavorite(movie)}
                                     className={`flex cursor-pointer items-center gap-2 rounded-full px-6 py-2.5 text-xs font-black uppercase tracking-wider transition-all active:scale-95 ${
                                         isFavorited(movie.slug)
@@ -2841,6 +2906,7 @@ export default function VodPlay() {
                                 </button>
 
                                 <button
+                                    type="button"
                                     onClick={() => shareMovie(movie)}
                                     className="flex cursor-pointer items-center gap-2 rounded-full border border-zinc-800 bg-zinc-900 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-zinc-400 transition-all hover:border-white hover:text-white active:scale-95"
                                 >
@@ -2903,175 +2969,193 @@ export default function VodPlay() {
                                 />
 
                                     {/* Settings Switches */}
-                                    <div className="flex flex-wrap gap-8 border-t border-white/5 p-6">
-                                        <div className="flex items-center gap-4">
-                                            <button
-                                                type="button"
-                                                className="flex cursor-pointer items-center gap-3 rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-red-600"
-                                                onClick={() =>
-                                                    setAutoplayEnabled(
-                                                        !autoplayEnabled,
-                                                    )
-                                                }
-                                            >
-                                                <div
-                                                    className={`relative h-5 w-10 rounded-full transition-all duration-300 ${
-                                                        autoplayEnabled
-                                                            ? "bg-red-600"
-                                                            : "bg-zinc-800"
-                                                    }`}
+                                    {episodes && episodes.length > 0 && (
+                                        <div className="flex flex-wrap gap-8 border-t border-white/5 p-6">
+                                            <div className="flex items-center gap-4">
+                                                <button
+                                                    type="button"
+                                                    className="flex cursor-pointer items-center gap-3 rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-red-600"
+                                                    onClick={() =>
+                                                        setAutoplayEnabled(
+                                                            !autoplayEnabled,
+                                                        )
+                                                    }
                                                 >
                                                     <div
-                                                        className={`absolute top-1 h-3 w-3 rounded-full bg-white shadow-lg transition-transform duration-300 ${
+                                                        className={`relative h-5 w-10 rounded-full transition-all duration-300 ${
                                                             autoplayEnabled
-                                                                ? "translate-x-6"
-                                                                : "translate-x-1"
+                                                                ? "bg-red-600"
+                                                                : "bg-zinc-800"
                                                         }`}
-                                                    ></div>
-                                                </div>
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                                                    Tự động chuyển tập
-                                                </span>
-                                            </button>
-                                        </div>
-
-                                        <div className="flex flex-wrap items-center gap-4">
-                                            <button
-                                                type="button"
-                                                className="flex cursor-pointer items-center gap-3 rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-red-600"
-                                                onClick={() =>
-                                                    setSkipIntroEnabled(
-                                                        !skipIntroEnabled,
-                                                    )
-                                                }
-                                            >
-                                                <div
-                                                    className={`relative h-5 w-10 rounded-full transition-all duration-300 ${
-                                                        skipIntroEnabled
-                                                            ? "bg-red-600"
-                                                            : "bg-zinc-800"
-                                                    }`}
-                                                >
-                                                    <div
-                                                        className={`absolute top-1 h-3 w-3 rounded-full bg-white shadow-lg transition-transform duration-300 ${
-                                                            skipIntroEnabled
-                                                                ? "translate-x-6"
-                                                                : "translate-x-1"
-                                                        }`}
-                                                    ></div>
-                                                </div>
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                                                    Tự động bỏ qua Intro
-                                                </span>
-                                            </button>
-                                            {skipIntroEnabled && (
-                                                <div className="flex items-center gap-2 overflow-hidden rounded-full border border-white/5 bg-zinc-900 p-1">
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        max="3000"
-                                                        value={introDuration}
-                                                        onChange={(e) => {
-                                                            const value =
-                                                                Math.max(
-                                                                    0,
-                                                                    Math.min(
-                                                                        3000,
-                                                                        Number.parseInt(
-                                                                            e
-                                                                                .target
-                                                                                .value,
-                                                                        ) || 0,
-                                                                    ),
-                                                                );
-                                                            setIntroDuration(
-                                                                value,
-                                                            );
-                                                            setIntroDurations(
-                                                                (prev) => ({
-                                                                    ...prev,
-                                                                    [slug.split(
-                                                                        "?",
-                                                                    )[0]]:
-                                                                        value,
-                                                                }),
-                                                            );
-                                                        }}
-                                                        className="w-12 bg-transparent text-center text-xs font-black text-white outline-none"
-                                                    />
-                                                    <span className="pr-2 text-[10px] font-black uppercase tracking-widest text-zinc-600">
-                                                        Giây
+                                                    >
+                                                        <div
+                                                            className={`absolute top-1 h-3 w-3 rounded-full bg-white shadow-lg transition-transform duration-300 ${
+                                                                autoplayEnabled
+                                                                    ? "translate-x-6"
+                                                                    : "translate-x-1"
+                                                            }`}
+                                                        ></div>
+                                                    </div>
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                                                        Tự động chuyển tập
                                                     </span>
-                                                </div>
-                                            )}
-                                        </div>
+                                                </button>
+                                            </div>
 
-                                        <div className="flex items-center gap-4">
-                                            <button
-                                                type="button"
-                                                className="flex cursor-pointer items-center gap-3 rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-red-600"
-                                                onClick={() =>
-                                                    setIsCompactView(
-                                                        !isCompactView,
-                                                    )
-                                                }
-                                            >
-                                                <div
-                                                    className={`relative h-5 w-10 rounded-full transition-all duration-300 ${
-                                                        isCompactView
-                                                            ? "bg-red-600"
-                                                            : "bg-zinc-800"
-                                                    }`}
+                                            <div className="flex flex-wrap items-center gap-4">
+                                                <button
+                                                    type="button"
+                                                    className="flex cursor-pointer items-center gap-3 rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-red-600"
+                                                    onClick={() =>
+                                                        setSkipIntroEnabled(
+                                                            !skipIntroEnabled,
+                                                        )
+                                                    }
                                                 >
                                                     <div
-                                                        className={`absolute top-1 h-3 w-3 rounded-full bg-white shadow-lg transition-transform duration-300 ${
-                                                            isCompactView
-                                                                ? "translate-x-6"
-                                                                : "translate-x-1"
+                                                        className={`relative h-5 w-10 rounded-full transition-all duration-300 ${
+                                                            skipIntroEnabled
+                                                                ? "bg-red-600"
+                                                                : "bg-zinc-800"
                                                         }`}
-                                                    ></div>
-                                                </div>
-                                                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                                                    Tập phim giản lược
-                                                </span>
-                                            </button>
+                                                    >
+                                                        <div
+                                                            className={`absolute top-1 h-3 w-3 rounded-full bg-white shadow-lg transition-transform duration-300 ${
+                                                                skipIntroEnabled
+                                                                    ? "translate-x-6"
+                                                                    : "translate-x-1"
+                                                            }`}
+                                                        ></div>
+                                                    </div>
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                                                        Tự động bỏ qua Intro
+                                                    </span>
+                                                </button>
+                                                {skipIntroEnabled && (
+                                                    <div className="flex items-center gap-2 overflow-hidden rounded-full border border-white/5 bg-zinc-900 p-1">
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            max="3000"
+                                                            value={introDuration}
+                                                            onChange={(e) => {
+                                                                const value =
+                                                                    Math.max(
+                                                                        0,
+                                                                        Math.min(
+                                                                            3000,
+                                                                            Number.parseInt(
+                                                                                e
+                                                                                    .target
+                                                                                    .value,
+                                                                            ) || 0,
+                                                                        ),
+                                                                    );
+                                                                setIntroDuration(
+                                                                    value,
+                                                                );
+                                                                setIntroDurations(
+                                                                    (prev) => ({
+                                                                        ...prev,
+                                                                        [slug.split(
+                                                                            "?",
+                                                                        )[0]]:
+                                                                            value,
+                                                                    }),
+                                                                );
+                                                            }}
+                                                            className="w-12 bg-transparent text-center text-xs font-black text-white outline-none"
+                                                        />
+                                                        <span className="pr-2 text-[10px] font-black uppercase tracking-widest text-zinc-600">
+                                                            Giây
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center gap-4">
+                                                <button
+                                                    type="button"
+                                                    className="flex cursor-pointer items-center gap-3 rounded-lg p-1 focus:outline-none focus:ring-2 focus:ring-red-600"
+                                                    onClick={() =>
+                                                        setIsCompactView(
+                                                            !isCompactView,
+                                                        )
+                                                    }
+                                                >
+                                                    <div
+                                                        className={`relative h-5 w-10 rounded-full transition-all duration-300 ${
+                                                            isCompactView
+                                                                ? "bg-red-600"
+                                                                : "bg-zinc-800"
+                                                        }`}
+                                                    >
+                                                        <div
+                                                            className={`absolute top-1 h-3 w-3 rounded-full bg-white shadow-lg transition-transform duration-300 ${
+                                                                isCompactView
+                                                                    ? "translate-x-6"
+                                                                    : "translate-x-1"
+                                                            }`}
+                                                        ></div>
+                                                    </div>
+                                                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                                                        Tập phim giản lược
+                                                    </span>
+                                                </button>
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
                             </div>
 
                             {/* Episode List Column */}
-                            <div className="flex w-full flex-col overflow-hidden rounded-2xl bg-zinc-950 shadow-2xl ring-1 ring-white/5">
-                                {/* Server Select Tabs */}
-                                <ServerTabs 
-                                    episodes={episodes} 
-                                    activeEpisode={activeEpisode} 
-                                    switchTab={switchTab} 
-                                />
+                            {episodes && episodes.length > 0 ? (
+                                <div className="flex w-full flex-col overflow-hidden rounded-2xl bg-zinc-950 shadow-2xl ring-1 ring-white/5">
+                                    {/* Server Select Tabs */}
+                                    <ServerTabs 
+                                        episodes={episodes} 
+                                        activeEpisode={activeEpisode} 
+                                        switchTab={switchTab} 
+                                    />
 
-                                {/* Server Data Grid - Responsive Episode Cards with Images */}
-                                <div className="no-scrollbar max-h-[35rem] overflow-y-auto p-6">
-                                    <div
-                                        className={`grid gap-2 ${
-                                            isCompactView
-                                                ? "grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10"
-                                                : "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
-                                        }`}
-                                    >
-                                        {episodeListData.map(([k, server]) => (
-                                            <EpisodeGridItem
-                                                key={`${activeEpisode?.server_name}-${k}`}
-                                                k={k}
-                                                server={server}
-                                                isActive={k === (currentEpisodeId || "")}
-                                                isCompactView={isCompactView}
-                                                openEpisode={() => openEpisode(server, activeEpisode, movie)}
-                                                getMovieImage={getMovieImage}
-                                                formatEpisodeName={formatEpisodeName}
-                                            />
-                                        ))}
+                                    {/* Server Data Grid - Responsive Episode Cards with Images */}
+                                    <div className="no-scrollbar max-h-140 overflow-y-auto p-6">
+                                        <div
+                                            className={`grid gap-2 ${
+                                                isCompactView
+                                                    ? "grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10"
+                                                    : "grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                                            }`}
+                                        >
+                                            {episodeListData.map(([k, server]) => (
+                                                <EpisodeGridItem
+                                                    key={`${activeEpisode?.server_name || "server"}-${k}`}
+                                                    k={k}
+                                                    server={server}
+                                                    isActive={k === (currentEpisodeId || "")}
+                                                    isCompactView={isCompactView}
+                                                    openEpisode={() => openEpisode(server, activeEpisode, movie)}
+                                                    _getMovieImage={getMovieImage}
+                                                    formatEpisodeName={formatEpisodeName}
+                                                />
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                            ) : (
+                                <div className="flex w-full flex-col items-center justify-center gap-4 rounded-2xl border border-zinc-800/80 bg-zinc-950/60 p-10 text-center shadow-2xl ring-1 ring-white/5">
+                                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-zinc-800 bg-zinc-900/80 text-zinc-500 shadow-inner">
+                                        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        </svg>
+                                    </div>
+                                    <div className="space-y-1.5 max-w-md">
+                                        <h3 className="text-base font-black text-white">Chưa có nguồn phát trực tuyến</h3>
+                                        <p className="text-xs leading-relaxed text-zinc-400">
+                                            Phim này hiện chưa có nguồn phát trực tuyến. Bạn có thể xem thông tin chi tiết, trailer và hình ảnh ở bên dưới.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Movie Details Info Area */}
@@ -3104,7 +3188,7 @@ export default function VodPlay() {
                                     </div>
 
                                     {/* 2. Poster đứng cho PC / Desktop (>= lg) */}
-                                    <div className="aspect-2/3 relative hidden overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10 lg:block lg:w-[18.75rem] xl:w-[21.25rem]">
+                                    <div className="aspect-2/3 relative hidden overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10 lg:block lg:w-75 xl:w-85">
                                         <img
                                             loading="lazy"
                                             src={

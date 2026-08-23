@@ -78,7 +78,7 @@ export default function VodLanding() {
     }, [rawFavorites, normalizeLibraryItems]);
 
     useEffect(() => {
-        document.title = "Entertainment - VOD Hub";
+        document.title = "VOD Hub • Media Library";
     }, []);
 
     const startSlider = useCallback(() => {
@@ -255,7 +255,7 @@ export default function VodLanding() {
                                     </div>
                                     {movie.tmdbBranding?.titleLogo ? (
                                         <>
-                                            <div className="mb-2 h-[80px] w-full max-w-[300px] md:mb-3 md:h-[150px] md:max-w-[500px] lg:h-[200px]">
+                                            <div className="mb-2 h-20 w-full max-w-[300px] md:mb-3 md:h-[150px] md:max-w-[500px] lg:h-[200px]">
                                                 <img
                                                     loading="lazy"
                                                     src={
@@ -310,6 +310,7 @@ export default function VodLanding() {
                                     className={`flex flex-wrap items-center gap-3 pt-4 md:gap-4 md:pt-6 ${idx === currentHeroIndex ? "animate-fade-in-up" : "opacity-0"}`}
                                 >
                                     <button
+                                        type="button"
                                         onClick={() =>
                                             navigate(
                                                 `/vod/play/${movie.slug}?source=${movie.source || "source_k"}`,
@@ -337,6 +338,7 @@ export default function VodLanding() {
                                         {t("vods.watchNow")}
                                     </button>
                                     <button
+                                        type="button"
                                         onClick={() =>
                                             navigate(
                                                 `/vod/play/${movie.slug}?source=${movie.source || "source_k"}`,
@@ -428,6 +430,7 @@ export default function VodLanding() {
                         {heroMovies.map((movie, idx) => (
                             <button
                                 key={movie.slug || idx}
+                                type="button"
                                 onClick={() => {
                                     setCurrentHeroIndex(idx);
                                     startSlider();
@@ -683,6 +686,7 @@ function MovieRow({
                     {/* Nút xóa tất cả lịch sử */}
                     {onClearAll && items.length > 0 && (
                         <button
+                            type="button"
                             onClick={onClearAll}
                             className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 transition-all hover:border-red-600/50 hover:bg-red-600/10 hover:text-red-500 active:scale-95"
                             title={t("common.clearAll") || "Xóa tất cả"}
@@ -760,7 +764,7 @@ function MovieRow({
                     {items.map((item) => (
                         <div
                             key={item.slug}
-                            className="relative w-[13.75rem] shrink-0 transition-all duration-500 hover:z-40 md:w-[15rem] lg:w-[16.25rem] xl:w-[17.5rem]"
+                            className="relative w-55 shrink-0 transition-all duration-500 hover:z-40 md:w-60 lg:w-65 xl:w-70"
                         >
                             <VodMovieCard
                                 movie={item}

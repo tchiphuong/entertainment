@@ -1,4 +1,3 @@
-import React from "react";
 import { useMovieLanguage } from "../../hooks/useMovieLanguage";
 
 export default function MovieLanguageBadges({

@@ -1,4 +1,3 @@
-import React from "react";
 import Skeleton from "../ui/Skeleton";
 import { TMDB_IMAGE_BASE_URL } from "../../constants/vodConstants";
 
@@ -14,16 +13,16 @@ export function MovieCardSkeleton() {
     );
 }
 
-export function MovieRowSkeleton({ title = "" }) {
+export function MovieRowSkeleton() {
     return (
         <div className="space-y-5">
             <div className="px-4 md:px-12 lg:px-20">
                 <Skeleton className="h-8 w-48" />
             </div>
             <div className="flex gap-4 overflow-hidden px-4 md:px-12 lg:px-20">
-                {[...Array(12)].map((_, i) => (
+                {Array.from({ length: 12 }, (_, i) => (
                     <div
-                        key={i}
+                        key={`mrs-item-${i}`}
                         className="min-w-[170px] md:min-w-[210px] lg:min-w-[250px]"
                     >
                         <MovieCardSkeleton />
@@ -56,18 +55,17 @@ export function HeroSkeleton() {
     );
 }
 
-export function MovieGridSkeleton({ count = 12 }) {
+export function MovieGridSkeleton({ count = 24 }) {
     return (
-        <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-            {[...Array(count)].map((_, i) => (
-                <MovieCardSkeleton key={i} />
+        <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 2xl:grid-cols-8">
+            {Array.from({ length: count }, (_, i) => (
+                <MovieCardSkeleton key={`mgs-item-${i}`} />
             ))}
         </div>
     );
 }
 
 export function PlaySkeleton({ backgrounds }) {
-
     return (
         <div className="relative min-h-screen">
             {/* Background Hero Placeholder */}
@@ -79,19 +77,19 @@ export function PlaySkeleton({ backgrounds }) {
                             style={{
                                 backgroundImage: `url(${backgrounds.poster_url && !backgrounds.poster_url.startsWith('http') ? TMDB_IMAGE_BASE_URL + '/original' + backgrounds.poster_url : backgrounds.poster_url || backgrounds.thumb_url})`,
                             }}
-                        ></div>
+                        />
                         <div
                             className="bg-no-state absolute inset-0 hidden bg-cover bg-center opacity-35 blur-[2px] md:block"
                             style={{
                                 backgroundImage: `url(${backgrounds.thumb_url && !backgrounds.thumb_url.startsWith('http') ? TMDB_IMAGE_BASE_URL + '/original' + backgrounds.thumb_url : backgrounds.thumb_url || backgrounds.poster_url})`,
                             }}
-                        ></div>
+                        />
                     </>
                 ) : (
-                    <div className="absolute inset-0 bg-zinc-900/30 blur-md"></div>
+                    <div className="absolute inset-0 bg-zinc-900/30 blur-md" />
                 )}
-                <div className="bg-linear-to-b absolute inset-0 from-zinc-950/20 via-zinc-950/60 to-zinc-950"></div>
-                <div className="absolute inset-0 border-b border-white/5"></div>
+                <div className="absolute inset-0 bg-zinc-950/80" />
+                <div className="absolute inset-0 border-b border-white/5" />
             </div>
 
             <div className="container relative z-10 mx-auto flex flex-col gap-8 px-4 pb-12 pt-20">
@@ -120,7 +118,7 @@ export function PlaySkeleton({ backgrounds }) {
                         <div className="border-t border-white/5 bg-zinc-950 p-6">
                             <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
                                 <div className="flex items-center gap-4">
-                                    <div className="h-10 w-1 rounded-full bg-zinc-800"></div>
+                                    <div className="h-10 w-1 rounded-full bg-zinc-800" />
                                     <div className="space-y-2">
                                         <Skeleton className="h-3 w-16" />
                                         <Skeleton className="h-5 w-32" />
@@ -139,9 +137,9 @@ export function PlaySkeleton({ backgrounds }) {
                         </div>
                         <div className="p-6">
                             <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10 xl:grid-cols-12">
-                                {[...Array(24)].map((_, i) => (
+                                {Array.from({ length: 24 }, (_, i) => (
                                     <Skeleton
-                                        key={i}
+                                        key={`eps-item-${i}`}
                                         className="h-11 rounded-lg"
                                     />
                                 ))}
@@ -167,9 +165,9 @@ export function PlaySkeleton({ backgrounds }) {
                                 </div>
                             </div>
                             <div className="flex gap-3">
-                                {[...Array(6)].map((_, i) => (
+                                {Array.from({ length: 6 }, (_, i) => (
                                     <Skeleton
-                                        key={i}
+                                        key={`btns-item-${i}`}
                                         className="h-10 w-24 rounded-full"
                                     />
                                 ))}
@@ -189,8 +187,8 @@ export function PlaySkeleton({ backgrounds }) {
                     <section className="space-y-8">
                         <Skeleton className="h-8 w-48" />
                         <div className="flex gap-6 overflow-hidden">
-                            {[...Array(8)].map((_, i) => (
-                                <div key={i} className="flex flex-col items-center space-y-4">
+                            {Array.from({ length: 8 }, (_, i) => (
+                                <div key={`cast-item-${i}`} className="flex flex-col items-center space-y-4">
                                     <Skeleton className="h-24 w-24 rounded-full md:h-28 md:w-28" />
                                     <Skeleton className="h-4 w-20" />
                                     <Skeleton className="h-3 w-16 opacity-50" />
@@ -203,8 +201,8 @@ export function PlaySkeleton({ backgrounds }) {
                     <section className="space-y-8 pb-12">
                         <Skeleton className="h-8 w-56" />
                         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
-                            {[...Array(12)].map((_, i) => (
-                                <Skeleton key={i} className="aspect-video rounded-xl" />
+                            {Array.from({ length: 12 }, (_, i) => (
+                                <Skeleton key={`gal-item-${i}`} className="aspect-video rounded-xl" />
                             ))}
                         </div>
                     </section>

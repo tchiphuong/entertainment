@@ -11,6 +11,19 @@ const CONFIG = {
 // Logic cache đã được chuyển sang src/utils/vodCache.js
 const { get: getFromCache, set: saveToCache, clear: clearVodCache } = vodCache;
 
+// Fix đường dẫn ảnh cục bộ Source O
+const fixSourceOImagePath = (path) => {
+    if (
+        path &&
+        typeof path === "string" &&
+        !path.startsWith("http") &&
+        !path.startsWith("uploads/movies/")
+    ) {
+        return `uploads/movies/${path}`;
+    }
+    return path;
+};
+
 // Normalize movie fields (shared logic)
 const normalizeMovieForSource = (item, source) => {
     if (!item) return null;
@@ -19,21 +32,10 @@ const normalizeMovieForSource = (item, source) => {
 
     if (source === SOURCES.SOURCE_O) {
         m.name = m.name || m.origin_name;
-        m.poster_url = item.thumb_url;
-        m.thumb_url = item.poster_url || "";
-        [m.poster_url, m.thumb_url].forEach((path, idx) => {
-            if (
-                path &&
-                typeof path === "string" &&
-                !path.startsWith("http") &&
-                !path.startsWith("uploads/movies/")
-            ) {
-                if (idx === 0) m.poster_url = `uploads/movies/${path}`;
-                else m.thumb_url = `uploads/movies/${path}`;
-            }
-        });
+        m.poster_url = fixSourceOImagePath(item.thumb_url);
+        m.thumb_url = fixSourceOImagePath(item.poster_url || "");
     } else if (source === SOURCES.SOURCE_C) {
-        // NguonC bị ngược: poster_url là ảnh ngang, thumb_url là ảnh dọc
+        // Source C: poster_url là ảnh ngang, thumb_url là ảnh dọc
         m.poster_url = item.thumb_url;
         m.thumb_url = item.poster_url;
     } else if (source === SOURCES.SOURCE_K) {
@@ -48,6 +50,55 @@ const normalizeMovieForSource = (item, source) => {
     return m;
 };
 
+// Tạo URL gọi API theo nguồn & TMDB ID
+const getSourceApiUrl = (slug, source, tmdbId) => {
+    if (tmdbId && (source === SOURCES.SOURCE_K || source === SOURCES.SOURCE_O)) {
+        const domain = source === SOURCES.SOURCE_O ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
+        return `${domain}/tmdb/movie/${tmdbId}`;
+    }
+    if (source === SOURCES.SOURCE_O) {
+        return `${CONFIG.APP_DOMAIN_SOURCE_O}/v1/api/phim/${slug}`;
+    }
+    if (source === SOURCES.SOURCE_K) {
+        return `${CONFIG.APP_DOMAIN_SOURCE_K}/phim/${slug}`;
+    }
+    if (source === SOURCES.SOURCE_C) {
+        return `${CONFIG.APP_DOMAIN_SOURCE_C}/api/film/${slug}`;
+    }
+    return `${CONFIG.API_ENDPOINT}/${slug}`;
+};
+
+// Gọi fetch và fallback sang TV series nếu movie bị 404
+const fetchSourceResponse = async (slug, source, tmdbId) => {
+    const url = getSourceApiUrl(slug, source, tmdbId);
+    let res = await fetch(url);
+
+    if (!res.ok && tmdbId && (source === SOURCES.SOURCE_K || source === SOURCES.SOURCE_O)) {
+        const domain = source === SOURCES.SOURCE_O ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
+        const tvRes = await fetch(`${domain}/tmdb/tv/${tmdbId}`);
+        if (tvRes.ok) {
+            res = tvRes;
+        }
+    }
+    return res;
+};
+
+// Parse JSON trả về cấu trúc chuẩn { movie, episodes }
+const parseSourceJson = (json, source) => {
+    let movieData = null;
+    let episodesData = [];
+
+    if (source === SOURCES.SOURCE_O && json.data?.item) {
+        movieData = normalizeMovieForSource(json.data.item, source);
+        episodesData = json.data.item.episodes || [];
+    } else if (json.movie) {
+        movieData = normalizeMovieForSource(json.movie, source);
+        episodesData = json.episodes || [];
+    }
+
+    return { movie: movieData, episodes: episodesData };
+};
+
 export const fetchSourceData = async (slug, source) => {
     const cacheKey = `${source}_${slug}`;
     const cachedData = getFromCache(cacheKey);
@@ -56,58 +107,21 @@ export const fetchSourceData = async (slug, source) => {
     const isTmdbSlug = typeof slug === "string" && slug.startsWith("tmdb-");
     const tmdbId = isTmdbSlug ? slug.replace("tmdb-", "") : null;
 
-    let url = "";
-    if (source === SOURCES.SOURCE_K && tmdbId) {
-        url = `${CONFIG.APP_DOMAIN_SOURCE_K}/tmdb/movie/${tmdbId}`;
-    } else if (source === SOURCES.SOURCE_O) {
-        url = `${CONFIG.APP_DOMAIN_SOURCE_O}/v1/api/phim/${slug}`;
-    } else if (source === SOURCES.SOURCE_K) {
-        url = `${CONFIG.APP_DOMAIN_SOURCE_K}/phim/${slug}`;
-    } else if (source === SOURCES.SOURCE_C) {
-        url = `${CONFIG.APP_DOMAIN_SOURCE_C}/api/film/${slug}`;
-    } else {
-        url = `${CONFIG.API_ENDPOINT}/${slug}`;
-    }
-
     try {
-        let res = await fetch(url);
-        // Nếu là tmdbId và tra cứu movie bị 404, thử tiếp tv
-        if (!res.ok && source === SOURCES.SOURCE_K && tmdbId) {
-            const tvUrl = `${CONFIG.APP_DOMAIN_SOURCE_K}/tmdb/tv/${tmdbId}`;
-            const tvRes = await fetch(tvUrl);
-            if (tvRes.ok) {
-                res = tvRes;
-            }
-        }
-
+        const res = await fetchSourceResponse(slug, source, tmdbId);
         if (!res.ok) {
             const emptyResult = { movie: null, episodes: [] };
-            // Cache 404 để tránh gọi lại API liên tục
             saveToCache(cacheKey, emptyResult);
             return emptyResult;
         }
+
         const json = await res.json();
+        const result = parseSourceJson(json, source);
 
-        let movieData = null;
-        let episodesData = [];
-
-        if (source === SOURCES.SOURCE_O) {
-            if (json.data?.item) {
-                movieData = normalizeMovieForSource(json.data.item, source);
-                episodesData = json.data.item.episodes || [];
-            }
-        } else if (json.movie) {
-            movieData = normalizeMovieForSource(json.movie, source);
-            episodesData = json.episodes || [];
-        }
-
-        const result = { movie: movieData, episodes: episodesData };
-        // Negative caching: Lưu cả khi không có movieData để tránh gọi lại API liên tục cho các slug không tồn tại
         saveToCache(cacheKey, result);
         return result;
     } catch (e) {
         console.error(`Error fetching ${source} data:`, e);
-        // Cache lại lỗi để tránh retry liên tục trong phiên làm việc
         const errorResult = { movie: null, episodes: [] };
         saveToCache(cacheKey, errorResult);
         return errorResult;
@@ -121,21 +135,34 @@ export const fetchTMDbData = async (
 ) => {
     const apiKey = import.meta.env.VITE_TMDB_API_KEY;
     const baseUrl = import.meta.env.VITE_TMDB_BASE_URL;
-    const cacheKey = `tmdb_${type}_${tmdbId}_${language}`;
+    const resolvedType = type || "movie";
+    const cacheKey = `tmdb_${resolvedType}_${tmdbId}_${language}`;
 
     const cached = getFromCache(cacheKey);
     if (cached) return cached;
 
     try {
-        const [detailsRes] = await Promise.all([
-            fetch(
-                `${baseUrl}/${type}/${tmdbId}?api_key=${apiKey}&language=${language}&append_to_response=external_ids,credits,images,videos&include_image_language=vi,null,en`,
-            ),
-        ]);
+        let detailsRes = await fetch(
+            `${baseUrl}/${resolvedType}/${tmdbId}?api_key=${apiKey}&language=${language}&append_to_response=external_ids,credits,images,videos&include_image_language=vi,null,en`,
+        );
 
-        const [details] = await Promise.all([
-            detailsRes.ok ? detailsRes.json() : null,
-        ]);
+        if (!detailsRes.ok && resolvedType === "movie") {
+            const tvRes = await fetch(
+                `${baseUrl}/tv/${tmdbId}?api_key=${apiKey}&language=${language}&append_to_response=external_ids,credits,images,videos&include_image_language=vi,null,en`,
+            );
+            if (tvRes.ok) {
+                detailsRes = tvRes;
+            }
+        } else if (!detailsRes.ok && resolvedType === "tv") {
+            const movieRes = await fetch(
+                `${baseUrl}/movie/${tmdbId}?api_key=${apiKey}&language=${language}&append_to_response=external_ids,credits,images,videos&include_image_language=vi,null,en`,
+            );
+            if (movieRes.ok) {
+                detailsRes = movieRes;
+            }
+        }
+
+        const details = detailsRes.ok ? await detailsRes.json() : null;
 
         const result = { details };
         if (details) saveToCache(cacheKey, result);

@@ -6,7 +6,7 @@ import {
 
 const CONFIG = {
     TMDB_API_KEY: import.meta.env.VITE_TMDB_API_KEY,
-    TMDB_BASE_URL: import.meta.env.VITE_TMDB_BASE_URL || "https://api.themoviedb.org/3",
+    TMDB_BASE_URL: import.meta.env.VITE_TMDB_BASE_URL,
 };
 
 /**
@@ -27,11 +27,14 @@ export const normalizeTMDBMovie = (item, source = SOURCES.SOURCE_TMDB) => {
     const releaseDate = item.release_date || item.first_air_date;
     const year = releaseDate ? new Date(releaseDate).getFullYear() : null;
     const rating = typeof item.vote_average === "number" ? item.vote_average : null;
+    const isMovie = Boolean(item.title || item.runtime || item.release_date);
 
     return {
         ...item,
         id: item.id,
         tmdbId: item.id,
+        tmdb_id: item.id,
+        tmdb: item,
         slug: item.id ? `tmdb-${item.id}` : "",
         name: item.title || item.name || item.original_title || item.original_name || "",
         origin_name: item.original_title || item.original_name || item.title || item.name || "",
@@ -46,7 +49,12 @@ export const normalizeTMDBMovie = (item, source = SOURCES.SOURCE_TMDB) => {
         lang: item.original_language || "en",
         content: item.overview || "",
         source: source || SOURCES.SOURCE_TMDB,
-        media_type: item.media_type || (item.title ? "movie" : "tv"),
+        media_type: item.media_type || (isMovie ? "movie" : "tv"),
+        type: item.media_type === "movie" || isMovie ? "single" : "series",
+        time: item.runtime ? `${item.runtime} phút` : (item.episode_run_time?.[0] ? `${item.episode_run_time[0]} phút/tập` : ""),
+        category: (item.genres || []).map((g) => ({ id: g.id, name: g.name, slug: String(g.id) })),
+        actor: (item.credits?.cast || []).map((c) => c.name),
+        director: (item.credits?.crew || []).find((c) => c.job === "Director")?.name || "",
     };
 };
 
@@ -142,6 +150,62 @@ export const fetchTMDBTopViewByTimeframe = async ({
 // Cache lưu trữ metadata TMDB trong phiên làm việc
 const tmdbMetadataCache = new Map();
 
+const extractBrandLogo = (type, mainData) => {
+    if (type === "tv" && mainData.networks?.length > 0) {
+        const net = mainData.networks.find((n) => n.logo_path) || mainData.networks[0];
+        return net?.logo_path || null;
+    }
+    if (mainData.production_companies?.length > 0) {
+        const comp = mainData.production_companies.find((c) => c.logo_path) || mainData.production_companies[0];
+        return comp?.logo_path || null;
+    }
+    return null;
+};
+
+const fetchTMDBImagesMetadata = async (baseUrl, endpoint, tmdbId, apiKey) => {
+    const imgUrl = `${baseUrl}/${endpoint}/${tmdbId}/images?api_key=${apiKey}&include_image_language=vi,null,en`;
+    try {
+        const imgRes = await fetch(imgUrl);
+        if (!imgRes.ok) return {};
+        const imgData = await imgRes.json();
+
+        const titleLogo = imgData.logos?.find((l) => l.iso_639_1 === "vi") || imgData.logos?.find((l) => l.iso_639_1 === "en");
+        const viPoster = imgData.posters?.find((p) => p.iso_639_1 === "vi");
+        const viBackdrop = imgData.backdrops?.find((b) => b.iso_639_1 === "vi");
+
+        return {
+            titleLogoPath: titleLogo?.file_path || null,
+            posterPath: viPoster?.file_path || null,
+            backdropPath: viBackdrop?.file_path || null,
+        };
+    } catch {
+        return {};
+    }
+};
+
+const fetchTMDBSeasonMetadata = async (baseUrl, tmdbId, parsedSeason, apiKey, language, mainData) => {
+    try {
+        const seasonUrl = `${baseUrl}/tv/${tmdbId}/season/${parsedSeason}?api_key=${apiKey}&language=${language}&append_to_response=images&include_image_language=vi,null,en`;
+        const seasonRes = await fetch(seasonUrl);
+        if (!seasonRes.ok) return {};
+        const seasonData = await seasonRes.json();
+
+        const viSeasonPoster = seasonData.images?.posters?.find((p) => p.iso_639_1 === "vi");
+        const seasonPoster = viSeasonPoster?.file_path || seasonData.poster_path || null;
+        const seasonNameVi = seasonData.name ? `${mainData.name || ""} (${seasonData.name})` : null;
+        const seasonBackdrop = seasonData.episodes?.[0]?.still_path || null;
+
+        return {
+            posterPath: seasonPoster,
+            nameVi: seasonNameVi,
+            backdropPath: seasonBackdrop,
+        };
+    } catch (error_) {
+        console.warn(`Error fetching season ${parsedSeason} for TV ${tmdbId}:`, error_);
+        return {};
+    }
+};
+
 /**
  * Lấy chi tiết Branding, Logo và Poster/Backdrop (ưu tiên hình ảnh Tiếng Việt) từ TMDB chính chủ
  * @param {object} params - { tmdbId, type: 'movie' | 'tv', language, seasonNumber }
@@ -168,85 +232,28 @@ export const fetchTMDBMetadata = async ({
         const mainUrl = `${baseUrl}/${endpoint}/${tmdbId}?api_key=${apiKey}&language=${language}`;
 
         const mainRes = await fetch(mainUrl);
-        if (!mainRes.ok) return null;
+        if (!mainRes.ok) {
+            tmdbMetadataCache.set(cacheKey, null);
+            return null;
+        }
         const mainData = await mainRes.json();
 
-        let brandLogoPath = null;
-        if (type === "tv" && mainData.networks?.length > 0) {
-            const net = mainData.networks.find((n) => n.logo_path) || mainData.networks[0];
-            brandLogoPath = net.logo_path;
-        } else if (mainData.production_companies?.length > 0) {
-            const comp = mainData.production_companies.find((c) => c.logo_path) || mainData.production_companies[0];
-            brandLogoPath = comp.logo_path;
-        }
-
+        const brandLogoPath = extractBrandLogo(type, mainData);
         let posterPath = mainData.poster_path;
         let backdropPath = mainData.backdrop_path;
         let titleLogoPath = null;
         let nameVi = mainData.title || mainData.name || null;
 
-        // Lấy hình ảnh từ endpoint images (ưu tiên poster, backdrop và logo Tiếng Việt)
-        const imgUrl = `${baseUrl}/${endpoint}/${tmdbId}/images?api_key=${apiKey}&include_image_language=vi,null,en`;
-        const imgRes = await fetch(imgUrl);
-        if (imgRes.ok) {
-            const imgData = await imgRes.json();
-            
-            // Ưu tiên Logo tiếng Việt
-            if (imgData.logos?.length > 0) {
-                const viLogo = imgData.logos.find((l) => l.iso_639_1 === "vi");
-                const enLogo = imgData.logos.find((l) => l.iso_639_1 === "en");
-                const logo = viLogo || enLogo || null;
-                if (logo) titleLogoPath = logo.file_path;
-            }
+        const imgMeta = await fetchTMDBImagesMetadata(baseUrl, endpoint, tmdbId, apiKey);
+        if (imgMeta.titleLogoPath) titleLogoPath = imgMeta.titleLogoPath;
+        if (imgMeta.posterPath) posterPath = imgMeta.posterPath;
+        if (imgMeta.backdropPath) backdropPath = imgMeta.backdropPath;
 
-            // Ưu tiên Poster tiếng Việt
-            if (imgData.posters?.length > 0) {
-                const viPoster = imgData.posters.find((p) => p.iso_639_1 === "vi");
-                if (viPoster) {
-                    posterPath = viPoster.file_path;
-                }
-            }
-
-            // Ưu tiên Backdrop tiếng Việt
-            if (imgData.backdrops?.length > 0) {
-                const viBackdrop = imgData.backdrops.find((b) => b.iso_639_1 === "vi");
-                if (viBackdrop) {
-                    backdropPath = viBackdrop.file_path;
-                }
-            }
-        }
-
-        // Nếu là TV Show và có chỉ định Season, ưu tiên lấy poster và still_path riêng của Season
         if (type === "tv" && parsedSeason) {
-            try {
-                const seasonUrl = `${baseUrl}/tv/${tmdbId}/season/${parsedSeason}?api_key=${apiKey}&language=${language}&append_to_response=images&include_image_language=vi,null,en`;
-                const seasonRes = await fetch(seasonUrl);
-                if (seasonRes.ok) {
-                    const seasonData = await seasonRes.json();
-                    
-                    // Ưu tiên poster tiếng Việt của Season nếu có
-                    if (seasonData.images?.posters?.length > 0) {
-                        const viSeasonPoster = seasonData.images.posters.find((p) => p.iso_639_1 === "vi");
-                        if (viSeasonPoster) {
-                            posterPath = viSeasonPoster.file_path;
-                        } else if (seasonData.poster_path) {
-                            posterPath = seasonData.poster_path;
-                        }
-                    } else if (seasonData.poster_path) {
-                        posterPath = seasonData.poster_path;
-                    }
-
-                    if (seasonData.name) {
-                        nameVi = `${mainData.name || ""} (${seasonData.name})`;
-                    }
-                    // Nếu tập đầu tiên của mùa có ảnh still HD sắc nét, dùng làm backdrop riêng của mùa
-                    if (seasonData.episodes?.[0]?.still_path) {
-                        backdropPath = seasonData.episodes[0].still_path;
-                    }
-                }
-            } catch (errSeason) {
-                console.warn(`Error fetching season ${parsedSeason} for TV ${tmdbId}:`, errSeason);
-            }
+            const seasonMeta = await fetchTMDBSeasonMetadata(baseUrl, tmdbId, parsedSeason, apiKey, language, mainData);
+            if (seasonMeta.posterPath) posterPath = seasonMeta.posterPath;
+            if (seasonMeta.nameVi) nameVi = seasonMeta.nameVi;
+            if (seasonMeta.backdropPath) backdropPath = seasonMeta.backdropPath;
         }
 
         const metadata = {
@@ -262,15 +269,67 @@ export const fetchTMDBMetadata = async ({
             backdrop: backdropPath
                 ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.BACKDROP}${backdropPath}`
                 : null,
-            nameVi: nameVi,
+            nameVi,
             seasonNumber: parsedSeason,
         };
 
         tmdbMetadataCache.set(cacheKey, metadata);
         return metadata;
-    } catch (e) {
-        console.warn("fetchTMDBMetadata error:", e);
+    } catch {
+        tmdbMetadataCache.set(cacheKey, null);
         return null;
+    }
+};
+
+/**
+ * Lấy thông tin chi tiết của diễn viên theo TMDB Person ID
+ * @param {string|number} personId 
+ * @param {string} language 
+ */
+export const fetchTMDBPersonDetail = async (personId, language = "vi-VN") => {
+    if (!personId) return null;
+    const apiKey = CONFIG.TMDB_API_KEY;
+    const baseUrl = CONFIG.TMDB_BASE_URL;
+    const url = `${baseUrl}/person/${personId}?api_key=${apiKey}&language=${language}`;
+
+    try {
+        const res = await fetch(url);
+        if (!res.ok) return null;
+        return await res.json();
+    } catch {
+        return null;
+    }
+};
+
+/**
+ * Lấy danh sách phim mà diễn viên từng tham gia chính xác theo TMDB Person ID
+ * @param {string|number} personId 
+ * @param {string} language 
+ */
+export const fetchTMDBPersonCredits = async (personId, language = "vi-VN") => {
+    if (!personId) return { items: [], totalPages: 1, totalItems: 0 };
+    const apiKey = CONFIG.TMDB_API_KEY;
+    const baseUrl = CONFIG.TMDB_BASE_URL;
+    const url = `${baseUrl}/person/${personId}/combined_credits?api_key=${apiKey}&language=${language}`;
+
+    try {
+        const res = await fetch(url);
+        if (!res.ok) return { items: [], totalPages: 1, totalItems: 0 };
+        const data = await res.json();
+        const castList = Array.isArray(data.cast) ? data.cast : [];
+        
+        // Sắp xếp phim theo độ phổ biến giảm dần
+        const sorted = [...castList].sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+        const items = sorted.map((item) => normalizeTMDBMovie(item));
+
+        return {
+            items,
+            totalPages: 1,
+            totalItems: items.length,
+            page: 1,
+        };
+    } catch {
+        return { items: [], totalPages: 1, totalItems: 0 };
     }
 };
 
@@ -279,5 +338,7 @@ export const tmdbService = {
     fetchTMDBPopular,
     fetchTMDBTopViewByTimeframe,
     fetchTMDBMetadata,
+    fetchTMDBPersonDetail,
+    fetchTMDBPersonCredits,
     normalizeTMDBMovie,
 };

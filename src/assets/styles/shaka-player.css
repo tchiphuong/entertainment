@@ -1,19 +1,14 @@
-@reference "../../css/tailwind.css";
+@reference "./tailwind.css";
 
 @layer components {
     .youtube-theme {
         font-family: "Inter", "Outfit", sans-serif;
     }
 
-    /* Glassmorphism for Bottom Controls */
+    /* Solid Dark Bottom Controls */
     .youtube-theme .shaka-bottom-controls {
         @apply invisible w-full p-4 opacity-0;
-        background: linear-gradient(
-            to top,
-            rgba(0, 0, 0, 0.8) 0%,
-            rgba(0, 0, 0, 0.4) 50%,
-            transparent 100%
-        );
+        background: rgba(9, 9, 11, 0.85);
         width: 100% !important;
         z-index: 1;
         transition: all 0.3s ease;
@@ -92,12 +87,11 @@
         @apply bg-white/20! opacity-100!;
     }
 
-    /* Menu Styling - Glassmorphism */
+    /* Menu Styling - Solid Dark Overlay */
     .youtube-theme .shaka-overflow-menu,
     .youtube-theme .shaka-settings-menu {
         @apply rounded-2xl p-2 shadow-2xl transition-all duration-300;
-        background: rgba(15, 15, 15, 0.85);
-        backdrop-filter: blur(20px);
+        background: #09090b;
         border: 1px solid rgba(255, 255, 255, 0.1);
         bottom: 70px;
         right: 20px;
@@ -116,7 +110,7 @@
     }
 
     .youtube-theme .shaka-settings-menu button[aria-selected="true"] i {
-        @apply mr-2 text-red-400;
+        @apply mr-2 text-red-500;
         font-size: 1.2rem;
     }
 
@@ -125,10 +119,10 @@
     }
 
     .youtube-theme .shaka-overflow-button-label span:last-child {
-        @apply rounded-md px-2 py-0.5 text-xs font-bold text-red-400;
+        @apply rounded-md px-2 py-0.5 text-xs font-bold text-red-500;
     }
 
-    /* Play/Pause Center Button Overlay (Optional Enhancement) */
+    /* Play/Pause Center Button Overlay */
     .youtube-theme .shaka-play-button-container {
         @apply flex items-center justify-center;
     }
@@ -146,6 +140,6 @@
     .youtube-theme
         .shaka-controls-container:not([can-seek="true"])
         .shaka-seek-bar-container {
-        @apply opacity-30; /* Dim it instead of hiding to prevent jumpy layout */
+        @apply opacity-30;
     }
 }

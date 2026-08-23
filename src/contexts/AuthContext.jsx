@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 import { auth } from "../services/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import LoadingSpinner from "../components/LoadingSpinner";
@@ -14,12 +14,10 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const unsubscribe = onAuthStateChanged(auth, (user) => {
+        return onAuthStateChanged(auth, (user) => {
             setCurrentUser(user);
             setLoading(false);
         });
-
-        return unsubscribe;
     }, []);
 
     const value = {

@@ -1,9 +1,14 @@
 @import "tailwindcss";
-@import url("https://fonts.googleapis.com/css2?family=Sacramento&display=swap");
+@import "@heroui/styles";
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Sacramento&display=swap");
 
-/* Font Neon Ống Uốn: Nét viết tay uốn lượn mềm mại Sacramento */
-.font-neon-tube {
-    font-family: "Sacramento", cursive !important;
+@theme {
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-inter: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+:root, html, body, #root, input, button, select, textarea {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
 }
 
 /* Các lớp ánh sáng Đèn Neon lan tỏa đa tầng cao cấp */
@@ -103,90 +108,98 @@ body, html, #root, input, button, select, textarea {
 /* React Select Custom Styles - Dark Theme */
 
 .react-select__control {
-    @apply rounded-lg border border-zinc-600 bg-zinc-800 shadow-sm;
+    border-radius: 0.5rem;
+    border: 1px solid #3f3f46;
+    background-color: #27272a;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
     min-height: 2.625rem;
 }
 
 .react-select__control:hover {
-    @apply border-blue-500;
+    border-color: #dc2626;
 }
 
 .react-select__control--is-focused {
-    @apply border-blue-500 ring-2 ring-blue-500/30;
+    border-color: #dc2626;
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.3);
 }
 
 .react-select__control--is-disabled {
-    @apply cursor-not-allowed bg-zinc-700;
+    cursor: not-allowed;
+    background-color: #3f3f46;
 }
 
 .react-select__menu {
-    @apply rounded-lg border border-zinc-700 bg-zinc-800 shadow-lg;
+    border-radius: 0.5rem;
+    border: 1px solid #3f3f46;
+    background-color: #18181b;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
 }
 
 .react-select__menu-list {
-    @apply rounded-lg bg-zinc-800;
+    border-radius: 0.5rem;
+    background-color: #18181b;
 }
 
 .react-select__option {
-    @apply cursor-pointer px-3 py-2 text-zinc-300;
+    cursor: pointer;
+    padding: 0.5rem 0.75rem;
+    color: #d4d4d8;
 }
 
 .react-select__option--is-focused {
-    @apply bg-zinc-700 text-zinc-100;
+    background-color: #27272a;
+    color: #f4f4f5;
 }
 
 .react-select__option--is-selected {
-    @apply bg-blue-600 text-white;
+    background-color: #dc2626;
+    color: #ffffff;
 }
 
 .react-select__multi-value {
-    @apply rounded-lg border border-blue-500/30 bg-blue-600/20;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(220, 38, 38, 0.3);
+    background-color: rgba(220, 38, 38, 0.2);
 }
 
 .react-select__multi-value__label {
-    @apply font-semibold text-blue-400;
+    font-weight: 600;
+    color: #f87171;
 }
 
 .react-select__multi-value__remove {
-    @apply text-blue-400;
+    color: #f87171;
 }
 
 .react-select__multi-value__remove:hover {
-    @apply bg-blue-600 text-white;
+    background-color: #dc2626;
+    color: #ffffff;
 }
 
-.react-select__input {
-    @apply text-zinc-100;
-}
-
+.react-select__input,
 .react-select__input-container {
-    @apply text-zinc-100;
+    color: #f4f4f5;
 }
 
 .react-select__placeholder {
-    @apply text-zinc-500;
+    color: #71717a;
 }
 
 .react-select__single-value {
-    @apply text-zinc-100;
-}
-
-@layer utilities {
-    .mask-linear-b {
-        mask-image: linear-gradient(to bottom, black 50%, transparent 100%);
-    }
+    color: #f4f4f5;
 }
 
 .react-select__indicator-separator {
-    @apply bg-zinc-600;
+    background-color: #3f3f46;
 }
 
 .react-select__indicator {
-    @apply text-zinc-400;
+    color: #a1a1aa;
 }
 
 .react-select__indicator:hover {
-    @apply text-zinc-200;
+    color: #e4e4e7;
 }
 
 /* Custom Scrollbar - Dark Theme */
@@ -196,15 +209,16 @@ body, html, #root, input, button, select, textarea {
 }
 
 ::-webkit-scrollbar-track {
-    @apply bg-zinc-900;
+    background-color: #09090b;
 }
 
 ::-webkit-scrollbar-thumb {
-    @apply rounded-full bg-zinc-600;
+    border-radius: 9999px;
+    background-color: #3f3f46;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    @apply bg-zinc-500;
+    background-color: #52525b;
 }
 
 /* Firefox */

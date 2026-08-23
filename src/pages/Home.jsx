@@ -14,7 +14,7 @@ export default function Home() {
     const [selectedTournaments, setSelectedTournaments] = useState([]);
     const [showScrollButton, setShowScrollButton] = useState(false);
 
-    // ✅ OPTIMIZATION: Filter matches by tournament FIRST
+    // OPTIMIZATION: Filter matches by tournament FIRST
     const filteredMatchesList = useMemo(() => {
         if (selectedTournaments.length === 0) {
             return matches;
@@ -26,7 +26,7 @@ export default function Home() {
         );
     }, [matches, selectedTournaments]);
 
-    // ✅ OPTIMIZATION: Split into Hot and Normal matches based on API source
+    // OPTIMIZATION: Split into Hot and Normal matches based on API source
     const { hotMatches, groupedNormalMatches } = useMemo(() => {
         const hot = [];
         const normal = [];
@@ -56,7 +56,7 @@ export default function Home() {
         return { hotMatches: hot, groupedNormalMatches: grouped };
     }, [filteredMatchesList]);
 
-    // ✅ OPTIMIZATION: Memoize tournament select options
+    // OPTIMIZATION: Memoize tournament select options
     const tournamentOptions = useMemo(() => 
         tournaments.map((t) => ({
             value: t.id,
@@ -78,7 +78,7 @@ export default function Home() {
         [selectedTournaments, tournaments]
     );
 
-    // ✅ OPTIMIZATION: Separate useEffect for initial setup (runs once)
+    // OPTIMIZATION: Separate useEffect for initial setup (runs once)
     useEffect(() => {
         document.title = t("home.title");
         fetchData();
@@ -186,19 +186,20 @@ export default function Home() {
         }
     };
 
-    // ✅ OPTIMIZATION: Memoize MatchCard component
+    // OPTIMIZATION: Memoize MatchCard component
     const MatchCard = React.memo(({ match }) => {
         const getStatusBadge = () => {
             if (match.match_status === "live") {
                 return (
-                    <span className="bg-linear-to-r inline-flex animate-pulse items-center gap-1 rounded-full from-red-600 to-red-500 px-3 py-1.5 text-xs font-bold text-white shadow-lg">
-                        🔴 Live
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold text-white shadow-lg">
+                        <span className="h-2 w-2 rounded-full bg-white animate-ping" />
+                        Live
                     </span>
                 );
             } else if (match.match_status === "pending" && match.timestamp) {
                 return (
-                    <span className="bg-linear-to-r inline-flex items-center gap-1 rounded-full from-amber-500 to-amber-400 px-3 py-1.5 text-xs font-bold text-white shadow-lg">
-                        ⏱️ Sắp diễn ra
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-3 py-1 text-xs font-bold text-white shadow-lg">
+                        Sắp diễn ra
                     </span>
                 );
             }
@@ -374,14 +375,18 @@ export default function Home() {
                             .map((dateKey) => (
                                 <div key={dateKey}>
                                     <div className="mb-4">
-                                        <h2 className="border-b-2 border-blue-500 pb-2 text-lg font-bold text-zinc-100">
-                                            📅{" "}
-                                            {new Date(dateKey + "T00:00:00").toLocaleDateString("vi-VN", {
-                                                weekday: "long",
-                                                year: "numeric",
-                                                month: "long",
-                                                day: "numeric",
-                                            })}
+                                        <h2 className="border-b-2 border-blue-500 pb-2 text-lg font-bold text-zinc-100 flex items-center gap-2">
+                                            <svg className="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
+                                            <span>
+                                                {new Date(dateKey + "T00:00:00").toLocaleDateString("vi-VN", {
+                                                    weekday: "long",
+                                                    year: "numeric",
+                                                    month: "long",
+                                                    day: "numeric",
+                                                })}
+                                            </span>
                                         </h2>
                                     </div>
 

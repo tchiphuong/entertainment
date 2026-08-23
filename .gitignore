@@ -3,10 +3,15 @@ node_modules/
 dist/
 dist-ssr/
 build/
+out/
+.output/
+.vite/
 *.log
+*.log.*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
 # Environment & Secrets (Never commit credentials, tokens, or local envs)
 .env
@@ -16,26 +21,45 @@ yarn-error.log*
 *.key
 *.token
 *.pem
+*.cert
+*.p12
+*.pfx
+serviceAccount*.json
+firebase-admin-sdk*.json
 
-# DMCA, Scraper & Raw Stream Data (Raw API dumps, IPTV playlists, JSON collections)
+# Data Dumps, Stream Data & Playlists
 homepageLists*.json
 source-*.json
+*.dump.json
+*.cache.json
+*.data.json
+api-*.json
 *.m3u
 *.m3u8
 *.mpd
+*.ts
+*.aac
+*.vtt
+*.srt
 *.jsonl
+*.cache
 
-# Scratch Scripts, Local Player Dumps & Test HTMLs
-nguonc.html
+# Scratch Scripts, Local Dumps & Test Files
 player*.js
 out.js
 test*.js
 test*.html
+*.dump.*
+*.local.*
+*.sample.*
+temp/
+tmp/
 
 # Compressed Archives & Backups
 *.zip
 *.tar
 *.tar.gz
+*.tgz
 *.rar
 *.7z
 *.bak
@@ -52,11 +76,15 @@ skills-lock.json
 # Linter, Testing & Cache
 .eslintcache
 coverage/
+.test/
+scripts/
 
 # IDE & OS Files
 .vscode/
 .idea/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 .DS_Store
 Thumbs.db

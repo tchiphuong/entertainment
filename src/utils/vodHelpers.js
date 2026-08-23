@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 
 /**
  * Hook để lấy query parameters từ URL
@@ -15,13 +15,17 @@ export function useLocalStorage(key, initial) {
         try {
             const v = localStorage.getItem(key);
             return v ? JSON.parse(v) : initial;
-        } catch (e) { return initial; }
+        } catch {
+            return initial;
+        }
     });
 
     useEffect(() => {
         try {
             localStorage.setItem(key, JSON.stringify(state));
-        } catch (e) {}
+        } catch {
+            // Bỏ qua lỗi quota exceeded
+        }
     }, [key, state]);
 
     return [state, setState];
@@ -45,8 +49,8 @@ export function getEpisodeKey(episodeSlug, episodeName = "") {
     }
     if (!slugStr) return null;
     if (slugStr.toLowerCase() === "full") return "full";
-    const numberMatch = slugStr.match(/\d+/);
-    if (numberMatch) return parseInt(numberMatch[0], 10);
+    const numberMatch = /\d+/.exec(slugStr);
+    if (numberMatch) return Number.parseInt(numberMatch[0], 10);
     return slugStr;
 }
 
@@ -59,14 +63,14 @@ export function normalizeKey(key) {
     if (key === null || key === undefined) return key;
     if (typeof key === "number") return key;
     const s = String(key).trim();
-    if (/^\d+$/.test(s)) return parseInt(s, 10);
+    if (/^\d+$/.test(s)) return Number.parseInt(s, 10);
     return s;
 }
 
 /**
  * So sánh 2 episode key (hỗ trợ cả string và number)
- * @param {any} key1 
- * @param {any} key2 
+ * @param {any} key 
+ * @param {any} key 
  * @returns {boolean}
  */
 export function compareEpisodeKeys(key1, key2) {
@@ -110,8 +114,11 @@ export function slugToServerName(slug) {
  */
 export function extractServerType(serverName) {
     if (!serverName) return "";
-    const match = serverName.match(/\(([^)]+)\)$/);
-    if (match) return match[1];
+    const lastOpen = serverName.lastIndexOf("(");
+    const lastClose = serverName.lastIndexOf(")");
+    if (lastOpen !== -1 && lastClose > lastOpen && lastClose === serverName.length - 1) {
+        return serverName.slice(lastOpen + 1, lastClose);
+    }
     if (serverName.includes("Vietsub")) return "Vietsub";
     if (serverName.includes("Thuyết Minh")) return "Thuyết Minh";
     if (serverName.includes("Lồng Tiếng")) return "Lồng Tiếng";
@@ -161,33 +168,27 @@ export function cleanM3U8Content(text, baseURL = "") {
  */
 export function getMovieImage(imagePath, source, CONFIG = {}) {
     if (!imagePath) {
-        const base = typeof import.meta !== "undefined" && import.meta.env && import.meta.env.BASE_URL ? import.meta.env.BASE_URL : "/";
+        const base = import.meta?.env?.BASE_URL || "/";
         return `${base}no-poster.svg`;
     }
 
-    if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
-        if (source === "source_k" || source === "source_o") {
-            const hostname = (() => {
-                try { return new URL(imagePath).hostname || ""; } catch (e) { return ""; }
-            })();
-
-            if (hostname.indexOf("phimimg.com") !== -1 || hostname.indexOf("phimapi.com") !== -1 || hostname.indexOf("img.ophim.live") !== -1) {
-                const domain = source === "source_k" ? CONFIG.APP_DOMAIN_SOURCE_K : CONFIG.APP_DOMAIN_SOURCE_O_FRONTEND;
-                if (source === "source_o") return imagePath;
-                return `${domain}/image.php?url=${encodeURIComponent(imagePath)}`;
-            }
-        }
+    const isHttp = imagePath.startsWith("http://") || imagePath.startsWith("https://");
+    if (isHttp) {
         return imagePath;
     }
 
-    const cdnUrl = `${source === "source_k" ? CONFIG.APP_DOMAIN_SOURCE_K_CDN_IMAGE : CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE}/${imagePath}`;
-    if (source === "source_k" || source === "source_o") {
-        const domain = source === "source_k" ? CONFIG.APP_DOMAIN_SOURCE_K : CONFIG.APP_DOMAIN_SOURCE_O_FRONTEND;
-        if (source === "source_o") return cdnUrl;
-        return `${domain}/image.php?url=${encodeURIComponent(cdnUrl)}`;
+    if (source === "source_c") {
+        const cdnC = CONFIG.APP_DOMAIN_SOURCE_C || import.meta.env.VITE_SOURCE_C_API;
+        return `${cdnC}/api/uploads/films/${imagePath}`;
     }
 
-    return cdnUrl;
+    if (source === "source_o") {
+        const cdnO = CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE || import.meta.env.VITE_SOURCE_O_CDN_IMAGE;
+        return `${cdnO}/${imagePath}`;
+    }
+
+    const cdnK = CONFIG.APP_DOMAIN_SOURCE_K_CDN_IMAGE || import.meta.env.VITE_SOURCE_K_CDN_IMAGE;
+    return `${cdnK}/${imagePath}`;
 }
 
 /**
@@ -217,6 +218,63 @@ export function getQualityBadge(quality) {
     return quality || "";
 }
 
+const ROMAN_SEASON_MAP = {
+    i: 1,
+    ii: 2,
+    iii: 3,
+    iv: 4,
+    v: 5,
+    vi: 6,
+    vii: 7,
+    viii: 8,
+    ix: 9,
+    x: 10,
+};
+
+const matchKeywordSeason = (text) => {
+    const kwMatch = /(?:ph[aâầ]n|season|m[uù]a|ss|part)\.?\s*(\d{1,2})/i.exec(text);
+    if (kwMatch?.[1]) {
+        const num = Number.parseInt(kwMatch[1], 10);
+        if (num > 0 && num <= 50) return num;
+    }
+    return null;
+};
+
+const matchRomanSeason = (text) => {
+    const romanMatch = /(?:ph[aâầ]n|season|m[uù]a)\.?\s*(i{1,3}|iv|v|vi{0,3}|ix|x)\b/i.exec(text);
+    if (romanMatch?.[1]) {
+        const roman = romanMatch[1].toLowerCase();
+        if (ROMAN_SEASON_MAP[roman]) return ROMAN_SEASON_MAP[roman];
+    }
+    return null;
+};
+
+const matchPrefixSSeason = (text) => {
+    const sMatch = /(?:^|\b|\s|-)s(\d{1,2})(?:$|\b|\s|-|\.)/i.exec(text);
+    if (sMatch?.[1]) {
+        const num = Number.parseInt(sMatch[1], 10);
+        if (num > 0 && num <= 50) return num;
+    }
+    return null;
+};
+
+const matchSlugTrailingSeason = (movie) => {
+    const isSeries =
+        movie.type === "tv" ||
+        movie.type === "series" ||
+        movie.chieurap === false ||
+        Boolean(movie.episode_current);
+
+    if (isSeries && movie.slug) {
+        const slugNumMatch = /(?:^|-)(\d{1,2})$/.exec(movie.slug.trim());
+        if (slugNumMatch?.[1]) {
+            const num = Number.parseInt(slugNumMatch[1], 10);
+            if (num > 1 && num <= 50) return num;
+        }
+    }
+    return null;
+};
+
 /**
  * Trích xuất số season từ thông tin phim (tmdb object, name, origin_name, slug)
  * @param {object} movie
@@ -230,11 +288,57 @@ export function extractSeasonNumber(movie) {
     if (movie.season && Number(movie.season) > 0) {
         return Number(movie.season);
     }
-    const textToMatch = `${movie.slug || ""} ${movie.name || ""} ${movie.origin_name || ""}`;
-    const match = textToMatch.match(/(?:^|[\s_(\[-])(?:phan|phần|season|mùa|mua|ss|p\.?)\s*[-_]?\s*(\d+)(?:$|[\s_)\]-])/i);
-    if (match && match[1]) {
-        const num = parseInt(match[1], 10);
-        if (num > 0 && num <= 50) return num;
+
+    const text = [
+        movie.slug,
+        movie.name,
+        movie.origin_name,
+        movie.episode_current,
+    ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+    return (
+        matchKeywordSeason(text) ||
+        matchRomanSeason(text) ||
+        matchPrefixSSeason(text) ||
+        matchSlugTrailingSeason(movie)
+    );
+}
+
+/**
+ * Lấy khóa duy nhất (Unique Key) cho một phim để gộp các bản ghi trùng nhau
+ * - Nếu có TMDB ID:
+ *   + Phim bộ (hoặc có season): `tmdb_${tmdbId}_s${season}` hoặc `tmdb_${tmdbId}_${slug}`
+ *   + Phim lẻ: `tmdb_${tmdbId}`
+ * - Nếu không có TMDB ID: fallback về `slug`
+ * @param {object} movie
+ * @returns {string}
+ */
+export function getMovieUniqueKey(movie) {
+    if (!movie) return "";
+
+    const tmdbId = movie.tmdb?.id || movie.tmdbId;
+    const season = extractSeasonNumber(movie);
+
+    if (tmdbId) {
+        if (season) {
+            return `tmdb_${tmdbId}_s${season}`;
+        }
+        const type = movie.tmdb?.type || movie.type;
+        const isSeries =
+            type === "tv" ||
+            type === "series" ||
+            movie.chieurap === false ||
+            Boolean(movie.episode_current);
+
+        // Đối với phim bộ: nếu không tách được season cụ thể, dùng slug để chống gộp đè các mùa khác nhau
+        if (isSeries) {
+            return movie.slug ? `tmdb_${tmdbId}_${movie.slug}` : `tmdb_${tmdbId}_s1`;
+        }
+        return `tmdb_${tmdbId}`;
     }
-    return null;
+
+    return movie.slug ? `slug_${movie.slug}` : `id_${movie._id || movie.id || ""}`;
 }

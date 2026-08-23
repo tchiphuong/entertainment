@@ -24,7 +24,11 @@ import {
 import { useAuth } from "../../contexts/AuthContext";
 import {
     fetchHistoryFromFirestore,
+    dedupeHistory,
 } from "../../services/firebaseHelpers";
+import { getMovieUniqueKey } from "../../utils/vodHelpers";
+import { tmdbService } from "../../services/vod/tmdbService";
+import ActorAvatar from "../../components/vod/ActorAvatar";
 
 const filterMetadataCache = new Map();
 
@@ -154,7 +158,7 @@ export const buildSourceKOConfig = (sourceId, paramsContext) => {
         activeListContext,
     } = paramsContext;
 
-    let typeVal = "";
+    let typeVal;
     let useV1Val = false;
     let urlParams = {};
 
@@ -236,7 +240,7 @@ export const buildSourceCConfig = (paramsContext) => {
         return null;
     }
 
-    let typeVal = "";
+    let typeVal;
     let urlParams = {};
 
     if (currentQuery) {
@@ -305,13 +309,17 @@ export const aggregateItems = ({
     historyItems,
     isFavoritesCategory,
     favoriteItems,
+    currentActor,
+    actorMovies,
+    currentPage = 1,
+    pageSize = 24,
     isMergedView,
     sections,
     SOURCES,
 }) => {
-    let items = [];
+    let items;
     let totalPages = 1;
-    let totalItemsCount = 0;
+    let totalItemsCount;
 
     if (isHistoryCategory) {
         items = historyItems;
@@ -319,17 +327,26 @@ export const aggregateItems = ({
     } else if (isFavoritesCategory) {
         items = favoriteItems;
         totalItemsCount = favoriteItems.length;
+    } else if (currentActor && actorMovies && actorMovies.length > 0) {
+        totalItemsCount = actorMovies.length;
+        totalPages = Math.ceil(actorMovies.length / pageSize) || 1;
+        const startIndex = (currentPage - 1) * pageSize;
+        items = actorMovies.slice(startIndex, startIndex + pageSize);
     } else if (isMergedView) {
         const mergedItems = [];
-        const seenSlugs = new Set();
+        const seenKeys = new Set();
 
         [SOURCES.SOURCE_O, SOURCES.SOURCE_K, SOURCES.SOURCE_C].forEach((id) => {
             const section = sections[id];
             if (section?.items) {
                 section.items.forEach((item) => {
-                    if (!seenSlugs.has(item.slug)) {
-                        seenSlugs.add(item.slug);
-                        mergedItems.push(item);
+                    const uniqueKey = getMovieUniqueKey(item);
+                    if (uniqueKey && !seenKeys.has(uniqueKey)) {
+                        seenKeys.add(uniqueKey);
+                        mergedItems.push({
+                            ...item,
+                            source: item.source || id,
+                        });
                     }
                 });
             }
@@ -405,8 +422,23 @@ export const getSlugName = (slug, list) => {
               .join(" ");
 };
 
+const getCategoryAndTypeParts = (activeListContext, currentCategory, availableCategories, t) => {
+    if (currentCategory === "top-view" || activeListContext === "top-view") {
+        return [t("vods.topViews") || "Top Lượt Xem"];
+    }
+    const parts = [];
+    if (activeListContext) {
+        parts.push(getSlugName(activeListContext, FILTER_TYPE_LIST));
+    }
+    if (currentCategory) {
+        parts.push(`Thể loại: ${getSlugName(currentCategory, availableCategories)}`);
+    }
+    return parts;
+};
+
 export const generateListingTitle = ({
     currentQuery,
+    currentActor,
     activeListContext,
     currentCategory,
     currentCountry,
@@ -417,42 +449,34 @@ export const generateListingTitle = ({
     availableCountries,
     t,
 }) => {
-    let titleParts = [];
-    if (currentQuery) {
-        titleParts.push(
-            t("vods.resultsFor", { query: currentQuery }) ||
-                `Tìm kiếm: ${currentQuery}`,
-        );
-    } else {
-        if (currentCategory === "top-view" || activeListContext === "top-view") {
-            titleParts.push(t("vods.topViews") || "Top Lượt Xem");
-        } else {
-            if (activeListContext) {
-                titleParts.push(getSlugName(activeListContext, FILTER_TYPE_LIST));
-            }
-            if (currentCategory) {
-                titleParts.push(
-                    `Thể loại: ${getSlugName(currentCategory, availableCategories)}`,
-                );
-            }
-        }
-        if (currentCountry) {
-            titleParts.push(
-                `Quốc gia: ${getSlugName(currentCountry, availableCountries)}`,
-            );
-        }
-        if (currentYear) {
-            titleParts.push(`Năm: ${currentYear}`);
-        }
-
-        if (isHistoryCategory) {
-            titleParts = [t("vods.history") || "Lịch sử xem phim"];
-        } else if (isFavoritesCategory) {
-            titleParts = [t("vods.favorites") || "Phim yêu thích"];
-        } else if (titleParts.length === 0) {
-            titleParts.push(t("vods.newMovies") || "Phim mới cập nhật");
-        }
+    if (currentActor) {
+        return t("vods.actorResults", { name: currentActor }) || `Diễn viên: ${currentActor}`;
     }
+    if (currentQuery) {
+        return t("vods.resultsFor", { query: currentQuery }) || `Tìm kiếm: ${currentQuery}`;
+    }
+    if (isHistoryCategory) {
+        return t("vods.history") || "Lịch sử xem phim";
+    }
+    if (isFavoritesCategory) {
+        return t("vods.favorites") || "Phim yêu thích";
+    }
+
+    const titleParts = [
+        ...getCategoryAndTypeParts(activeListContext, currentCategory, availableCategories, t),
+    ];
+
+    if (currentCountry) {
+        titleParts.push(`Quốc gia: ${getSlugName(currentCountry, availableCountries)}`);
+    }
+    if (currentYear) {
+        titleParts.push(`Năm: ${currentYear}`);
+    }
+
+    if (titleParts.length === 0) {
+        titleParts.push(t("vods.newMovies") || "Phim mới cập nhật");
+    }
+
     return titleParts.join(" • ");
 };
 
@@ -550,7 +574,8 @@ export const useVodHistory = (isHistoryCategory, currentUser, t) => {
                     rawHistory = localHistory ? JSON.parse(localHistory) : [];
                 }
 
-                setHistoryItems(normalizeLibraryItems(rawHistory, t));
+                const dedupedHistory = dedupeHistory(rawHistory);
+                setHistoryItems(normalizeLibraryItems(dedupedHistory, t));
             } catch (error) {
                 console.error("Load history category error:", error);
                 setHistoryItems([]);
@@ -576,6 +601,66 @@ export const useVodFavorites = (isFavoritesCategory, rawFavorites, t) => {
     }, [isFavoritesCategory, rawFavorites, t]);
 
     return { favoriteItems, favoriteLoading };
+};
+
+export const useActorDetail = (currentActor, searchParams) => {
+    const [actorDetail, setActorDetail] = useState(null);
+    const [actorMovies, setActorMovies] = useState([]);
+    const [actorLoading, setActorLoading] = useState(false);
+
+    useEffect(() => {
+        if (!currentActor) {
+            setActorDetail(null);
+            setActorMovies([]);
+            return;
+        }
+
+        const isNumericId = /^\d+$/.test(currentActor);
+        setActorLoading(true);
+
+        const loadData = async () => {
+            try {
+                let personId = isNumericId ? currentActor : null;
+
+                if (!personId) {
+                    const baseUrl = import.meta.env.VITE_TMDB_BASE_URL;
+                    const apiKey = import.meta.env.VITE_TMDB_API_KEY;
+                    const searchUrl = `${baseUrl}/search/person?api_key=${apiKey}&query=${encodeURIComponent(currentActor)}&language=vi-VN`;
+                    const sRes = await fetch(searchUrl);
+                    if (sRes.ok) {
+                        const sData = await sRes.json();
+                        if (sData.results?.[0]?.id) {
+                            personId = sData.results[0].id;
+                        }
+                    }
+                }
+
+                if (personId) {
+                    const [detail, credits] = await Promise.all([
+                        tmdbService.fetchTMDBPersonDetail(personId),
+                        tmdbService.fetchTMDBPersonCredits(personId),
+                    ]);
+                    if (detail) setActorDetail(detail);
+                    if (credits?.items?.length) setActorMovies(credits.items);
+                } else {
+                    setActorDetail({
+                        name: currentActor,
+                        profile_path: null,
+                    });
+                }
+            } catch (err) {
+                console.error("Error loading actor data:", err);
+            } finally {
+                setActorLoading(false);
+            }
+        };
+
+        loadData();
+    }, [currentActor]);
+
+    const actorName = actorDetail?.name || searchParams.get("name") || currentActor || "";
+
+    return { actorDetail, actorMovies, actorLoading, actorName };
 };
 
 export const useSearchInput = (currentQuery, searchParams, setSearchParams) => {
@@ -670,14 +755,16 @@ const DANH_SACH_TYPES = new Set([
     "phim-sap-chieu",
 ]);
 
-export const useListingParams = (category, country, searchParams) => {
+export const useListingParams = (category, country, searchParams, actor = "") => {
     const getUrlParam = (name) => {
         const fromParams = searchParams.get(name);
         if (fromParams) return fromParams;
         return new URLSearchParams(window.location.search).get(name) || "";
     };
 
-    const currentQuery = getUrlParam("q");
+    const currentActor = getUrlParam("actor") || actor || "";
+    const rawQuery = getUrlParam("q");
+    const currentQuery = rawQuery || currentActor;
     const currentPage = Number.parseInt(getUrlParam("page") || "1");
     const currentYear = getUrlParam("year");
     const activeSource = getUrlParam("source") || "all";
@@ -696,6 +783,7 @@ export const useListingParams = (category, country, searchParams) => {
 
     return {
         currentQuery,
+        currentActor,
         currentPage,
         currentYear,
         activeSource,
@@ -710,13 +798,56 @@ export const useListingParams = (category, country, searchParams) => {
     };
 };
 
+export const getRawSearchCategories = ({
+    currentActor,
+    isMergedView,
+    isLibraryCategory,
+    activeSource,
+    paramsContext,
+    finalTitle,
+    SOURCES,
+}) => {
+    if (currentActor) return [];
+    if (isMergedView) {
+        return [
+            buildSourceConfig(SOURCES.SOURCE_K, paramsContext, { title: "Source K" }),
+            buildSourceConfig(SOURCES.SOURCE_C, paramsContext, { title: "Source C" }),
+            // buildSourceConfig(SOURCES.SOURCE_O, paramsContext, { title: "Source O" }), // Tạm disabled
+        ];
+    }
+    if (!isLibraryCategory) {
+        return [
+            buildSourceConfig(activeSource || SOURCES.SOURCE_K, paramsContext, {
+                id: "listing",
+                title: finalTitle,
+            }),
+        ];
+    }
+    return [];
+};
+
+export const computeListingLoading = ({
+    isHistoryCategory,
+    historyLoading,
+    isFavoritesCategory,
+    favoriteLoading,
+    currentActor,
+    actorLoading,
+    apiLoading,
+}) => {
+    if (isHistoryCategory) return historyLoading;
+    if (isFavoritesCategory) return favoriteLoading;
+    if (currentActor) return actorLoading;
+    return apiLoading;
+};
+
 export default function Listing() {
-    const { country, category } = useParams();
+    const { country, category, actor } = useParams();
     const [searchParams, setSearchParams] = useSearchParams();
     const navigate = useNavigate();
     const { t, i18n } = useTranslation();
 
-    const pageSize = 12;
+    const pageSize = 24;
     const { getImageUrl, handleImageError } = useImageFallback();
     const { currentUser } = useAuth();
     const { favorites: rawFavorites } = useVodContext();
@@ -724,6 +855,7 @@ export default function Listing() {
 
     const {
         currentQuery,
+        currentActor,
         currentPage,
         currentYear,
         activeSource,
@@ -735,15 +867,19 @@ export default function Listing() {
         isLibraryCategory,
         isMergedView,
         currentTimeframe,
-    } = useListingParams(category, country, searchParams);
+    } = useListingParams(category, country, searchParams, actor);
 
     // Hooks thay thế logic tải Lịch sử và Yêu thích
     const { availableCategories, availableCountries, metadataLoading } = useVodMetadata(activeSource, filterMetadataCache);
     const { historyItems, historyLoading } = useVodHistory(isHistoryCategory, currentUser, t);
     const { favoriteItems, favoriteLoading } = useVodFavorites(isFavoritesCategory, rawFavorites, t);
+    const { actorDetail, actorMovies, actorLoading, actorName } = useActorDetail(currentActor, searchParams);
+
+    const effectiveQuery = currentActor ? (actorName || currentQuery) : currentQuery;
 
     const finalTitle = generateListingTitle({
-        currentQuery,
+        currentQuery: effectiveQuery,
+        currentActor: actorName || currentActor,
         activeListContext,
         currentCategory,
         currentCountry,
@@ -764,7 +900,7 @@ export default function Listing() {
     );
 
     const paramsContext = {
-        currentQuery,
+        currentQuery: effectiveQuery,
         currentYear,
         currentCategory,
         currentCountry,
@@ -774,21 +910,15 @@ export default function Listing() {
         timeframe: currentTimeframe,
     };
 
-    let rawSearchCategories = [];
-    if (isMergedView) {
-        rawSearchCategories = [
-            buildSourceConfig(SOURCES.SOURCE_O, paramsContext, { title: "OPhim" }),
-            buildSourceConfig(SOURCES.SOURCE_K, paramsContext, { title: "KKPhim" }),
-            buildSourceConfig(SOURCES.SOURCE_C, paramsContext, { title: "NguonC" }),
-        ];
-    } else if (!isLibraryCategory) {
-        rawSearchCategories = [
-            buildSourceConfig(activeSource || SOURCES.SOURCE_K, paramsContext, {
-                id: "listing",
-                title: finalTitle,
-            }),
-        ];
-    }
+    const rawSearchCategories = getRawSearchCategories({
+        currentActor,
+        isMergedView,
+        isLibraryCategory,
+        activeSource,
+        paramsContext,
+        finalTitle,
+        SOURCES,
+    });
     const searchCategories = rawSearchCategories.filter(Boolean);
 
     const { sections, loading: apiLoading } = useVodData(searchCategories);
@@ -799,6 +929,10 @@ export default function Listing() {
         historyItems,
         isFavoritesCategory,
         favoriteItems,
+        currentActor,
+        actorMovies,
+        currentPage,
+        pageSize,
         isMergedView,
         sections,
         SOURCES,
@@ -809,6 +943,11 @@ export default function Listing() {
         window.scrollTo({ top: 0, behavior: "smooth" });
     }, [currentPage]);
 
+    // Cập nhật tiêu đề trang động
+    useEffect(() => {
+        document.title = `${finalTitle || "Danh Mục"} • VOD Hub`;
+    }, [finalTitle]);
+
     const handlePageChange = (newPage) => {
         if (newPage >= 1 && newPage <= totalPages) {
             const newParams = new URLSearchParams(searchParams);
@@ -817,12 +956,15 @@ export default function Listing() {
         }
     };
 
-    let isLoading = apiLoading;
-    if (isHistoryCategory) {
-        isLoading = historyLoading;
-    } else if (isFavoritesCategory) {
-        isLoading = favoriteLoading;
-    }
+    const isLoading = computeListingLoading({
+        isHistoryCategory,
+        historyLoading,
+        isFavoritesCategory,
+        favoriteLoading,
+        currentActor,
+        actorLoading,
+        apiLoading,
+    });
 
     // Thanh tìm kiếm inline với debounce
     const {
@@ -851,62 +993,91 @@ export default function Listing() {
                         </span>
                     </nav>
 
-                    {/* Thanh tìm kiếm inline */}
-                    <form onSubmit={handleSearchSubmit} className="mb-8">
-                        <div className="relative flex items-center">
-                            {/* Icon search */}
-                            <svg
-                                className="pointer-events-none absolute left-4 h-5 w-5 text-zinc-500"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    {/* Header thông tin diễn viên nếu đang xem theo diễn viên */}
+                    {currentActor && (
+                        <div className="mb-8 flex flex-col items-center gap-6 rounded-3xl border border-zinc-800 bg-zinc-900/60 p-6 md:flex-row md:items-center md:gap-8">
+                            <div className="h-24 w-24 shrink-0 overflow-hidden rounded-full border-2 border-red-600/60 shadow-xl md:h-28 md:w-28">
+                                <ActorAvatar
+                                    name={actorName}
+                                    profilePath={actorDetail?.profile_path}
                                 />
-                            </svg>
-                            <input
-                                ref={searchInputRef}
-                                type="text"
-                                value={searchInput}
-                                onChange={(e) =>
-                                    handleSearchChange(e.target.value)
-                                }
-                                placeholder={t("common.search") + "..."}
-                                className="w-full rounded-2xl border border-zinc-800 bg-zinc-900/80 py-3.5 pl-12 pr-12 text-base font-medium text-white placeholder-zinc-600 outline-none transition-all focus:border-red-600/50 focus:ring-1 focus:ring-red-600/30 md:text-lg"
-                            />
-                            {/* Nút xóa */}
-                            {searchInput && (
-                                <button
-                                    type="button"
-                                    onClick={clearSearch}
-                                    className="absolute right-4 rounded-full p-1 text-zinc-500 transition-colors hover:text-white"
-                                >
-                                    <svg
-                                        className="h-5 w-5"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        viewBox="0 0 24 24"
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            strokeWidth={2}
-                                            d="M6 18L18 6M6 6l12 12"
-                                        />
-                                    </svg>
-                                </button>
-                            )}
+                            </div>
+                            <div className="flex-1 text-center md:text-left space-y-2">
+                                <div className="flex flex-wrap items-center justify-center gap-3 md:justify-start">
+                                    <span className="rounded-full bg-red-600 px-3 py-0.5 text-xs font-black uppercase tracking-wider text-white">
+                                        {t("vods.actor") || "Diễn viên"}
+                                    </span>
+                                    {actorDetail?.place_of_birth && (
+                                        <span className="text-xs font-medium text-zinc-400">
+                                            {actorDetail.place_of_birth}
+                                        </span>
+                                    )}
+                                </div>
+                                <h1 className="text-2xl font-black text-white md:text-3xl">
+                                    {actorName}
+                                </h1>
+                            </div>
                         </div>
-                    </form>
+                    )}
+
+                    {/* Thanh tìm kiếm inline (chỉ hiển thị khi không phải trang actor profile) */}
+                    {!currentActor && (
+                        <form onSubmit={handleSearchSubmit} className="mb-8">
+                            <div className="relative flex items-center">
+                                {/* Icon search */}
+                                <svg
+                                    className="pointer-events-none absolute left-4 h-5 w-5 text-zinc-500"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                    />
+                                </svg>
+                                <input
+                                    ref={searchInputRef}
+                                    type="text"
+                                    value={searchInput}
+                                    onChange={(e) =>
+                                        handleSearchChange(e.target.value)
+                                    }
+                                    placeholder={t("common.search") + "..."}
+                                    className="w-full rounded-2xl border border-zinc-800 bg-zinc-900/80 py-3.5 pl-12 pr-12 text-base font-medium text-white placeholder-zinc-600 outline-none transition-all focus:border-red-600/50 focus:ring-1 focus:ring-red-600/30 md:text-lg"
+                                />
+                                {/* Nút xóa */}
+                                {searchInput && (
+                                    <button
+                                        type="button"
+                                        onClick={clearSearch}
+                                        className="absolute right-4 rounded-full p-1 text-zinc-500 transition-colors hover:text-white"
+                                    >
+                                        <svg
+                                            className="h-5 w-5"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M6 18L18 6M6 6l12 12"
+                                            />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                        </form>
+                    )}
 
                     <div className="flex flex-col gap-6 border-b border-zinc-900 pb-6 md:flex-row md:items-end md:justify-between">
                         <div>
                             <h1 className="text-3xl font-black uppercase tracking-tighter text-white md:text-5xl">
-                                {finalTitle}
+                                {currentActor ? (t("vods.actorFilmography") || "Danh sách tác phẩm đã tham gia") : finalTitle}
                             </h1>
                             <div className="mt-2 flex items-center gap-4">
                                 <p className="text-sm text-zinc-500">
@@ -914,7 +1085,7 @@ export default function Listing() {
                                         count: totalItemsCount,
                                     })}
                                 </p>
-                                {!isLibraryCategory && (
+                                {!isLibraryCategory && !currentActor && (
                                     <button
                                         type="button"
                                         onClick={() =>
@@ -1034,6 +1205,7 @@ export default function Listing() {
                                 {FILTER_SOURCES.map((src) => (
                                     <button
                                         key={src.id}
+                                        type="button"
                                         onClick={() =>
                                             handleFilterSelect("source", src.id)
                                         }
@@ -1058,6 +1230,7 @@ export default function Listing() {
                                 {FILTER_TYPE_LIST.map((type) => (
                                     <button
                                         key={type.slug}
+                                        type="button"
                                         onClick={() =>
                                             handleFilterSelect(
                                                 "type_list",
@@ -1098,6 +1271,7 @@ export default function Listing() {
                                     {availableCountries.map((c) => (
                                         <button
                                             key={c.slug}
+                                            type="button"
                                             onClick={() =>
                                                 handleFilterSelect(
                                                     "country",
@@ -1137,6 +1311,7 @@ export default function Listing() {
                                     {availableCategories.map((cat) => (
                                         <button
                                             key={cat.slug}
+                                            type="button"
                                             onClick={() =>
                                                 handleFilterSelect(
                                                     "category",
@@ -1166,6 +1341,7 @@ export default function Listing() {
                                 {FILTER_YEARS.map((y) => (
                                     <button
                                         key={y}
+                                        type="button"
                                         onClick={() =>
                                             handleFilterSelect("year", y)
                                         }
@@ -1190,6 +1366,7 @@ export default function Listing() {
                                 activeSource !== SOURCES.SOURCE_K)) && (
                             <div className="flex justify-end">
                                 <button
+                                    type="button"
                                     onClick={clearAllFilters}
                                     className="flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-800 px-5 py-2 text-xs font-bold text-zinc-400 transition-all hover:border-red-600 hover:text-white active:scale-95"
                                 >
@@ -1216,7 +1393,7 @@ export default function Listing() {
                 {isLoading ? (
                     <MovieGridSkeleton count={pageSize} />
                 ) : (
-                    <div className="grid grid-cols-2 gap-8 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+                    <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-6 2xl:grid-cols-8">
                         {items.map((movie) => (
                             <VodMovieCard
                                 key={movie.slug}
@@ -1234,6 +1411,7 @@ export default function Listing() {
                     <div className="mt-16 flex flex-col items-center gap-6">
                         <div className="flex items-center justify-center gap-2">
                             <button
+                                type="button"
                                 onClick={() =>
                                     handlePageChange(currentPage - 1)
                                 }
@@ -1263,6 +1441,7 @@ export default function Listing() {
                                 ).map((pageNum) => (
                                     <button
                                         key={pageNum}
+                                        type="button"
                                         onClick={() =>
                                             handlePageChange(pageNum)
                                         }
@@ -1278,6 +1457,7 @@ export default function Listing() {
                             </div>
 
                             <button
+                                type="button"
                                 onClick={() =>
                                     handlePageChange(currentPage + 1)
                                 }
@@ -1334,6 +1514,7 @@ export default function Listing() {
                                 </span>
                             </div>
                             <button
+                                type="button"
                                 onClick={(e) => {
                                     const input =
                                         e.currentTarget.parentElement.querySelector(
@@ -1367,6 +1548,7 @@ export default function Listing() {
                             </p>
                         </div>
                         <button
+                            type="button"
                             onClick={() => navigate("/vod")}
                             className="rounded-full bg-zinc-800 px-6 py-2 text-sm font-bold text-white transition-all hover:bg-zinc-700"
                         >

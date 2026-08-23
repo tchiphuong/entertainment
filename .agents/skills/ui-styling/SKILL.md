@@ -32,12 +32,12 @@ Use when:
 
 ## Core Stack
 
-### Component Layer: shadcn/ui
-- Pre-built accessible components via Radix UI primitives
-- Copy-paste distribution model (components live in your codebase)
-- TypeScript-first with full type safety
-- Composable primitives for complex UIs
-- CLI-based installation and management
+### Component Layer: HeroUI v3 (`@heroui/react`, `@heroui/styles`)
+- Thư viện component chính thức của dự án cho mọi controls: Button, Input, ComboBox, Select, Modal, Drawer...
+- Kiến trúc Compound Components (React Aria + Tailwind CSS v4)
+- Không cần Provider (`<HeroUIProvider>` đã được loại bỏ ở v3)
+- Sử dụng prop `onPress` thay vì `onClick`
+- Semantic variants: `primary`, `secondary`, `tertiary`, `danger`, `outline`, `ghost`
 
 ### Styling Layer: Tailwind CSS
 - Utility-first CSS framework

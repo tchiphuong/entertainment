@@ -3,64 +3,97 @@ import {
     getDoc,
     setDoc,
     updateDoc,
-    arrayRemove,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import { extractSeasonNumber } from "../utils/vodHelpers";
 
 /**
- * Dedupe history array theo slug, merge episodes và giữ position cao nhất
+ * Lấy khóa định danh duy nhất cho một item trong history
+ */
+export const getHistoryItemKey = (item) => {
+    if (!item) return "";
+
+    const tmdbId =
+        item.tmdb?.id ||
+        item.tmdb_id ||
+        item.tmdbId ||
+        (typeof item.slug === "string" && item.slug.startsWith("tmdb-")
+            ? item.slug.replace("tmdb-", "")
+            : null);
+
+    const season = extractSeasonNumber(item);
+
+    if (tmdbId) {
+        return season && season > 1 ? `tmdb_${tmdbId}_s${season}` : `tmdb_${tmdbId}`;
+    }
+
+    if (item.slug && !item.slug.startsWith("tmdb-")) {
+        return `slug_${item.slug.trim()}`;
+    }
+
+    const name = (item.name || "").trim().toLowerCase();
+    return name ? `name_${name}` : `id_${item._id || item.id || item.slug || ""}`;
+};
+
+const mergeSingleEpisode = (mergedEpisodes, ep) => {
+    const epKey = String(ep.key);
+    const existingEp = mergedEpisodes.get(epKey);
+    if (!existingEp) {
+        mergedEpisodes.set(epKey, ep);
+        return;
+    }
+    const newPos = ep.position || 0;
+    const oldPos = existingEp.position || 0;
+    const newTime = new Date(ep.timestamp || 0).getTime();
+    const oldTime = new Date(existingEp.timestamp || 0).getTime();
+    if (newPos > oldPos || (newPos === oldPos && newTime > oldTime)) {
+        mergedEpisodes.set(epKey, ep);
+    }
+};
+
+const mergeTwoHistoryEntries = (existing, h) => {
+    const mergedEpisodes = new Map();
+    (existing.episodes || []).forEach((ep) => mergedEpisodes.set(String(ep.key), ep));
+    (h.episodes || []).forEach((ep) => mergeSingleEpisode(mergedEpisodes, ep));
+
+    const preferredSlug =
+        (existing.slug && !existing.slug.startsWith("tmdb-") ? existing.slug : null) ||
+        (h.slug && !h.slug.startsWith("tmdb-") ? h.slug : null) ||
+        existing.slug ||
+        h.slug;
+
+    const existingTime = new Date(existing.time || 0).getTime();
+    const hTime = new Date(h.time || 0).getTime();
+    const isNewer = hTime >= existingTime;
+
+    const merged = isNewer ? { ...existing, ...h } : { ...h, ...existing };
+    merged.slug = preferredSlug;
+    merged.episodes = Array.from(mergedEpisodes.values());
+    merged.time = isNewer ? (h.time || existing.time) : (existing.time || h.time);
+    merged.current_episode = isNewer
+        ? (h.current_episode || existing.current_episode)
+        : (existing.current_episode || h.current_episode);
+
+    return merged;
+};
+
+/**
+ * Dedupe history array theo TMDB ID / slug, merge episodes và giữ position cao nhất
  */
 export function dedupeHistory(rawHistory) {
     if (!Array.isArray(rawHistory)) return [];
 
     const dedupeMap = new Map();
     rawHistory.forEach((h) => {
-        if (!h || !h.slug) return;
-        const existing = dedupeMap.get(h.slug);
+        if (!h) return;
+        const key = getHistoryItemKey(h);
+        if (!key) return;
+
+        const existing = dedupeMap.get(key);
         if (!existing) {
-            dedupeMap.set(h.slug, { ...h });
+            dedupeMap.set(key, { ...h });
         } else {
-            // Merge 2 entries cùng slug
-            const mergedEpisodes = new Map();
-
-            // Episodes từ entry cũ
-            (existing.episodes || []).forEach((ep) => {
-                const key = String(ep.key);
-                mergedEpisodes.set(key, ep);
-            });
-
-            // Merge episodes từ entry mới, giữ position cao hơn
-            (h.episodes || []).forEach((ep) => {
-                const key = String(ep.key);
-                const existingEp = mergedEpisodes.get(key);
-                if (!existingEp) {
-                    mergedEpisodes.set(key, ep);
-                } else {
-                    const newPos = ep.position || 0;
-                    const oldPos = existingEp.position || 0;
-                    const newTime = new Date(ep.timestamp || 0).getTime();
-                    const oldTime = new Date(
-                        existingEp.timestamp || 0,
-                    ).getTime();
-                    if (
-                        newPos > oldPos ||
-                        (newPos === oldPos && newTime > oldTime)
-                    ) {
-                        mergedEpisodes.set(key, ep);
-                    }
-                }
-            });
-
-            // Giữ entry mới hơn
-            const existingTime = new Date(existing.time || 0).getTime();
-            const hTime = new Date(h.time || 0).getTime();
-            const merged =
-                hTime > existingTime
-                    ? { ...existing, ...h }
-                    : { ...h, ...existing };
-            merged.episodes = Array.from(mergedEpisodes.values());
-            merged.time = hTime > existingTime ? h.time : existing.time;
-            dedupeMap.set(h.slug, merged);
+            dedupeMap.set(key, mergeTwoHistoryEntries(existing, h));
         }
     });
 
@@ -128,7 +161,7 @@ export const fetchFavoritesFromFirestore = async (uid) => {
  * Tìm theo slug và merge thay vì dùng arrayUnion (gây trùng lặp)
  */
 export const addHistoryToFirestore = async (uid, item) => {
-    if (!uid || !item || !item.slug) return;
+    if (!uid || !item?.slug) return;
     try {
         const docRef = doc(db, "users", uid);
         const docSnap = await getDoc(docRef);
@@ -232,7 +265,7 @@ export const normalizeMovie = (movie) => {
  * Thêm item vào favorites trên Firestore (tìm theo slug, không trùng lặp)
  */
 export const addFavoriteToFirestore = async (uid, item) => {
-    if (!uid || !item || !item.slug) return;
+    if (!uid || !item?.slug) return;
     try {
         const docRef = doc(db, "users", uid);
         const docSnap = await getDoc(docRef);

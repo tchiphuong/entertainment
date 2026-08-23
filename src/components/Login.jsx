@@ -1,5 +1,5 @@
-import React from "react";
 import { useTranslation } from "react-i18next";
+import { Button } from "@heroui/react";
 import { auth, googleProvider } from "../services/firebase";
 import { signInWithPopup } from "firebase/auth";
 
@@ -22,9 +22,11 @@ export default function Login() {
                 <p className="mb-6 text-zinc-400">
                     {t("auth.loginPrompt")}
                 </p>
-                <button
-                    onClick={handleGoogleLogin}
-                    className="flex w-full items-center justify-center gap-3 rounded-lg bg-red-500 px-4 py-2 font-semibold text-white transition-colors hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                <Button
+                    variant="danger"
+                    fullWidth
+                    onPress={handleGoogleLogin}
+                    className="flex items-center justify-center gap-3 rounded-lg bg-red-600 px-4 py-2 font-semibold text-white transition-colors hover:bg-red-500"
                 >
                     <svg
                         className="h-5 w-5"
@@ -42,7 +44,7 @@ export default function Login() {
                         ></path>
                     </svg>
                     <span>{t("auth.loginWithGoogle")}</span>
-                </button>
+                </Button>
             </div>
         </div>
     );

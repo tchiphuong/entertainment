@@ -5,593 +5,16 @@ import React, {
     useMemo,
     useCallback,
 } from "react";
-import { Link, useSearchParams } from "react-router-dom";
-import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import shaka from "shaka-player/dist/shaka-player.ui.js";
 import "shaka-player/dist/controls.css";
-import "../styles/shaka-player.css";
+import {
+    fetchChannels,
+    handleImageFallbackError,
+} from "../services/tv/tvService";
 
 const PROXY_WORKER_URL = import.meta.env.VITE_PROXY_WORKER_URL || "";
-const IMAGE_PROXY_PREFIX = "https://external-content.duckduckgo.com/iu/?u=";
-const FALLBACK_LOGO_DATA_URI =
-    "data:image/svg+xml;utf8," +
-    encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96">
-    <rect width="96" height="96" rx="16" fill="#18181b"/>
-    <rect x="12" y="12" width="72" height="72" rx="12" fill="#27272a"/>
-    <path d="M26 62l13-14 10 10 12-13 9 9" fill="none" stroke="#a1a1aa" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="39" cy="34" r="6" fill="#71717a"/>
-</svg>
-`);
 
-const handleImageFallbackError = (event) => {
-    const target = event.currentTarget;
-    if (!target) return;
-    target.onerror = null;
-    target.src = FALLBACK_LOGO_DATA_URI;
-};
-
-const toProxyImageUrl = (rawUrl) => {
-    const url = String(rawUrl || "").trim();
-    if (!url) return null;
-    // Bỏ qua proxy cho Imgur hoặc nếu đã có proxy prefix
-    if (
-        url.startsWith("https://i.imgur.com") ||
-        url.startsWith(IMAGE_PROXY_PREFIX)
-    ) {
-        return url;
-    }
-    return `${IMAGE_PROXY_PREFIX}${encodeURIComponent(url)}`;
-};
-
-const fetchChannels = async () => {
-    const NEW_API_URL = import.meta.env.VITE_TV_API_URL || "";
-    const ACCESS_TOKEN = import.meta.env.VITE_TV_API_ACCESS_TOKEN || "";
-
-    let apiGroups = null;
-    let apiEpgs = [];
-    try {
-        console.log("Fetching channels from New API...");
-        const apiResponse = await fetch(NEW_API_URL, {
-            headers: { "X-Access-Token": ACCESS_TOKEN },
-            signal: AbortSignal.timeout(8000),
-        });
-
-        if (apiResponse.ok) {
-            const json = await apiResponse.json();
-            // Hỗ trợ format {epgs, groups} hoặc mảng trực tiếp
-            if (json && Array.isArray(json.groups)) {
-                apiGroups = json.groups;
-                apiEpgs = Array.isArray(json.epgs) ? json.epgs : [];
-                console.log(
-                    `Fetched ${apiGroups.length} groups, ${apiEpgs.length} EPG sources`,
-                );
-            } else if (Array.isArray(json)) {
-                apiGroups = json;
-            } else if (Array.isArray(json.data)) {
-                apiGroups = json.data;
-            }
-        }
-    } catch (apiError) {
-        console.warn("New API failed, falling back to M3U:", apiError.message);
-    }
-
-    // --- NEW JSON API PARSER (STANDARD) ---
-    if (Array.isArray(apiGroups)) {
-        const mappedGroups = apiGroups
-            .filter((groupItem) => groupItem.enabled !== false) // Ẩn group nếu enabled: false
-            .map((groupItem, gIdx) => {
-                const channelsInGroup = [];
-
-                if (Array.isArray(groupItem.channels)) {
-                    groupItem.channels.forEach((chItem, cIdx) => {
-                        // Ẩn kênh nếu enabled: false
-                        if (chItem.enabled === false) return;
-
-                        const configSources = [];
-                        if (Array.isArray(chItem.sources)) {
-                            chItem.sources.forEach((src) => {
-                                configSources.push({
-                                    file: src.url,
-                                    type:
-                                        src.type ||
-                                        (src.url.includes(".mpd")
-                                            ? "dash"
-                                            : "hls"),
-                                    label:
-                                        src.label || src.quality || "Default",
-                                    userAgent:
-                                        src.headers?.userAgent ||
-                                        src.ua ||
-                                        null,
-                                    referrer:
-                                        src.headers?.referrer ||
-                                        src.referer ||
-                                        null,
-                                    licenseType: src.drm?.licenseType || null,
-                                    clearKeys: src.drm?.keys || null,
-                                });
-                            });
-                        }
-
-                        // Không thêm kênh nếu không có nguồn phát nào khả dụng
-                        if (configSources.length === 0) return;
-
-                        const defaultUrl =
-                            chItem.url ||
-                            chItem.link ||
-                            configSources[0]?.file ||
-                            "";
-
-                        channelsInGroup.push({
-                            id: chItem.id || `api-ch-${gIdx}-${cIdx}`,
-                            name: chItem.name || "Unknown",
-                            logo: toProxyImageUrl(chItem.logo || chItem.image),
-                            url: defaultUrl,
-                            group: groupItem.name || "Khác",
-                            tvgId: chItem.tvgId || chItem.id,
-                            tags: chItem.tags || [],
-                            configSources: configSources,
-                        });
-                    });
-                }
-
-                return {
-                    id: groupItem.id || `api-g-${gIdx}`,
-                    name: groupItem.name || "Khác",
-                    logo: toProxyImageUrl(groupItem.logo),
-                    sortOrder: groupItem.sortOrder ?? 999,
-                    channels: channelsInGroup,
-                };
-            })
-            .filter((g) => g.channels.length > 0);
-
-        if (mappedGroups.length > 0) {
-            console.log(
-                `Successfully mapped and sorted ${mappedGroups.length} groups from New API`,
-            );
-            return { groups: mappedGroups, epgs: apiEpgs };
-        }
-    }
-
-    // --- FALLBACK LOGIC (M3U) ---
-    const channelSourcesEnv = import.meta.env.VITE_TV_CHANNEL_SOURCES || "";
-    const urls = channelSourcesEnv.split(",").filter((url) => url.trim());
-
-    const fetchPromises = urls.map(async (url) => {
-        try {
-            const response = await fetch(url, {
-                signal: AbortSignal.timeout(10000),
-            });
-            if (!response.ok) return null;
-            return await response.text();
-        } catch (error) {
-            return null;
-        }
-    });
-
-    const results = await Promise.all(fetchPromises);
-
-    // Merge tất cả content lại, với filter cho bongda2.m3u chỉ lấy group 10Cam
-    const allLines = results
-        .filter((text) => text) // Bỏ qua null
-        .flatMap((text, index) => {
-            const lines = text.split(/\r?\n/).map((l) => l.trim());
-
-            // Nếu là bongda2.m3u (index 1), chỉ lấy group 10Cam
-            if (urls[index].includes("bongda2.m3u")) {
-                const filtered = [];
-                let inTargetGroup = false;
-
-                for (let i = 0; i < lines.length; i++) {
-                    const line = lines[i];
-
-                    if (line.startsWith("#EXTINF")) {
-                        // Check group-title
-                        const groupMatch = line.match(/group-title="([^"]+)"/i);
-                        inTargetGroup = groupMatch && groupMatch[1] === "10Cam";
-
-                        if (inTargetGroup) {
-                            filtered.push(line);
-                        }
-                    } else if (inTargetGroup) {
-                        // Thêm các dòng tiếp theo (EXTVLCOPT, URL) cho channel này
-                        filtered.push(line);
-
-                        // Nếu là URL (không phải comment), reset flag
-                        if (line && !line.startsWith("#")) {
-                            inTargetGroup = false;
-                        }
-                    } else {
-                        // Giữ lại các dòng header như #EXTM3U
-                        if (line.startsWith("#EXTM3U")) {
-                            filtered.push(line);
-                        }
-                    }
-                }
-
-                return filtered;
-            }
-
-            return lines;
-        });
-
-    const channels = [];
-    const channelsByTvgId = {}; // Group channels by tvgId
-    const channelsByBaseName = {}; // Group channels by base name (bỏ quality suffix)
-    const groups = {};
-
-    // Helper function để extract base name (bỏ quality như HD, SD, FullHD, HD1, HD2, etc.)
-    const getBaseName = (name) => {
-        // Remove trailing quality indicators - match các pattern phổ biến
-        const cleaned = name
-            .replace(
-                /\s*(HD\s*Nhanh|FullHD|Full\s*HD|FHD|HD\d+|HD|SD|4K|UHD)(\s*\(\d+\))?\s*$/i,
-                "",
-            )
-            .trim();
-
-        return cleaned;
-    };
-
-    for (let i = 0; i < allLines.length; i++) {
-        const line = allLines[i];
-        if (!line) continue;
-        if (line.startsWith("#EXTINF")) {
-            const nameMatch = line.match(/,(.+)$/);
-            const name = nameMatch ? nameMatch[1].trim() : "Unknown";
-            const logoMatch = line.match(/tvg-logo="([^"]+)"/i);
-            const tvgIdMatch = line.match(/tvg-id="([^"]+)"/i);
-            const groupMatch = line.match(/group-title="([^"]+)"/i);
-
-            // Parse EXTVLCOPT options (referrer, user-agent, etc.) và KODIPROP (clearkey, license)
-            let referrer = null;
-            let userAgent = null;
-            let licenseType = null;
-            let licenseKey = null;
-            let clearKeys = []; // Array of {kid, key} objects
-
-            // Tìm các dòng EXTVLCOPT và KODIPROP trước URL
-            for (let j = i + 1; j < allLines.length; j++) {
-                const optLine = allLines[j];
-                // Dòng trống trong playlist có thể xuất hiện giữa metadata, không được break sớm
-                if (!optLine) continue;
-                if (optLine.startsWith("#EXTINF")) break;
-                // Gặp URL thì dừng parse metadata của item hiện tại
-                if (!optLine.startsWith("#")) break;
-
-                if (optLine.startsWith("#EXTVLCOPT:")) {
-                    const refMatch = optLine.match(/http-referrer=(.+)$/i);
-                    if (refMatch) {
-                        referrer = refMatch[1].trim();
-                    }
-                    const uaMatch = optLine.match(/http-user-agent=(.+)$/i);
-                    if (uaMatch) {
-                        userAgent = uaMatch[1].trim();
-                    }
-                }
-
-                // Parse KODIPROP cho DRM clearkey
-                if (optLine.startsWith("#KODIPROP:")) {
-                    // License type: clearkey, widevine, etc.
-                    const typeMatch = optLine.match(
-                        /inputstream\.adaptive\.license_type=(.+)$/i,
-                    );
-                    if (typeMatch) {
-                        licenseType = typeMatch[1].trim().toLowerCase();
-                    }
-
-                    // License key - có thể là format "kid:key" hoặc JSON
-                    const keyMatch = optLine.match(
-                        /inputstream\.adaptive\.license_key=(.+)$/i,
-                    );
-                    if (keyMatch) {
-                        licenseKey = keyMatch[1].trim().replace(/^"|"$/g, "");
-
-                        // Parse license key
-                        // Format 1: kid:key (hex format)
-                        // Format 2: {"keys":[{"kty":"oct","k":"...","kid":"..."}],"type":"temporary"}
-                        // Format 3: URL to license server
-
-                        if (
-                            licenseKey.includes(":") &&
-                            !licenseKey.startsWith("http") &&
-                            !licenseKey.startsWith("{")
-                        ) {
-                            // Format kid:key - có thể có nhiều cặp phân cách bởi dấu phẩy
-                            const pairs = licenseKey.split(",");
-                            pairs.forEach((pair) => {
-                                const parts = pair.trim().split(":");
-                                if (parts.length === 2) {
-                                    clearKeys.push({
-                                        kid: parts[0].trim(),
-                                        key: parts[1].trim(),
-                                    });
-                                }
-                            });
-                            console.log(
-                                `Parsed clearkey from m3u8: kid=${clearKeys[clearKeys.length - 1]?.kid}, key=${clearKeys[clearKeys.length - 1]?.key}`,
-                            );
-                        } else if (licenseKey.startsWith("{")) {
-                            // JSON format
-                            try {
-                                const json = JSON.parse(licenseKey);
-                                if (json.keys && Array.isArray(json.keys)) {
-                                    json.keys.forEach((k) => {
-                                        if (k.kid && k.k) {
-                                            // Base64url format - cần decode
-                                            clearKeys.push({
-                                                kid: k.kid,
-                                                key: k.k,
-                                                isBase64: true,
-                                            });
-                                        }
-                                    });
-                                }
-                            } catch (e) {
-                                console.warn(
-                                    "Failed to parse clearkey JSON:",
-                                    e,
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
-            // find next non-comment line as url
-            let url = "";
-            for (let j = i + 1; j < allLines.length; j++) {
-                if (allLines[j] && !allLines[j].startsWith("#")) {
-                    url = allLines[j];
-                    break;
-                }
-            }
-
-            if (!url) continue;
-
-            const tvgId = tvgIdMatch ? tvgIdMatch[1] : null;
-            const groupName = groupMatch ? groupMatch[1] : "Khác";
-            const baseName = getBaseName(name);
-
-            // Extract quality suffix để dùng làm label
-            const qualityMatch = name.match(
-                /\s*(HD\s*Nhanh|FullHD|Full\s*HD|FHD|HD\d+|HD|SD|4K|UHD)(\s*\(\d+\))?\s*$/i,
-            );
-            const quality = qualityMatch ? qualityMatch[1].trim() : "Default";
-
-            // Xác định type của source
-            const sourceType = url.toLowerCase().includes(".mpd")
-                ? "dash"
-                : "hls";
-
-            // Tạo source object
-            const source = {
-                file: url,
-                type: sourceType,
-                label: quality, // Dùng quality làm label để phân biệt các source
-                referrer: referrer, // Lưu referrer nếu có
-                userAgent: userAgent, // Lưu user-agent nếu có
-                licenseType: licenseType, // clearkey, widevine, etc.
-                licenseKey: licenseKey, // Raw license key string
-                clearKeys: clearKeys.length > 0 ? clearKeys : null, // Parsed clear keys array
-            };
-
-            // Debug log cho các source có DRM
-            if (clearKeys.length > 0) {
-                console.log(
-                    `[M3U8 Parse] Channel "${name}" has clearKeys:`,
-                    clearKeys,
-                );
-            }
-
-            // Ưu tiên group theo tvgId, nếu không có thì group theo baseName
-            const groupKey = tvgId || baseName;
-
-            if (
-                groupKey &&
-                (channelsByTvgId[groupKey] || channelsByBaseName[groupKey])
-            ) {
-                // Đã có channel với groupKey này, thêm vào sources
-                const existingChannel =
-                    channelsByTvgId[groupKey] || channelsByBaseName[groupKey];
-                existingChannel.configSources.push(source);
-            } else {
-                // Kênh mới
-                const channel = {
-                    id: channels.length + 1,
-                    name: baseName, // Dùng base name (không có quality suffix)
-                    url,
-                    logo: toProxyImageUrl(logoMatch ? logoMatch[1] : null),
-                    tvgId: tvgId,
-                    configSources: [source], // Khởi tạo với source đầu tiên
-                };
-
-                channels.push(channel);
-
-                if (tvgId) {
-                    channelsByTvgId[tvgId] = channel;
-                } else {
-                    channelsByBaseName[baseName] = channel;
-                }
-
-                // Thêm vào group
-                if (!groups[groupName]) groups[groupName] = [];
-                groups[groupName].push(channel);
-            }
-        }
-    }
-
-    const groupsArray = Object.keys(groups).map((groupName) => ({
-        id: `m3u-g-${groupName}`,
-        name: groupName,
-        channels: groups[groupName],
-    }));
-
-    return groupsArray;
-};
-
-// Component ChannelScroller với nút scroll ẩn/hiện khi cần
-// Tối ưu hóa bằng React.memo để tránh re-render khi không cần thiết
-const ChannelScroller = React.memo(function ChannelScroller({
-    channels,
-    selectedChannel,
-    onSelectChannel,
-}) {
-    const scrollRef = useRef(null);
-    const [canScrollLeft, setCanScrollLeft] = useState(false);
-    const [canScrollRight, setCanScrollRight] = useState(false);
-
-    // Kiểm tra trạng thái scroll - tối ưu hóa bằng cách gọi trực tiếp thay vì bọc quá nhiều layer
-    const checkScroll = () => {
-        const el = scrollRef.current;
-        if (!el) return;
-        const left = el.scrollLeft > 0;
-        const right = el.scrollLeft < el.scrollWidth - el.clientWidth - 1;
-        setCanScrollLeft(left);
-        setCanScrollRight(right);
-    };
-
-    useEffect(() => {
-        checkScroll();
-        const el = scrollRef.current;
-        if (!el) return;
-
-        let timeoutId;
-        const handleScroll = () => {
-            // Debounce nhẹ để tránh làm lag main thread khi scroll nhanh
-            if (timeoutId) clearTimeout(timeoutId);
-            timeoutId = setTimeout(checkScroll, 50);
-        };
-
-        el.addEventListener("scroll", handleScroll, { passive: true });
-        window.addEventListener("resize", checkScroll);
-
-        return () => {
-            if (el) el.removeEventListener("scroll", handleScroll);
-            window.removeEventListener("resize", checkScroll);
-            if (timeoutId) clearTimeout(timeoutId);
-        };
-    }, [channels]);
-
-    const scrollLeft = () => {
-        scrollRef.current?.scrollBy({ left: -300, behavior: "smooth" });
-    };
-
-    const scrollRight = () => {
-        scrollRef.current?.scrollBy({ left: 300, behavior: "smooth" });
-    };
-
-    return (
-        <div className="relative">
-            {/* Nút scroll trái - ẩn khi đã scroll hết */}
-            {canScrollLeft && (
-                <button
-                    onClick={scrollLeft}
-                    className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-zinc-800/90 p-2 text-white/80 shadow-lg backdrop-blur-sm transition-all hover:bg-zinc-700 hover:text-white"
-                >
-                    <svg
-                        className="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M15 19l-7-7 7-7"
-                        />
-                    </svg>
-                </button>
-            )}
-
-            <div
-                ref={scrollRef}
-                className="custom-scrollbar horizontal mx-8 overflow-x-auto py-2"
-            >
-                <div className="flex gap-3 px-1">
-                    {channels.map((channel) => {
-                        const isSelected = selectedChannel?.id === channel.id;
-                        return (
-                            <button
-                                key={channel.id}
-                                onClick={() => onSelectChannel(channel)}
-                                className={
-                                    "group flex w-36 shrink-0 transform-gpu cursor-pointer flex-col items-center gap-2 rounded-xl border p-3 text-center transition-all duration-300 " +
-                                    (isSelected
-                                        ? "border-cyan-400/50 bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.15)] ring-1 ring-cyan-400/30"
-                                        : "bg-white/2 hover:bg-white/8 border-white/5 hover:scale-[1.05] hover:border-white/20 hover:shadow-xl")
-                                }
-                            >
-                                <div className="relative">
-                                    {channel.logo ? (
-                                        <img
-                                            src={channel.logo}
-                                            alt={channel.name}
-                                            onError={handleImageFallbackError}
-                                            className={
-                                                "h-14 w-14 object-contain transition-transform duration-300 group-hover:scale-110 " +
-                                                (isSelected
-                                                    ? "drop-shadow-[0_0_8px_rgba(6,182,212,0.5)]"
-                                                    : "")
-                                            }
-                                            loading="lazy"
-                                        />
-                                    ) : (
-                                        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-zinc-800/60 p-2 ring-1 ring-white/10 transition-all group-hover:ring-white/30">
-                                            <span className="text-xl font-bold opacity-30">
-                                                {channel.name[0]}
-                                            </span>
-                                        </div>
-                                    )}
-                                    {isSelected && (
-                                        <div className="absolute -right-1 -top-1">
-                                            <div className="animate-pulse-live h-2.5 w-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div>
-                                        </div>
-                                    )}
-                                </div>
-                                <div
-                                    className={
-                                        "line-clamp-2 text-balance text-xs font-medium transition-colors " +
-                                        (isSelected
-                                            ? "text-cyan-300"
-                                            : "text-white/80 group-hover:text-white")
-                                    }
-                                    title={channel.name}
-                                >
-                                    {channel.name}
-                                </div>
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
-
-            {/* Nút scroll phải - ẩn khi đã scroll hết */}
-            {canScrollRight && (
-                <button
-                    onClick={scrollRight}
-                    className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-zinc-800/90 p-2 text-white/80 shadow-lg backdrop-blur-sm transition-all hover:bg-zinc-700 hover:text-white"
-                >
-                    <svg
-                        className="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 5l7 7-7 7"
-                        />
-                    </svg>
-                </button>
-            )}
-        </div>
-    );
-});
 
 // Component hiển thị thông tin kênh đang chọn - Memoized
 const ChannelInfo = React.memo(
@@ -608,10 +31,7 @@ const ChannelInfo = React.memo(
     }) => {
         if (!selectedChannel) return null;
         return (
-            <div className="relative rounded-2xl border border-white/10 bg-black/40 p-5 shadow-2xl">
-                {/* Subtle inner highlight */}
-                <div className="bg-linear-to-b from-white/8 pointer-events-none absolute inset-0 to-transparent opacity-50" />
-
+            <div className="relative rounded-2xl border border-zinc-800 bg-zinc-900/90 p-5 shadow-2xl">
                 <div className="relative z-10 flex items-center justify-between gap-4">
                     <div className="flex items-center gap-5">
                         <div className="group relative">
@@ -621,20 +41,20 @@ const ChannelInfo = React.memo(
                                     src={selectedChannel.logo}
                                     alt={selectedChannel.name}
                                     onError={handleImageFallbackError}
-                                    className="h-14 w-14 rounded-xl border border-white/15 bg-zinc-900/50 object-contain p-1.5 shadow-lg transition-transform group-hover:scale-105"
+                                    className="h-14 w-14 rounded-xl border border-zinc-800 bg-zinc-950 object-contain p-1.5 shadow-lg transition-transform group-hover:scale-105"
                                 />
                             ) : (
-                                <div className="h-14 w-14 rounded-xl border border-white/15 bg-zinc-800/50 shadow-lg" />
+                                <div className="h-14 w-14 rounded-xl border border-zinc-800 bg-zinc-950 shadow-lg" />
                             )}
-                            <div className="animate-pulse-live absolute -right-1 -top-1 h-3 w-3 rounded-full bg-red-500 shadow-[0_0_10px_#06b6d4]" />
+                            <div className="animate-pulse-live absolute -right-1 -top-1 h-3 w-3 rounded-full bg-red-600 shadow-[0_0_8px_rgba(220,38,38,0.8)]" />
                         </div>
                         <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
                             <div className="flex min-w-0 flex-col">
                                 <div className="flex items-center gap-2">
-                                    <span className="rounded bg-red-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400 ring-1 ring-inset ring-red-500/20">
+                                    <span className="rounded bg-red-600/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-500 ring-1 ring-inset ring-red-600/30">
                                         Live
                                     </span>
-                                    <div className="text-[11px] font-medium uppercase tracking-wide text-white/40">
+                                    <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
                                         Đang phát
                                     </div>
                                 </div>
@@ -650,7 +70,7 @@ const ChannelInfo = React.memo(
                                             "transition-all duration-300 " +
                                             (isFavorite
                                                 ? "scale-110 text-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]"
-                                                : "text-white/20 hover:text-white/50")
+                                                : "text-zinc-600 hover:text-zinc-400")
                                         }
                                     >
                                         <svg
@@ -674,10 +94,10 @@ const ChannelInfo = React.memo(
 
                             {/* Source Selection Block */}
                             {selectedChannel.configSources && selectedChannel.configSources.length > 1 && (
-                                <div className="ml-auto flex shrink-0 items-center gap-3 border-l border-white/10 pl-4">
+                                <div className="ml-auto flex shrink-0 items-center gap-3 border-l border-zinc-800 pl-4">
                                     <div className="hidden items-center gap-1.5 sm:flex">
-                                        <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-500 shadow-[0_0_8px_rgba(6,182,212,0.8)]" />
-                                        <span className="text-[10px] font-bold uppercase tracking-tight text-white/40">
+                                        <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-600" />
+                                        <span className="text-[10px] font-bold uppercase tracking-tight text-zinc-500">
                                             Nguồn {currentSourceIdx + 1}/{selectedChannel.configSources.length}
                                         </span>
                                     </div>
@@ -692,8 +112,8 @@ const ChannelInfo = React.memo(
                                                 className={
                                                     "flex h-7 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-bold transition-all " +
                                                     (showSourceDropdown
-                                                        ? "border-cyan-500/50 bg-cyan-500/20 text-white shadow-[0_0_15px_rgba(6,182,212,0.3)]"
-                                                        : "border-white/10 bg-white/5 text-white/60 hover:border-white/20 hover:bg-white/10 hover:text-white")
+                                                        ? "border-red-600 bg-red-600/20 text-white"
+                                                        : "border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-zinc-700 hover:text-white")
                                                 }
                                             >
                                                 <span>Nguồn {currentSourceIdx + 1}</span>
@@ -701,7 +121,7 @@ const ChannelInfo = React.memo(
                                                     className={
                                                         "h-3 w-3 transition-transform duration-300 " +
                                                         (showSourceDropdown
-                                                            ? "rotate-180 text-cyan-400"
+                                                            ? "rotate-180 text-red-500"
                                                             : "")
                                                     }
                                                     fill="none"
@@ -715,7 +135,7 @@ const ChannelInfo = React.memo(
                                             {showSourceDropdown && (
                                                 <>
                                                     <div className="fixed inset-0 z-40" onClick={() => setShowSourceDropdown(false)} />
-                                                    <div className="animate-in fade-in slide-in-from-top-2 absolute left-0 top-full z-50 mt-1.5 min-w-[120px] overflow-hidden rounded-xl border border-white/10 bg-zinc-900/90 shadow-2xl backdrop-blur-xl duration-200">
+                                                    <div className="animate-in fade-in slide-in-from-top-2 absolute left-0 top-full z-50 mt-1.5 min-w-[120px] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl duration-200">
                                                         <div className="flex flex-col p-1.5">
                                                             {selectedChannel.configSources.map((_, idx) => {
                                                                 const isSelected = currentSourceIdx === idx;
@@ -726,7 +146,7 @@ const ChannelInfo = React.memo(
                                                                             onSelectSource(idx);
                                                                             setShowSourceDropdown(false);
                                                                         }}
-                                                                        className={"flex items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-bold transition-all " + (isSelected ? "bg-cyan-500 text-black" : "text-white/60 hover:bg-white/10 hover:text-white")}
+                                                                        className={"flex items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-bold transition-all " + (isSelected ? "bg-red-600 text-white" : "text-zinc-400 hover:bg-zinc-900 hover:text-white")}
                                                                     >
                                                                         <span>Nguồn {idx + 1}</span>
                                                                         {isSelected && <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
@@ -740,7 +160,7 @@ const ChannelInfo = React.memo(
                                         </div>
                                         <button
                                             onClick={() => onSelectSource((currentSourceIdx + 1) % selectedChannel.configSources.length)}
-                                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-white/60 transition-colors hover:bg-white/20 hover:text-white"
+                                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-white"
                                             title="Đổi sang nguồn tiếp theo"
                                         >
                                             <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -755,7 +175,7 @@ const ChannelInfo = React.memo(
                     <div className="flex shrink-0 items-center gap-2">
                         <button
                             onClick={onPrev}
-                            className="rounded-full bg-white/10 p-2 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+                            className="rounded-full border border-zinc-800 bg-zinc-950 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
                             title="Kênh trước"
                         >
                             <svg
@@ -774,7 +194,7 @@ const ChannelInfo = React.memo(
                         </button>
                         <button
                             onClick={onNext}
-                            className="rounded-full bg-white/10 p-2 text-white/70 transition-colors hover:bg-white/20 hover:text-white"
+                            className="rounded-full border border-zinc-800 bg-zinc-950 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
                             title="Kênh sau"
                         >
                             <svg
@@ -829,30 +249,17 @@ const ScheduleItem = React.memo(
                 data-current={isCurrent ? "1" : "0"}
                 data-start-ms={startMs}
                 className={
-                    "group relative flex items-start gap-2 overflow-hidden rounded-lg border px-3 py-2 transition-all duration-300 " +
+                    "group relative flex items-start gap-2 overflow-hidden rounded-lg border px-3 py-2 transition-all duration-200 " +
                     (isCurrent
-                        ? "border-l-4 border-cyan-500/40 bg-cyan-500/10"
-                        : "bg-white/2 hover:bg-white/6 border-white/5 hover:border-white/20")
+                        ? "border-l-4 border-l-red-600 border-zinc-800 bg-zinc-950"
+                        : "border-zinc-800/60 bg-zinc-900/60 hover:border-zinc-700 hover:bg-zinc-900")
                 }
             >
-                {/* {isCurrent && (
-                    <div className="absolute left-0 top-0 h-full w-1 bg-cyan-500" />
-                )} */}
-
-                {/* {item.image || item.thumbnail || item.icon ? (
-                    <img
-                        src={item.image || item.thumbnail || item.icon}
-                        alt=""
-                        loading="lazy"
-                        className="h-10 w-10 shrink-0 rounded object-cover opacity-80"
-                    />
-                ) : null} */}
-
                 <div className="w-24 flex-none shrink-0">
                     <div
                         className={
-                            "flex justify-between gap-1 text-xs font-medium tracking-tight" +
-                            (isCurrent ? "text-cyan-400" : "text-white/40")
+                            "flex justify-between gap-1 text-xs font-medium tracking-tight " +
+                            (isCurrent ? "text-red-500 font-bold" : "text-zinc-500")
                         }
                     >
                         <span className="flex-1">{start}</span>—
@@ -867,7 +274,7 @@ const ScheduleItem = React.memo(
                                 "line-clamp-1 text-[13px] font-semibold tracking-tight transition-colors " +
                                 (isCurrent
                                     ? "text-white"
-                                    : "text-white/70 group-hover:text-white/90")
+                                    : "text-zinc-300 group-hover:text-white")
                             }
                         >
                             {item.title ||
@@ -877,11 +284,11 @@ const ScheduleItem = React.memo(
                         </div>
                         {isCurrent && (
                             <div className="flex shrink-0 flex-col items-end gap-1">
-                                <div className="rounded-full bg-red-500/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-400 ring-1 ring-inset ring-red-500/30">
+                                <div className="rounded-full bg-red-600/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-500 ring-1 ring-inset ring-red-600/30">
                                     LIVE
                                 </div>
                                 {remaining && (
-                                    <div className="text-[10px] font-medium uppercase tracking-tighter text-white/40">
+                                    <div className="text-[10px] font-medium uppercase tracking-tighter text-zinc-500">
                                         {remaining}
                                     </div>
                                 )}
@@ -891,17 +298,12 @@ const ScheduleItem = React.memo(
 
                     {isCurrent && (
                         <div className="relative mt-2">
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
                                 <div
-                                    className="bg-linear-to-r h-full rounded-full from-cyan-600 to-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.4)] transition-all duration-1000"
+                                    className="h-full rounded-full bg-red-600 transition-all duration-1000"
                                     style={{ width: `${prog}%` }}
                                 />
                             </div>
-                            {/* Glowing head indicator */}
-                            <div
-                                className="absolute top-0 -mt-1 h-3.5 w-1 rounded-full bg-white shadow-[0_0_10px_#fff] transition-all duration-1000"
-                                style={{ left: `calc(${prog}% - 2px)` }}
-                            />
                         </div>
                     )}
 
@@ -910,8 +312,8 @@ const ScheduleItem = React.memo(
                             className={
                                 "mt-1 line-clamp-1 text-[11px] leading-relaxed transition-opacity " +
                                 (isCurrent
-                                    ? "text-white/60"
-                                    : "text-white/30 group-hover:text-white/40")
+                                    ? "text-zinc-400"
+                                    : "text-zinc-600 group-hover:text-zinc-400")
                             }
                         >
                             {item.desc}
@@ -955,17 +357,14 @@ const ScheduleList = React.memo(
         }, [containerRef]);
 
         return (
-            <div className="bg-white/3 relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 shadow-2xl">
-                {/* Subtle inner highlight */}
-                <div className="bg-linear-to-b pointer-events-none absolute inset-0 from-white/5 to-transparent" />
-
+            <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/90 shadow-2xl">
                 <div
-                    className="relative z-10 flex cursor-pointer items-center justify-between p-5"
+                    className="relative z-10 flex cursor-pointer items-center justify-between border-b border-zinc-800 bg-zinc-950 p-4"
                     onClick={onToggle}
                 >
-                    <h3 className="flex items-center gap-2 text-sm font-semibold text-white/90">
+                    <h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-white">
                         <svg
-                            className="h-4 w-4 text-cyan-400"
+                            className="h-4 w-4 text-red-500"
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
@@ -981,7 +380,7 @@ const ScheduleList = React.memo(
                         {/* Mũi tên toggle */}
                         <svg
                             className={
-                                "h-3 w-3 text-white/40 transition-transform " +
+                                "h-3 w-3 text-zinc-500 transition-transform " +
                                 (expanded !== false ? "rotate-90" : "rotate-0")
                             }
                             fill="none"
@@ -996,7 +395,7 @@ const ScheduleList = React.memo(
                             />
                         </svg>
                     </h3>
-                    <div className="text-xs text-white/70">
+                    <div className="text-xs text-zinc-400">
                         {lastUpdated
                             ? `Cập nhật: ${formatDateTime(lastUpdated)}`
                             : "--"}
@@ -1006,19 +405,19 @@ const ScheduleList = React.memo(
                 <div
                     ref={containerRef}
                     className={
-                        "custom-scrollbar h-0 min-h-96 grow overflow-auto text-sm text-white/80 " +
+                        "custom-scrollbar h-0 min-h-96 grow overflow-auto text-sm text-zinc-300 " +
                         (expanded === false ? "hidden" : "")
                     }
                 >
                     {loading ? (
-                        <div className="flex items-center gap-2 px-5">
-                            <div className="h-4 w-4 animate-spin rounded-full border-b-2 border-cyan-400"></div>
+                        <div className="flex items-center gap-2 px-5 py-4 text-xs font-bold text-zinc-400">
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-800 border-t-red-600"></div>
                             <div>Đang tải lịch phát sóng...</div>
                         </div>
                     ) : error ? (
-                        <div className="px-5 text-white/60">{error}</div>
+                        <div className="px-5 py-4 text-xs font-bold text-zinc-500">{error}</div>
                     ) : !schedule || schedule.length === 0 ? (
-                        <div className="px-5">
+                        <div className="px-5 py-4 text-xs text-zinc-500">
                             Chưa có dữ liệu lịch cho kênh này.
                         </div>
                     ) : (
@@ -1167,7 +566,6 @@ const findChannelByParamId = (allChannels, paramId) => {
 };
 
 export default function TV() {
-    const { t } = useTranslation();
     const [searchParams, setSearchParams] = useSearchParams();
     const urlChannelId = String(searchParams.get("id") || "").trim();
     // Simple toast helper (DOM-based) - useCallback to stabilize reference
@@ -1193,11 +591,11 @@ export default function TV() {
                 "min-w-[200px] max-w-[420px] px-4 py-2 rounded-lg shadow-lg text-white text-sm leading-tight transform transition-all duration-200 cursor-pointer";
             const hidden = "opacity-0 -translate-y-1";
 
-            let colorClass = "bg-cyan-500";
+            let colorClass = "bg-zinc-800 border border-zinc-700";
             if (type === "error")
-                colorClass = "bg-gradient-to-r from-red-500 to-pink-500";
+                colorClass = "bg-red-600 border border-red-500 text-white";
             else if (type === "warn")
-                colorClass = "bg-gradient-to-r from-amber-400 to-orange-500";
+                colorClass = "bg-amber-600 border border-amber-500 text-white";
 
             el.className = `${base} ${colorClass} ${hidden}`;
 
@@ -1244,7 +642,6 @@ export default function TV() {
     const [scheduleLoading, setScheduleLoading] = useState(false);
     const [scheduleError, setScheduleError] = useState(null);
     const [activeGroupId, setActiveGroupId] = useState(null); // ID của nhóm đang chọn (Tab)
-    const [expandedGroups, setExpandedGroups] = useState(new Set()); // Vẫn giữ để tương thích nếu cần
 
     // Favorites & Play Counts
     const [favorites, setFavorites] = useState(() => {
@@ -1258,17 +655,8 @@ export default function TV() {
 
     const [epgChannels, setEpgChannels] = useState(new Map()); // Map tvgId -> channel info từ EPG API
     const [showEpg, setShowEpg] = useState(true);
-    const [showChannels, setShowChannels] = useState(true);
     const [isPseudoPip, setIsPseudoPip] = useState(false); // PiP giả lập bằng CSS
-    const [pipCorner, setPipCorner] = useState("bottom-right"); // Góc hiện tại của PiP: top-left, top-right, bottom-left, bottom-right
     const [showScrollTopButton, setShowScrollTopButton] = useState(false);
-    const pipDragRef = useRef({
-        isDragging: false,
-        startX: 0,
-        startY: 0,
-        initialX: 0,
-        initialY: 0,
-    }); // Drag state cho PiP
     // Refs for video element và Shaka
     const videoRef = useRef(null);
     const playerFrameRef = useRef(null); // Frame gốc để detect scroll ra khỏi viewport
@@ -1349,6 +737,15 @@ export default function TV() {
 
         loadEpgChannels();
     }, []);
+
+    // Cập nhật tiêu đề trang động theo kênh TV
+    useEffect(() => {
+        if (selectedChannel?.name) {
+            document.title = `${selectedChannel.name} • Truyền Hình Trực Tuyến`;
+        } else {
+            document.title = "Truyền Hình Trực Tuyến • Live TV";
+        }
+    }, [selectedChannel]);
 
     // --- LOAD CHANNELS ON MOUNT ---
     useEffect(() => {
@@ -2689,7 +2086,6 @@ export default function TV() {
     useEffect(() => {
         // Reset PiP khi đổi kênh
         setIsPseudoPip(false);
-        setPipCorner("bottom-right");
 
         let rafId = null;
         const evaluatePseudoPip = () => {
@@ -2977,24 +2373,12 @@ export default function TV() {
         });
     }, []);
 
-    const toggleGroup = useCallback((groupName) => {
-        setExpandedGroups((prev) => {
-            const newSet = new Set(prev);
-            if (newSet.has(groupName)) {
-                newSet.delete(groupName);
-            } else {
-                newSet.add(groupName);
-            }
-            return newSet;
-        });
-    }, []);
-
     if (loading) {
         return (
-            <div className="flex min-h-screen items-center justify-center bg-zinc-900 text-white">
+            <div className="flex min-h-screen items-center justify-center bg-zinc-950 font-sans text-white">
                 <div className="text-balance text-center">
-                    <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-cyan-500"></div>
-                    <p>Đang tải danh sách kênh...</p>
+                    <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-zinc-800 border-t-red-600"></div>
+                    <p className="text-sm font-bold text-zinc-400">Đang tải danh sách kênh...</p>
                 </div>
             </div>
         );
@@ -3014,18 +2398,7 @@ export default function TV() {
     // Channels will be shown grouped below; no flattening needed
 
     return (
-        <div className="font-inter relative flex min-h-screen flex-col overflow-hidden bg-zinc-950 text-white selection:bg-cyan-500/30">
-            {/* Dynamic background layers */}
-            <div className="absolute inset-0 z-0">
-                {/* Main black-zinc base */}
-                <div className="absolute inset-0 bg-zinc-950" />
-                {/* Static subtle color accents (no animation, no blur) */}
-                <div className="absolute -left-[10%] -top-[10%] h-[60%] w-[60%] rounded-full bg-cyan-900/5" />
-                <div className="absolute -right-[5%] top-[20%] h-[50%] w-[50%] rounded-full bg-blue-900/5" />
-                {/* Vignette */}
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.6)_100%)]" />
-            </div>
-
+        <div className="relative flex min-h-screen flex-col overflow-hidden bg-zinc-950 font-sans text-white selection:bg-red-600/30">
             <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-4 p-4">
                 <div className="grid h-full min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-5">
                     <div className={`relative flex h-full flex-col gap-4 ${showEpg ? 'lg:col-span-3' : 'lg:col-span-5'}`}>
@@ -3041,7 +2414,7 @@ export default function TV() {
                             onToggleFavorite={toggleFavorite}
                         />
 
-                        <div className="border-white/8 flex flex-1 items-start justify-center overflow-hidden rounded-xl border bg-black/40">
+                        <div className="flex flex-1 items-start justify-center overflow-hidden rounded-xl border border-zinc-800 bg-black/40">
                             <div className="w-full">
                                 <div
                                     ref={playerFrameRef}
@@ -3052,7 +2425,7 @@ export default function TV() {
                                         id="tv-player"
                                         className={
                                             isPseudoPip
-                                                ? "z-80 fixed left-0 top-0 aspect-video w-full border-b border-white/20 bg-black shadow-2xl"
+                                                ? "z-50 fixed left-0 top-0 aspect-video w-full border-b border-zinc-800 bg-black shadow-2xl"
                                                 : "h-full w-full"
                                         }
                                     />
@@ -3063,7 +2436,7 @@ export default function TV() {
                         {/* Nút đóng/mở EPG dạng ngăn kéo trên Desktop */}
                         <button
                             onClick={() => setShowEpg(!showEpg)}
-                            className="absolute -right-4 top-1/2 z-50 hidden -translate-y-1/2 items-center justify-center rounded-l-xl border border-r-0 border-white/10 bg-black/60 py-8 text-white/50 backdrop-blur-md transition-all hover:bg-black/80 hover:text-white lg:flex"
+                            className="absolute -right-4 top-1/2 z-40 hidden -translate-y-1/2 items-center justify-center rounded-l-xl border border-r-0 border-zinc-800 bg-zinc-900/90 py-8 text-zinc-400 backdrop-blur-md transition-all hover:bg-zinc-800 hover:text-white lg:flex"
                             title={showEpg ? "Đóng Lịch Phát Sóng" : "Mở Lịch Phát Sóng"}
                         >
                             <svg className={`h-3 w-3 transition-transform ${showEpg ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3073,7 +2446,7 @@ export default function TV() {
                     </div>
 
                     {/* EPG: Toggleable qua header ScheduleList */}
-                    <div className={`custom-scrollbar flex h-full flex-col space-y-4 overflow-auto rounded-xl lg:col-span-2 ${showEpg ? '' : 'max-lg:!flex lg:hidden'}`}>
+                    <div className={`custom-scrollbar flex h-full flex-col space-y-4 overflow-auto rounded-xl lg:col-span-2 ${showEpg ? '' : 'max-lg:flex! lg:hidden'}`}>
                         <ScheduleList
                             schedule={schedule}
                             loading={scheduleLoading}
@@ -3096,8 +2469,9 @@ export default function TV() {
                     <div className="relative flex items-center">
                         {/* Left Arrow */}
                         <button
+                            type="button"
                             onClick={() => scrollTabs("left")}
-                            className="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/5 text-white/60 transition-all hover:bg-cyan-500 hover:text-black hover:shadow-[0_0_15px_rgba(6,182,212,0.4)]"
+                            className="mr-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400 transition-all hover:border-red-600 hover:bg-red-600 hover:text-white"
                         >
                             <svg
                                 className="h-4 w-4"
@@ -3129,8 +2503,8 @@ export default function TV() {
                                         className={
                                             "relative flex shrink-0 items-center gap-2 rounded-full px-5 py-2 text-sm font-bold tracking-tight transition-all duration-300 " +
                                             (isActive
-                                                ? "bg-cyan-500 text-black shadow-[0_0_20px_rgba(6,182,212,0.4)]"
-                                                : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white")
+                                                ? "bg-red-600 text-white shadow-lg"
+                                                : "border border-zinc-800/80 bg-zinc-900/60 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800 hover:text-white")
                                         }
                                     >
                                         {group.id === "favorites" && (
@@ -3159,8 +2533,9 @@ export default function TV() {
 
                         {/* Right Arrow */}
                         <button
+                            type="button"
                             onClick={() => scrollTabs("right")}
-                            className="ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/5 text-white/60 transition-all hover:bg-cyan-500 hover:text-black hover:shadow-[0_0_15px_rgba(6,182,212,0.4)]"
+                            className="ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400 transition-all hover:border-red-600 hover:bg-red-600 hover:text-white"
                         >
                             <svg
                                 className="h-4 w-4"
@@ -3203,12 +2578,13 @@ export default function TV() {
                                     className={
                                         "group relative flex cursor-pointer flex-col items-center gap-3 rounded-2xl border p-4 transition-all duration-300 " +
                                         (isSelected
-                                            ? "border-cyan-500/50 bg-cyan-500/10 shadow-[0_0_20px_rgba(6,182,212,0.15)] ring-1 ring-cyan-500/30"
-                                            : "bg-white/2 border-white/5 hover:scale-[1.03] hover:border-white/20 hover:bg-white/5")
+                                            ? "border-red-600 bg-red-600/10 shadow-lg ring-1 ring-red-600"
+                                            : "border-zinc-800/80 bg-zinc-900/60 hover:scale-[1.03] hover:border-zinc-700 hover:bg-zinc-800/70")
                                     }
                                 >
                                     {/* Favorite Toggle on Card */}
                                     <button
+                                        type="button"
                                         onClick={(e) => {
                                             e.stopPropagation();
                                             toggleFavorite(channel.id);
@@ -3217,8 +2593,9 @@ export default function TV() {
                                             "absolute right-2 top-2 z-20 p-1.5 transition-all duration-300 " +
                                             (favorites.includes(channel.id)
                                                 ? "scale-110 text-red-500"
-                                                : "text-white/10 opacity-0 hover:text-white/40 group-hover:opacity-100")
+                                                : "text-zinc-600 opacity-0 hover:text-zinc-300 group-hover:opacity-100")
                                         }
+                                        aria-label="Yêu thích"
                                     >
                                         <svg
                                             className="h-4 w-4"
@@ -3249,14 +2626,14 @@ export default function TV() {
                                                 className={
                                                     "h-full w-full object-contain transition-transform duration-500 group-hover:scale-110 " +
                                                     (isSelected
-                                                        ? "drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]"
+                                                        ? "drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]"
                                                         : "opacity-80 group-hover:opacity-100")
                                                 }
                                                 loading="lazy"
                                             />
                                         ) : (
-                                            <div className="flex h-full w-full items-center justify-center rounded-xl bg-zinc-800/60 p-2 ring-1 ring-white/10">
-                                                <span className="text-2xl font-bold opacity-30">
+                                            <div className="flex h-full w-full items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 p-2">
+                                                <span className="text-2xl font-bold text-zinc-600">
                                                     {channel.name[0]}
                                                 </span>
                                             </div>
@@ -3266,15 +2643,12 @@ export default function TV() {
                                         className={
                                             "line-clamp-1 w-full text-center text-xs font-bold tracking-tight transition-colors " +
                                             (isSelected
-                                                ? "text-cyan-400"
-                                                : "text-white/70 group-hover:text-white")
+                                                ? "text-red-500"
+                                                : "text-zinc-300 group-hover:text-white")
                                         }
                                     >
                                         {channel.name}
                                     </div>
-
-                                    {/* Hover glow effect */}
-                                    <div className="bg-radial pointer-events-none absolute inset-0 -z-10 from-cyan-500/10 to-transparent opacity-0 transition-opacity duration-500 group-hover:opacity-100" />
                                 </div>
                             );
                         })}
@@ -3286,7 +2660,7 @@ export default function TV() {
                         onClick={() =>
                             window.scrollTo({ top: 0, behavior: "smooth" })
                         }
-                        className="z-90 fixed bottom-4 left-4 flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-zinc-900/90 text-white shadow-xl backdrop-blur-sm transition-colors hover:bg-zinc-800"
+                        className="fixed bottom-6 right-6 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-white shadow-xl transition-colors hover:bg-zinc-800"
                         aria-label="Trở về đầu trang"
                     >
                         <svg

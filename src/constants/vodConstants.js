@@ -12,9 +12,10 @@ export const FILTER_YEARS = Array.from({ length: 26 }, (_, i) =>
 
 export const FILTER_SOURCES = [
     { id: "all", name: "Tất cả" },
-    { id: SOURCES.SOURCE_O, name: "Từ O" },
     { id: SOURCES.SOURCE_K, name: "Từ K" },
     { id: SOURCES.SOURCE_C, name: "Từ C" },
+    // { id: SOURCES.SOURCE_O, name: "Từ O" }, // Tạm disabled
+    // { id: SOURCES.SOURCE_R, name: "Từ R" }, // Tạm disabled
 ];
 
 export const FILTER_TYPE_LIST = [
@@ -37,6 +38,7 @@ export const TMDB_IMAGE_SIZES = {
     POSTER: "w500",
     BACKDROP: "original", // Tối ưu cho màn hình 1920px
     THUMBNAIL: "w780",
+    PROFILE: "h632", // Ảnh chân dung diễn viên siêu nét
     SMALL: "w342",
     TINY: "w92",
     LOGO: "h60",
@@ -121,7 +123,7 @@ export const CATEGORIES = [
         title: "Phim Trung Quốc",
         titleKey: "vods.china",
         type: "quoc-gia/trung-quoc",
-        source: "source_o",
+        source: "source_k",
         useV1: true,
     },
     {
@@ -129,7 +131,7 @@ export const CATEGORIES = [
         title: "Phim Hàn Quốc",
         titleKey: "vods.korea",
         type: "quoc-gia/han-quoc",
-        source: "source_o",
+        source: "source_k",
         useV1: true,
     },
     {
@@ -137,7 +139,7 @@ export const CATEGORIES = [
         title: "Phim Việt Nam",
         titleKey: "vods.vietnam",
         type: "quoc-gia/viet-nam",
-        source: "source_o",
+        source: "source_k",
         useV1: true,
     },
     {
@@ -145,7 +147,7 @@ export const CATEGORIES = [
         title: "Phim Hành Động",
         titleKey: "vods.action",
         type: "the-loai/hanh-dong",
-        source: "source_o",
+        source: "source_k",
         useV1: true,
     },
     {
@@ -153,7 +155,7 @@ export const CATEGORIES = [
         title: "Phim Kinh Dị",
         titleKey: "vods.horror",
         type: "the-loai/kinh-di",
-        source: "source_o",
+        source: "source_k",
         useV1: true,
     },
     {
@@ -161,7 +163,7 @@ export const CATEGORIES = [
         title: "Phim Tình Cảm",
         titleKey: "vods.romance",
         type: "the-loai/tinh-cam",
-        source: "source_o",
+        source: "source_k",
         useV1: true,
     },
     {

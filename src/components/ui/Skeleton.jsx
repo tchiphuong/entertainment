@@ -1,5 +1,3 @@
-import React from "react";
-
 /**
  * Component Skeleton cơ bản mang hiệu ứng Shimmer (lấp lánh) hiện đại.
  */
