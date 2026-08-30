@@ -2,7 +2,11 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getAnalytics } from "firebase/analytics";
-import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
+import {
+    initializeFirestore,
+    persistentLocalCache,
+    persistentMultipleTabManager,
+} from "firebase/firestore";
 
 // Your web app's Firebase configuration from .env.local
 const firebaseConfig = {
@@ -22,18 +26,11 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 
-// Initialize Firestore
-export const db = getFirestore(app);
-
-// Bật Firestore Offline Persistence
-enableIndexedDbPersistence(db).catch((err) => {
-    if (err.code === "failed-precondition") {
-        console.warn(
-            "Firestore persistence failed: multiple tabs open or private mode",
-        );
-    } else if (err.code === "unimplemented") {
-        console.warn("Firestore persistence not supported in this browser");
-    }
+// Initialize Firestore với Persistent Local Cache (Multi-Tab)
+export const db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager(),
+    }),
 });
 
 // Initialize Analytics and get a reference to the service

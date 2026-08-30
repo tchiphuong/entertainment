@@ -6,6 +6,184 @@ import LoadingSpinner from "../components/LoadingSpinner";
 // Lấy API endpoint từ biến môi trường
 const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT;
 
+const compareMatchPriority = (a, b) => {
+    if (a.is_hot !== b.is_hot) return a.is_hot ? -1 : 1;
+    if (a.is_featured !== b.is_featured) return a.is_featured ? -1 : 1;
+    const aTournamentFeatured = a.tournament?.is_featured ? 1 : 0;
+    const bTournamentFeatured = b.tournament?.is_featured ? 1 : 0;
+    return bTournamentFeatured - aTournamentFeatured;
+};
+
+const compareMatches = (a, b) => {
+    const timeA = a.timestamp || new Date(a.date).getTime();
+    const timeB = b.timestamp || new Date(b.date).getTime();
+    const timeDiff = timeA - timeB;
+    if (timeDiff !== 0) return timeDiff;
+    return compareMatchPriority(a, b);
+};
+
+const compareTournaments = (a, b) => {
+    const featuredA = a.is_featured ? 1 : 0;
+    const featuredB = b.is_featured ? 1 : 0;
+    if (featuredA !== featuredB) return featuredB - featuredA;
+
+    const priorityA = a.priority || 0;
+    const priorityB = b.priority || 0;
+    if (priorityA !== priorityB) return priorityB - priorityA;
+
+    if (b.match_count !== a.match_count) return b.match_count - a.match_count;
+    return (a.name || "").localeCompare(b.name || "");
+};
+
+const MatchStatusBadge = ({ match }) => {
+    if (match.match_status === "live") {
+        return (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold text-white shadow-lg">
+                <span className="h-2 w-2 rounded-full bg-white animate-ping" />
+                Live
+            </span>
+        );
+    }
+    if (match.match_status === "pending" && match.timestamp) {
+        return (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-3 py-1 text-xs font-bold text-white shadow-lg">
+                Sắp diễn ra
+            </span>
+        );
+    }
+    return null;
+};
+
+const extractTournamentList = (allMatches) => {
+    const tournamentMap = new Map();
+    allMatches.forEach((match) => {
+        if (match.tournament?.id) {
+            if (!tournamentMap.has(match.tournament.id)) {
+                tournamentMap.set(match.tournament.id, {
+                    ...match.tournament,
+                    match_count: 0,
+                });
+            }
+            tournamentMap.get(match.tournament.id).match_count++;
+        }
+    });
+
+    const tournamentList = Array.from(tournamentMap.values());
+    tournamentList.sort(compareTournaments);
+    return tournamentList;
+};
+
+const MatchTournamentHeader = ({ tournament }) => {
+    if (!tournament) return null;
+    return (
+        <div className="flex items-center gap-2 border-b border-zinc-700 bg-zinc-700/50 px-4 py-2">
+            {tournament.logo && (
+                <img
+                    loading="lazy"
+                    src={tournament.logo}
+                    alt={tournament.name}
+                    className="h-7 w-7 shrink-0 object-contain"
+                    onError={(e) => { e.target.style.visibility = "hidden"; e.target.onerror = null; }}
+                />
+            )}
+            <span className="line-clamp-1 text-xs font-bold text-zinc-100">
+                {tournament.name}
+            </span>
+        </div>
+    );
+};
+
+const MatchDateTimeBlock = ({ match }) => (
+    <div className="flex flex-col items-center justify-center">
+        {match._isHotMatch && match.date && match.date.length === 8 && (
+            <span className="mb-0.5 text-xs font-semibold text-zinc-400">
+                {`${match.date.substring(6, 8)}/${match.date.substring(4, 6)}`}
+            </span>
+        )}
+        <div className="text-sm font-bold text-blue-400">
+            {match.date_txt ? (
+                <span dangerouslySetInnerHTML={{ __html: match.date_txt }} />
+            ) : (
+                <span>{match.date}</span>
+            )}
+        </div>
+    </div>
+);
+
+const MatchTeamRow = ({ team, score, isLive, isHome }) => {
+    if (!team) return null;
+    const bgClass = isHome ? "bg-blue-900/20 hover:bg-blue-900/30" : "bg-red-900/20 hover:bg-red-900/30";
+    const textScoreClass = isHome ? "text-blue-400" : "text-red-400";
+
+    return (
+        <div className={`flex items-center justify-between gap-3 rounded-lg p-3 transition-colors ${bgClass}`}>
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+                {team.logo && (
+                    <img
+                        loading="lazy"
+                        src={team.logo}
+                        alt={team.name}
+                        className="h-10 w-10 shrink-0 object-contain"
+                        onError={(e) => { e.target.style.visibility = "hidden"; e.target.onerror = null; }}
+                    />
+                )}
+                <p className="line-clamp-2 text-sm font-bold text-zinc-100">
+                    {team.name_short || team.name}
+                </p>
+            </div>
+            {score !== undefined && isLive && (
+                <span className={`min-w-fit shrink-0 text-2xl font-black ${textScoreClass}`}>
+                    {score}
+                </span>
+            )}
+        </div>
+    );
+};
+
+const MatchCard = React.memo(({ match }) => {
+    const isLive = match.match_status === "live";
+
+    return (
+        <div className="group relative h-full cursor-pointer">
+            <div className="relative h-full overflow-hidden rounded-2xl bg-zinc-800 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
+                <div className="absolute right-2 top-2 z-0">
+                    <MatchStatusBadge match={match} />
+                </div>
+
+                <MatchTournamentHeader tournament={match.tournament} />
+
+                <div className="space-y-4 p-5">
+                    <MatchDateTimeBlock match={match} />
+
+                    <div className="space-y-3">
+                        <MatchTeamRow
+                            team={match.home}
+                            score={match.scores?.home}
+                            isLive={isLive}
+                            isHome={true}
+                        />
+
+                        {match.home && match.away && (
+                            <div className="flex items-center justify-center px-2 py-0.5">
+                                <span className="rounded-full bg-zinc-600 px-3 py-0.5 text-xs font-bold text-white">
+                                    VS
+                                </span>
+                            </div>
+                        )}
+
+                        <MatchTeamRow
+                            team={match.away}
+                            score={match.scores?.away}
+                            isLive={isLive}
+                            isHome={false}
+                        />
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+});
+
 export default function Home() {
     const { t } = useTranslation();
     const [loading, setLoading] = useState(false);
@@ -32,7 +210,6 @@ export default function Home() {
         const normal = [];
 
         filteredMatchesList.forEach((match) => {
-            // Check source tag assigned during fetch
             if (match._isHotMatch) {
                 hot.push(match);
             } else {
@@ -41,29 +218,27 @@ export default function Home() {
         });
 
         // Group normal matches by date
-        const grouped = {};
-        normal.forEach((match) => {
-            let dateKey = match.date;
-            if (dateKey?.length === 8) {
-                dateKey = `${dateKey.substring(0, 4)}-${dateKey.substring(4, 6)}-${dateKey.substring(6, 8)}`;
+        const grouped = normal.reduce((acc, match) => {
+            const date = match.date;
+            if (!acc[date]) {
+                acc[date] = [];
             }
-            if (!grouped[dateKey]) {
-                grouped[dateKey] = [];
-            }
-            grouped[dateKey].push(match);
-        });
+            acc[date].push(match);
+            return acc;
+        }, {});
 
         return { hotMatches: hot, groupedNormalMatches: grouped };
     }, [filteredMatchesList]);
 
-    // OPTIMIZATION: Memoize tournament select options
-    const tournamentOptions = useMemo(() => 
-        tournaments.map((t) => ({
-            value: t.id,
-            label: t.name,
-            logo: t.logo,
-        })),
-        [tournaments]
+    // Format tournament options for react-select
+    const tournamentOptions = useMemo(
+        () =>
+            tournaments.map((tournament) => ({
+                value: tournament.id,
+                label: tournament.name,
+                logo: tournament.logo,
+            })),
+        [tournaments],
     );
 
     const tournamentValues = useMemo(() => 
@@ -78,7 +253,6 @@ export default function Home() {
         [selectedTournaments, tournaments]
     );
 
-    // OPTIMIZATION: Separate useEffect for initial setup (runs once)
     useEffect(() => {
         document.title = t("home.title");
         fetchData();
@@ -89,9 +263,7 @@ export default function Home() {
 
         window.addEventListener("scroll", handleScroll);
         return () => window.removeEventListener("scroll", handleScroll);
-    }, []); // Runs only once on mount
-
-    // Real-time score refresh removed to improve performance
+    }, []);
 
     const fetchData = async () => {
         setLoading(true);
@@ -105,210 +277,24 @@ export default function Home() {
             if (!response.ok) throw new Error("Failed to fetch data");
             const data = await response.json();
 
-            // Tag matches to distinguish source
             const hotSource = (data.hot || [])
                 .filter((m) => m.sport_type === "football")
-                .map(m => ({ ...m, _isHotMatch: true })); // Tag as Hot
-                
+                .map((m) => ({ ...m, _isHotMatch: true }));
+
             const featuredSource = (data.featured || [])
                 .filter((m) => m.sport_type === "football")
-                .map(m => ({ ...m, _isHotMatch: false })); // Tag as Normal/Featured
+                .map((m) => ({ ...m, _isHotMatch: false }));
 
-            // Combine for processing but keep tags
             const allMatches = [...hotSource, ...featuredSource];
-
-            // Sort matches by time and priority
-            allMatches.sort((a, b) => {
-                const timeA = a.timestamp || new Date(a.date).getTime();
-                const timeB = b.timestamp || new Date(b.date).getTime();
-                const timeDiff = timeA - timeB;
-                if (timeDiff !== 0) return timeDiff;
-
-                // Priority sort within same time
-                // 1. Hot matches first
-                if (a.is_hot && !b.is_hot) return -1;
-                if (!a.is_hot && b.is_hot) return 1;
-
-                // 2. Featured matches second
-                if (a.is_featured && !b.is_featured) return -1;
-                if (!a.is_featured && b.is_featured) return 1;
-
-                // 3. Featured tournament matches third
-                const aTournamentFeatured = a.tournament?.is_featured ? 1 : 0;
-                const bTournamentFeatured = b.tournament?.is_featured ? 1 : 0;
-                return bTournamentFeatured - aTournamentFeatured;
-            });
-
+            allMatches.sort(compareMatches);
             setMatches(allMatches);
 
-            // Extract unique tournaments and count matches
-            const tournamentMap = new Map();
-            allMatches.forEach((match) => {
-                if (match.tournament?.id) {
-                    if (!tournamentMap.has(match.tournament.id)) {
-                        tournamentMap.set(match.tournament.id, {
-                            ...match.tournament,
-                            match_count: 0,
-                        });
-                    }
-                    tournamentMap.get(match.tournament.id).match_count++;
-                }
-            });
-
-            const tournamentList = Array.from(tournamentMap.values());
-
-            // Sort tournaments by popularity: Featured -> Priority -> Most matches -> Name
-            tournamentList.sort((a, b) => {
-                // 1. Featured first
-                const featuredA = a.is_featured ? 1 : 0;
-                const featuredB = b.is_featured ? 1 : 0;
-                if (featuredA !== featuredB) return featuredB - featuredA;
-
-                // 2. Priority descending (Higher = Better)
-                const priorityA = a.priority || 0;
-                const priorityB = b.priority || 0;
-                if (priorityA !== priorityB) {
-                    return priorityB - priorityA;
-                }
-
-                // 3. More matches = Higher popularity
-                if (b.match_count !== a.match_count) {
-                    return b.match_count - a.match_count;
-                }
-
-                // 4. Alphabetical name
-                return a.name.localeCompare(b.name);
-            });
-
+            const tournamentList = extractTournamentList(allMatches);
             setTournaments(tournamentList);
         } catch (err) {
             console.error("Error fetching data:", err);
         }
     };
-
-    // OPTIMIZATION: Memoize MatchCard component
-    const MatchCard = React.memo(({ match }) => {
-        const getStatusBadge = () => {
-            if (match.match_status === "live") {
-                return (
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold text-white shadow-lg">
-                        <span className="h-2 w-2 rounded-full bg-white animate-ping" />
-                        Live
-                    </span>
-                );
-            } else if (match.match_status === "pending" && match.timestamp) {
-                return (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-3 py-1 text-xs font-bold text-white shadow-lg">
-                        Sắp diễn ra
-                    </span>
-                );
-            }
-            return null;
-        };
-
-        return (
-            <div
-                // onClick={() => navigate(`/match/${match.id}`)}
-                className="group relative h-full cursor-pointer"
-            >
-                <div className="relative h-full overflow-hidden rounded-2xl bg-zinc-800 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-md">
-                    <div className="absolute right-2 top-2 z-0">
-                        {getStatusBadge()}
-                    </div>
-
-                    {match.tournament && (
-                        <div className="flex items-center gap-2 border-b border-zinc-700 bg-zinc-700/50 px-4 py-2">
-                            {match.tournament.logo && (
-                                <img
-                                    loading="lazy"
-                                    src={match.tournament.logo}
-                                    alt={match.tournament.name}
-                                    className="h-7 w-7 shrink-0 object-contain"
-                                    onError={(e) => { e.target.style.visibility = 'hidden'; e.target.onerror = null; }}
-                                />
-                            )}
-                            <span className="line-clamp-1 text-xs font-bold text-zinc-100">
-                                {match.tournament.name}
-                            </span>
-                        </div>
-                    )}
-
-                    <div className="space-y-4 p-5">
-                        <div className="flex flex-col items-center justify-center">
-                            {match._isHotMatch && match.date && match.date.length === 8 && (
-                                <span className="mb-0.5 text-xs font-semibold text-zinc-400">
-                                    {`${match.date.substring(6, 8)}/${match.date.substring(4, 6)}`}
-                                </span>
-                            )}
-                            <div className="text-sm font-bold text-blue-400">
-                                {match.date_txt ? (
-                                    <span dangerouslySetInnerHTML={{ __html: match.date_txt }} />
-                                ) : (
-                                    <span>{match.date}</span>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between gap-3 rounded-lg bg-blue-900/20 p-3 transition-colors hover:bg-blue-900/30">
-                                <div className="flex min-w-0 flex-1 items-center gap-3">
-                                    {match.home?.logo && (
-                                        <img
-                                            loading="lazy"
-                                            src={match.home.logo}
-                                            alt={match.home.name}
-                                            className="h-10 w-10 shrink-0 object-contain"
-                                            onError={(e) => { e.target.style.visibility = 'hidden'; e.target.onerror = null; }}
-                                        />
-                                    )}
-                                    <p className="line-clamp-2 text-sm font-bold text-zinc-100">
-                                        {match.home?.name_short || match.home?.name}
-                                    </p>
-                                </div>
-                                {match.scores && match.match_status === "live" && (
-                                    <span className="min-w-fit shrink-0 text-2xl font-black text-blue-400">
-                                        {match.scores.home}
-                                    </span>
-                                )}
-                            </div>
-
-                            {match.home && match.away && (
-                                <div className="flex items-center justify-center px-2 py-0.5">
-                                    <span className="rounded-full bg-zinc-600 px-3 py-0.5 text-xs font-bold text-white">
-                                        VS
-                                    </span>
-                                </div>
-                            )}
-
-                            {match.away && (
-                                <div className="flex items-center justify-between gap-3 rounded-lg bg-red-900/20 p-3 transition-colors hover:bg-red-900/30">
-                                    <div className="flex min-w-0 flex-1 items-center gap-3">
-                                        {match.away.logo && (
-                                            <img
-                                                loading="lazy"
-                                                src={match.away.logo}
-                                                alt={match.away.name}
-                                                className="h-10 w-10 shrink-0 object-contain"
-                                                onError={(e) => { e.target.style.visibility = 'hidden'; e.target.onerror = null; }}
-                                            />
-                                        )}
-                                        <p className="line-clamp-2 text-sm font-bold text-zinc-100">
-                                            {match.away.name_short || match.away.name}
-                                        </p>
-                                    </div>
-                                    {match.scores && match.match_status === "live" && (
-                                        <span className="min-w-fit shrink-0 text-2xl font-black text-red-400">
-                                            {match.scores.away}
-                                        </span>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        );
-    });
 
     return (
         <div className="min-h-screen bg-zinc-900">

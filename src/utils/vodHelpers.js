@@ -101,14 +101,14 @@ export function serverNameToSlug(name) {
 export function slugToServerName(slug) {
     if (!slug) return "";
     const s = String(slug).toLowerCase();
-    if (s === "vietsub") return "Vietsub";
+    if (s === "vietsub" || s === "phu-de") return "Phụ đề";
     if (s === "thuyet-minh") return "Thuyết Minh";
     if (s === "long-tieng") return "Lồng Tiếng";
     return slug;
 }
 
 /**
- * Trích xuất loại server từ tên đầy đủ (ví dụ: "#Hà Nội (Vietsub)" -> "Vietsub")
+ * Trích xuất loại server từ tên đầy đủ (ví dụ: "#Hà Nội (Vietsub)" -> "Phụ đề")
  * @param {string} serverName 
  * @returns {string}
  */
@@ -119,7 +119,8 @@ export function extractServerType(serverName) {
     if (lastOpen !== -1 && lastClose > lastOpen && lastClose === serverName.length - 1) {
         return serverName.slice(lastOpen + 1, lastClose);
     }
-    if (serverName.includes("Vietsub")) return "Vietsub";
+    const lower = serverName.toLowerCase();
+    if (["vietsub", "phụ đề", "phu de"].some((k) => lower.includes(k))) return "Phụ đề";
     if (serverName.includes("Thuyết Minh")) return "Thuyết Minh";
     if (serverName.includes("Lồng Tiếng")) return "Lồng Tiếng";
     return serverName;
@@ -307,6 +308,23 @@ export function extractSeasonNumber(movie) {
     );
 }
 
+const getTmdbUniqueKey = (movie, tmdbId) => {
+    const season = extractSeasonNumber(movie);
+    if (season) return `tmdb_${tmdbId}_s${season}`;
+
+    const type = movie.tmdb?.type || movie.type;
+    const isSeries =
+        type === "tv" ||
+        type === "series" ||
+        movie.chieurap === false ||
+        Boolean(movie.episode_current);
+
+    if (isSeries) {
+        return movie.slug ? `tmdb_${tmdbId}_${movie.slug}` : `tmdb_${tmdbId}_s1`;
+    }
+    return `tmdb_${tmdbId}`;
+};
+
 /**
  * Lấy khóa duy nhất (Unique Key) cho một phim để gộp các bản ghi trùng nhau
  * - Nếu có TMDB ID:
@@ -318,27 +336,147 @@ export function extractSeasonNumber(movie) {
  */
 export function getMovieUniqueKey(movie) {
     if (!movie) return "";
-
     const tmdbId = movie.tmdb?.id || movie.tmdbId;
-    const season = extractSeasonNumber(movie);
+    if (tmdbId) return getTmdbUniqueKey(movie, tmdbId);
+    return movie.slug ? `slug_${movie.slug}` : `id_${movie._id || movie.id || ""}`;
+}
+
+/**
+ * Lấy định danh phát phim chuẩn hóa cho URL (/vod/play/:idOrSlug):
+ * - Ưu tiên trả về TMDB ID (dạng chuỗi số, ví dụ "157336") nếu có tmdbId / tmdb_id / tmdb.id
+ * - Chỉ khi không có TMDB ID mới fallback về slug gốc của phim
+ * @param {object} movie
+ * @returns {string}
+ */
+export function getMoviePlaySlug(movie) {
+    if (!movie) return "";
+    const tmdbId =
+        movie.tmdbId ||
+        movie.tmdb_id ||
+        movie.tmdb?.id ||
+        (movie.source === "source_tmdb" && movie.id ? movie.id : null);
 
     if (tmdbId) {
-        if (season) {
-            return `tmdb_${tmdbId}_s${season}`;
-        }
-        const type = movie.tmdb?.type || movie.type;
-        const isSeries =
-            type === "tv" ||
-            type === "series" ||
-            movie.chieurap === false ||
-            Boolean(movie.episode_current);
-
-        // Đối với phim bộ: nếu không tách được season cụ thể, dùng slug để chống gộp đè các mùa khác nhau
-        if (isSeries) {
-            return movie.slug ? `tmdb_${tmdbId}_${movie.slug}` : `tmdb_${tmdbId}_s1`;
-        }
-        return `tmdb_${tmdbId}`;
+        return String(tmdbId).replace(/^tmdb-/, "");
     }
+    return movie.slug ? String(movie.slug).replace(/^tmdb-/, "") : "";
+}
 
-    return movie.slug ? `slug_${movie.slug}` : `id_${movie._id || movie.id || ""}`;
+/**
+ * Lấy URL phát phim chuẩn hóa (/vod/play/{tmdbId || slug}?source=...) đồng bộ cho tất cả source
+ * @param {object} movie
+ * @param {string} fallbackSource
+ * @returns {string}
+ */
+export function getMoviePlayUrl(movie, fallbackSource = "source_k") {
+    if (!movie) return "#";
+    const playSlug = getMoviePlaySlug(movie);
+    if (!playSlug) return "#";
+
+    const source = movie.source || fallbackSource;
+    const episodeParam = movie.current_episode?.key
+        ? `&episode=${movie.current_episode.key}`
+        : "";
+    const serverParam = movie.server ? `&server=${movie.server}` : "";
+
+    return `/vod/play/${playSlug}?source=${source}${episodeParam}${serverParam}`;
+}
+
+/**
+ * Đảm bảo URL video YouTube là dạng embed URL
+ * @param {string} url
+ * @returns {string}
+ */
+export function ensureYoutubeEmbedUrl(url) {
+    if (!url) return "";
+    const str = String(url).trim();
+    if (str.includes("youtube.com/watch?v=")) {
+        const videoId = str.split("v=")[1]?.split("&")[0];
+        return `https://www.youtube.com/embed/${videoId}`;
+    }
+    if (str.includes("youtu.be/")) {
+        const videoId = str.split("youtu.be/")[1]?.split("?")[0];
+        return `https://www.youtube.com/embed/${videoId}`;
+    }
+    return str;
+}
+
+const findBestYoutubeVideo = (list) => {
+    const isYt = (v) => v?.site === "YouTube" && Boolean(v?.key);
+    return (
+        list.find((v) => v.type === "Trailer" && isYt(v)) ||
+        list.find((v) => ["Teaser", "Clip", "Featurette"].includes(v.type) && isYt(v)) ||
+        list.find(isYt)
+    );
+};
+
+const resolveMovieTrailerString = (movie) => {
+    const url = movie?.trailer_url;
+    if (typeof url === "string" && url.trim()) {
+        return url.trim();
+    }
+    return null;
+};
+
+const resolveVideoSourceList = (movie, tmdbVideos) => {
+    if (Array.isArray(tmdbVideos) && tmdbVideos.length > 0) {
+        return tmdbVideos;
+    }
+    const tmdbResults = movie?.tmdb?.videos?.results;
+    if (Array.isArray(tmdbResults) && tmdbResults.length > 0) {
+        return tmdbResults;
+    }
+    const movieResults = movie?.videos?.results;
+    if (Array.isArray(movieResults)) {
+        return movieResults;
+    }
+    return [];
+};
+
+/**
+ * Tìm URL trailer YouTube tốt nhất từ movie hoặc danh sách TMDB videos
+ * @param {object} movie
+ * @param {Array} tmdbVideos
+ * @returns {string|null}
+ */
+export function extractBestTrailerUrl(movie, tmdbVideos = []) {
+    const directUrl = resolveMovieTrailerString(movie);
+    if (directUrl) return directUrl;
+
+    const list = resolveVideoSourceList(movie, tmdbVideos);
+    const trailer = findBestYoutubeVideo(list);
+    return trailer?.key ? `https://www.youtube.com/watch?v=${trailer.key}` : null;
+}
+
+/**
+ * Thêm server group Trailer vào danh sách episodes nếu có trailer
+ * @param {Array} episodesList
+ * @param {string} trailerUrl
+ * @returns {Array}
+ */
+export function appendTrailerServerGroup(episodesList, trailerUrl) {
+    if (!trailerUrl) return episodesList || [];
+    const list = Array.isArray(episodesList) ? [...episodesList] : [];
+    const alreadyHasTrailer = list.some(
+        (g) => g.type_id === "trailer" || g.server_name?.toLowerCase() === "trailer"
+    );
+    if (alreadyHasTrailer) return list;
+
+    const embedUrl = ensureYoutubeEmbedUrl(trailerUrl);
+    const trailerGroup = {
+        server_name: "Trailer",
+        type_id: "trailer",
+        color: "bg-zinc-800",
+        server_data: [
+            {
+                name: "Trailer",
+                slug: "trailer",
+                link_embed: embedUrl,
+                link_m3u8: null,
+                backups: [],
+            },
+        ],
+    };
+
+    return [...list, trailerGroup];
 }

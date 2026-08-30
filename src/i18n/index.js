@@ -5,11 +5,7 @@ import LanguageDetector from "i18next-browser-languagedetector";
 import vi from "./locales/vi.json";
 import en from "./locales/en.json";
 
-// Các ngôn ngữ hỗ trợ
-export const LANGUAGES = [
-    { code: "vi", name: "Tiếng Việt" },
-    { code: "en", name: "English" },
-];
+export { LANGUAGES } from "../constants";
 
 // Tắt sponsorship message của i18next trong dev
 i18n.options.ignoreJSONStructure = false;
@@ -18,7 +14,7 @@ i18n.options.ignoreJSONStructure = false;
 i18n.use(LanguageDetector) // Tự động detect ngôn ngữ từ browser
     .use(initReactI18next) // Tích hợp với React
     .init({
-        logSpam: false, // Tắt sponsorship/promotional messages
+        showSupportNotice: false, // Tắt thông báo quảng cáo locize support notice
         resources: {
             vi: { translation: vi },
             en: { translation: en },

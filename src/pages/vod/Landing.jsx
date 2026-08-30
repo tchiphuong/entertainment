@@ -6,14 +6,217 @@ import {
     MovieRowSkeleton,
 } from "../../components/vod/VodSkeletons";
 
+import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
+import { Button } from "../../components/ui";
 import { useVodData } from "../../hooks/useVodData";
 import { useImageFallback } from "../../hooks/useImageFallback";
+import { useHorizontalScrollState } from "../../hooks/useHorizontalScrollState";
 import MovieLanguageBadges from "../../components/vod/MovieLanguageBadges";
 import VodMovieCard from "../../components/vod/VodMovieCard";
 import VodTopViewRow from "../../components/vod/VodTopViewRow";
-import { CATEGORIES, SOURCES } from "../../constants/vodConstants";
+import { CATEGORIES, SOURCES } from "../../constants";
+import { getMoviePlayUrl } from "../../utils/vodHelpers";
 import VodLayout from "../../components/layout/VodLayout";
 import { useVodContext } from "../../contexts/VodContext";
+
+const HeroSlideBadges = ({ movie, idx }) => (
+    <div className="flex flex-wrap items-center gap-2 text-xs font-bold md:gap-3">
+        {movie.tmdbBranding?.brandLogo && (
+            <div className="mr-1 flex items-center border-r border-zinc-700/80 pr-3">
+                <div className="rounded-md bg-black/50 px-2 py-1 backdrop-blur-md">
+                    <img
+                        loading="lazy"
+                        src={movie.tmdbBranding.brandLogo}
+                        alt="Brand Logo"
+                        className="h-5 md:h-7 object-contain"
+                    />
+                </div>
+            </div>
+        )}
+        <span className="flex items-center gap-1 rounded-full bg-red-600 px-2.5 py-0.5 text-[0.625rem] font-black uppercase text-white shadow-sm md:text-xs">
+            TOP {idx + 1} • HOT
+        </span>
+        {movie.year && (
+            <span className="rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2 py-0.5 text-[0.625rem] font-bold text-zinc-300 md:text-xs">
+                {movie.year}
+            </span>
+        )}
+        {movie.quality && (
+            <span className="rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2 py-0.5 text-[0.625rem] font-bold text-white md:text-xs">
+                {movie.quality}
+            </span>
+        )}
+        <MovieLanguageBadges lang={movie.lang} useLight={true} />
+        {movie.episode_current && !movie.isTrailer && (
+            <span className="hidden rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2 py-0.5 text-[0.625rem] font-bold text-zinc-300 sm:inline-block md:text-xs">
+                {movie.episode_current}
+            </span>
+        )}
+    </div>
+);
+
+const HeroSlideActionButtons = ({ movie, isFav, navigate, toggleFavorite, t }) => (
+    <div className="flex items-center gap-2.5 pt-2 md:gap-4 md:pt-4">
+        <button
+            type="button"
+            onClick={() =>
+                navigate(getMoviePlayUrl(movie, "source_k"), {
+                    state: {
+                        backgrounds: {
+                            poster_url: movie.poster_url || movie.poster || movie.poster_path,
+                            thumb_url: movie.thumb_url || movie.thumbnail || movie.backdrop_url || movie.backdrop_path,
+                        },
+                    },
+                })
+            }
+            className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-2xl md:rounded-full bg-red-600 py-3 px-5 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-red-600/30 transition-all hover:bg-red-500 active:scale-95 md:flex-none md:px-8 md:py-3.5 md:text-sm"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 fill-current md:h-5 md:w-5" viewBox="0 0 24 24">
+                <path d="M8 5v14l11-7z" />
+            </svg>
+            <span>{t("vods.watchNow") || "Xem Ngay"}</span>
+        </button>
+
+        <button
+            type="button"
+            onClick={() => toggleFavorite(movie)}
+            className={`flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-2xl md:rounded-full border transition-all active:scale-90 md:h-12 md:px-6 md:text-sm ${
+                isFav
+                    ? "border-red-600 bg-red-600/20 text-red-500 shadow-md shadow-red-600/20"
+                    : "border-zinc-700/80 bg-zinc-900/90 text-zinc-300 hover:border-zinc-500 hover:text-white"
+            }`}
+            title={isFav ? t("common.remove") : t("common.add")}
+            aria-label="Yêu thích"
+        >
+            <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                fill={isFav ? "currentColor" : "none"}
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={2}
+            >
+                <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                />
+            </svg>
+            <span className="hidden md:inline font-bold">
+                {isFav ? t("common.remove") || "Đã lưu" : t("vods.favorites") || "Yêu thích"}
+            </span>
+        </button>
+
+        <button
+            type="button"
+            onClick={() =>
+                navigate(getMoviePlayUrl(movie, "source_k"), {
+                    state: {
+                        backgrounds: {
+                            poster_url: movie.poster_url || movie.poster || movie.poster_path,
+                            thumb_url: movie.thumb_url || movie.thumbnail || movie.backdrop_url || movie.backdrop_path,
+                        },
+                    },
+                })
+            }
+            className="flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-2xl md:rounded-full border border-zinc-700/80 bg-zinc-900/90 px-3.5 text-xs font-bold text-zinc-200 transition-all hover:bg-zinc-800 hover:text-white active:scale-95 md:h-12 md:px-6 md:text-sm"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="hidden sm:inline">{t("vods.info") || "Chi tiết"}</span>
+        </button>
+    </div>
+);
+
+const HeroSlideItem = ({
+    movie,
+    idx,
+    isActive,
+    isFav,
+    getImageUrl,
+    handleImageError,
+    navigate,
+    toggleFavorite,
+    t,
+}) => (
+    <div
+        className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${
+            isActive ? "pointer-events-auto z-10 opacity-100" : "pointer-events-none invisible z-0 opacity-0"
+        }`}
+    >
+        <div className="absolute inset-0 z-0">
+            <img
+                loading="lazy"
+                src={getImageUrl(movie, "thumbnail")}
+                alt={movie.name}
+                className="hidden h-full w-full object-cover object-center brightness-[0.75] md:block"
+                onError={handleImageError}
+            />
+            <img
+                loading="lazy"
+                src={getImageUrl(movie, "poster")}
+                alt={movie.name}
+                className="h-full w-full object-cover object-top brightness-[0.65] md:hidden"
+                onError={handleImageError}
+            />
+            <div className="absolute inset-0 bg-black/40" />
+        </div>
+
+        <div className="relative z-30 mx-auto flex h-full w-full max-w-[120rem] flex-col justify-end px-4 pb-12 md:justify-center md:px-12 md:pb-0 lg:px-20">
+            <div className={`max-w-3xl lg:max-w-4xl space-y-3 md:space-y-5 ${isActive ? "animate-fade-in-down" : "opacity-0"}`}>
+                <HeroSlideBadges movie={movie} idx={idx} />
+
+                <div>
+                    {movie.tmdbBranding?.titleLogo ? (
+                        <div className="mb-2 max-h-16 max-w-[16.25rem] md:max-h-28 md:max-w-[28rem] lg:max-h-36 lg:max-w-[34rem]">
+                            <img
+                                loading="lazy"
+                                src={movie.tmdbBranding.titleLogo}
+                                alt={movie.name}
+                                className="max-h-16 md:max-h-28 lg:max-h-36 w-auto object-contain object-left drop-shadow-2xl"
+                            />
+                        </div>
+                    ) : (
+                        <h1 className="text-balance text-2xl font-black leading-tight tracking-tight text-white drop-shadow-2xl md:text-5xl lg:text-6xl md:leading-[1.15]">
+                            {movie.name}
+                        </h1>
+                    )}
+                    {movie.origin_name && movie.origin_name !== movie.name && (
+                        <p className="mt-1 text-xs font-semibold text-zinc-400 drop-shadow md:text-sm">
+                            {movie.origin_name}
+                        </p>
+                    )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-zinc-300 md:text-sm">
+                    {movie.category?.length > 0 ? (
+                        movie.category.slice(0, 5).map((c, i, arr) => (
+                            <span key={c.id || i} className="flex items-center gap-1.5">
+                                <span className="hover:text-red-400">{c.name}</span>
+                                {i < arr.length - 1 && <span className="text-zinc-600">•</span>}
+                            </span>
+                        ))
+                    ) : (
+                        <span>{t("vods.recommendedHeader")}</span>
+                    )}
+                </div>
+
+                <p className="hidden md:line-clamp-3 max-w-2xl text-sm font-medium leading-relaxed text-zinc-300 drop-shadow-md lg:text-base">
+                    {movie.content?.replace(/<[^>]*>?/gm, "")}
+                </p>
+
+                <HeroSlideActionButtons
+                    movie={movie}
+                    isFav={isFav}
+                    navigate={navigate}
+                    toggleFavorite={toggleFavorite}
+                    t={t}
+                />
+            </div>
+        </div>
+    </div>
+);
 
 export default function VodLanding() {
     const { t } = useTranslation();
@@ -24,6 +227,8 @@ export default function VodLanding() {
         historyLoading,
         removeFromHistory,
         clearAllHistory,
+        isFavorite,
+        toggleFavorite,
     } = useVodContext();
     const { sections, heroMovies, loading } = useVodData(CATEGORIES);
     const { getImageUrl, handleImageError } = useImageFallback();
@@ -162,271 +367,54 @@ export default function VodLanding() {
                 <HeroSkeleton />
             ) : (
                 <div
-                    className="relative mx-auto h-[85vh] w-full max-w-[1920px] overflow-hidden md:h-screen lg:min-h-[850px]"
+                    className="relative w-full h-[78vh] min-h-[32.5rem] max-h-[45rem] overflow-hidden select-none bg-zinc-950 md:h-screen md:min-h-[50rem] md:max-h-none"
                     onTouchStart={handleTouchStart}
                     onTouchMove={handleTouchMove}
                     onTouchEnd={handleTouchEnd}
                 >
                     {heroMovies.map((movie, idx) => (
-                        <div
-                            key={movie.slug}
-                            className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${idx === currentHeroIndex ? "pointer-events-auto z-10 opacity-100" : "pointer-events-none invisible z-0 opacity-0"}`}
-                        >
-                            <div className="absolute inset-0 z-0">
-                                <img
-                                    loading="lazy"
-                                    src={getImageUrl(movie, "thumbnail")}
-                                    alt={movie.name}
-                                    className="hidden h-full w-full object-cover brightness-[0.7] md:block"
-                                    onError={handleImageError}
-                                />
-                                <img
-                                    loading="lazy"
-                                    src={getImageUrl(movie, "poster")}
-                                    alt={movie.name}
-                                    className="h-full w-full object-cover brightness-[0.6] md:hidden"
-                                    onError={handleImageError}
-                                />
-                                <div className="bg-linear-to-t absolute inset-0 from-zinc-950 via-zinc-950/20 to-transparent" />
-                                <div className="bg-linear-to-r absolute inset-0 from-zinc-950 via-zinc-950/10 to-transparent md:via-transparent" />
-                            </div>
-                            <div className="relative z-30 mx-auto flex h-full w-full max-w-[1920px] flex-col justify-center space-y-8 px-4 md:px-12 lg:px-20">
-                                <div
-                                    className={
-                                        idx === currentHeroIndex
-                                            ? "animate-fade-in-down"
-                                            : "opacity-0"
-                                    }
-                                >
-                                    <div className="mb-6 flex flex-wrap items-center gap-3 text-sm font-black uppercase tracking-widest md:gap-4">
-                                        {movie.tmdbBranding?.brandLogo && (
-                                            <div className="mr-2 flex items-center border-r border-zinc-700 pr-4">
-                                                <div className="rounded-xs px-2 py-1 backdrop-blur-md">
-                                                    <img
-                                                        loading="lazy"
-                                                        src={
-                                                            movie.tmdbBranding
-                                                                .brandLogo
-                                                        }
-                                                        alt="Brand Logo"
-                                                        className="h-8 object-contain"
-                                                        style={{
-                                                            filter: "drop-shadow(1px 1px 0 rgba(255,255,255, 0.2)) drop-shadow(-1px -1px 0 rgba(255,255,255, 0.2)) drop-shadow(1px -1px 0 rgba(255,255,255, 0.2)) drop-shadow(-1px 1px 0 rgba(255,255,255, 0.2))",
-                                                            WebkitFilter:
-                                                                "drop-shadow(1px 1px 0 rgba(255,255,255, 0.2)) drop-shadow(-1px -1px 0 rgba(255,255,255, 0.2)) drop-shadow(1px -1px 0 rgba(255,255,255, 0.2)) drop-shadow(-1px 1px 0 rgba(255,255,255, 0.2))",
-                                                        }}
-                                                    />
-                                                </div>
-                                            </div>
-                                        )}
-                                        <div className="flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-0.5 text-[10px] text-white md:text-xs">
-                                            {t("vods.topHotMovies", {
-                                                count: heroMovies.length,
-                                            })}
-                                        </div>
-                                        {movie.isTrailer ? (
-                                            <span className="rounded-full bg-red-600 px-3 py-0.5 text-[10px] font-black uppercase text-white shadow-lg md:text-xs">
-                                                {t("vods.comingSoon")}
-                                            </span>
-                                        ) : (
-                                            <>
-                                                {movie.year && (
-                                                    <span className="text-zinc-300">
-                                                        {movie.year}
-                                                    </span>
-                                                )}
-                                                {movie.quality && (
-                                                    <span className="rounded-full border border-zinc-700 bg-zinc-800/50 px-2 py-0.5 text-zinc-300">
-                                                        {movie.quality}
-                                                    </span>
-                                                )}
-                                            </>
-                                        )}
-                                        <MovieLanguageBadges
-                                            lang={movie.lang}
-                                            useLight={true}
-                                        />
-                                        {!movie.isTrailer && (
-                                            <span className="hidden text-zinc-300 md:block">
-                                                {movie.episode_current ||
-                                                    "Full HD"}
-                                            </span>
-                                        )}
-                                    </div>
-                                    {movie.tmdbBranding?.titleLogo ? (
-                                        <>
-                                            <div className="mb-2 h-20 w-full max-w-[300px] md:mb-3 md:h-[150px] md:max-w-[500px] lg:h-[200px]">
-                                                <img
-                                                    loading="lazy"
-                                                    src={
-                                                        movie.tmdbBranding
-                                                            .titleLogo
-                                                    }
-                                                    alt={movie.name}
-                                                    className="h-full w-full object-contain object-left drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]"
-                                                />
-                                            </div>
-                                            <p className="mb-4 text-sm font-bold tracking-wide text-zinc-400 drop-shadow-lg md:mb-6 md:text-lg">
-                                                {movie.name}
-                                                {movie.origin_name &&
-                                                    movie.origin_name !==
-                                                        movie.name && (
-                                                        <span className="ml-2 text-xs font-medium text-zinc-500 md:text-sm">
-                                                            ({movie.origin_name}
-                                                            )
-                                                        </span>
-                                                    )}
-                                            </p>
-                                        </>
-                                    ) : (
-                                        <h1 className="mb-4 text-balance text-3xl font-medium leading-tight tracking-normal text-white drop-shadow-2xl md:text-8xl md:leading-[1.1]">
-                                            {movie.name}
-                                        </h1>
-                                    )}
-                                    <div className="mb-6 flex flex-wrap gap-2 text-sm font-bold text-red-500 md:text-base">
-                                        {movie.category?.length > 0 ? (
-                                            movie.category.map((c, i) => (
-                                                <span key={c.id || i}>
-                                                    {c.name}
-                                                    {i <
-                                                    movie.category.length - 1
-                                                        ? " • "
-                                                        : ""}
-                                                </span>
-                                            ))
-                                        ) : (
-                                            <span>
-                                                {t("vods.recommendedHeader")}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                                <p
-                                    className={`line-clamp-3 max-w-2xl text-sm font-medium leading-relaxed text-zinc-300 drop-shadow-lg md:text-xl lg:text-2xl ${idx === currentHeroIndex ? "animate-fade-in" : "opacity-0"}`}
-                                >
-                                    {movie.content?.replace(/<[^>]*>?/gm, "")}
-                                </p>
-                                <div
-                                    className={`flex flex-wrap items-center gap-3 pt-4 md:gap-4 md:pt-6 ${idx === currentHeroIndex ? "animate-fade-in-up" : "opacity-0"}`}
-                                >
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            navigate(
-                                                `/vod/play/${movie.slug}?source=${movie.source || "source_k"}`,
-                                                {
-                                                    state: {
-                                                        backgrounds: {
-                                                            poster_url:
-                                                                movie.poster_url,
-                                                            thumb_url:
-                                                                movie.thumb_url,
-                                                        },
-                                                    },
-                                                },
-                                            )
-                                        }
-                                        className="flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-black text-black shadow-2xl transition-all hover:bg-zinc-200 active:scale-95 md:gap-3 md:px-9 md:py-3.5 md:text-lg"
-                                    >
-                                        <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            className="h-5 w-5 fill-current md:h-7 md:w-7"
-                                            viewBox="0 0 24 24"
-                                        >
-                                            <path d="M8 5v14l11-7z" />
-                                        </svg>
-                                        {t("vods.watchNow")}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() =>
-                                            navigate(
-                                                `/vod/play/${movie.slug}?source=${movie.source || "source_k"}`,
-                                                {
-                                                    state: {
-                                                        backgrounds: {
-                                                            poster_url:
-                                                                movie.poster_url,
-                                                            thumb_url:
-                                                                movie.thumb_url,
-                                                        },
-                                                    },
-                                                },
-                                            )
-                                        }
-                                        className="flex items-center gap-2 rounded-full border border-white/10 bg-zinc-600/40 px-5 py-2.5 text-sm font-black text-white shadow-xl backdrop-blur-md transition-all hover:bg-zinc-600/60 md:gap-3 md:px-9 md:py-3.5 md:text-lg"
-                                    >
-                                        <svg
-                                            xmlns="http://www.w3.org/2000/svg"
-                                            className="h-5 w-5 md:h-7 md:w-7"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                strokeWidth={2.5}
-                                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                                            />
-                                        </svg>
-                                        {t("vods.info")}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+                        <HeroSlideItem
+                            key={movie.slug || idx}
+                            movie={movie}
+                            idx={idx}
+                            isActive={idx === currentHeroIndex}
+                            isFav={isFavorite?.(movie.slug)}
+                            getImageUrl={getImageUrl}
+                            handleImageError={handleImageError}
+                            navigate={navigate}
+                            toggleFavorite={toggleFavorite}
+                            t={t}
+                        />
                     ))}
 
-                    {/* Navigation Arrows */}
-                    <div className="pointer-events-none absolute left-0 top-1/2 z-40 flex w-14 -translate-y-1/2 items-center justify-start pl-3 opacity-90 transition-opacity hover:opacity-100 md:w-24 md:pl-6 lg:pl-10">
+                    {/* Navigation Arrows (Desktop Only) */}
+                    <div className="pointer-events-none absolute left-0 top-1/2 z-40 hidden w-16 -translate-y-1/2 items-center justify-start pl-4 md:flex lg:pl-8">
                         <button
                             type="button"
                             onClick={prevHero}
-                            className="group pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950/85 text-white shadow-2xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 hover:shadow-[0_0_20px_rgba(239,68,68,0.6)] active:scale-90 md:h-14 md:w-14"
+                            className="group pointer-events-auto flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-zinc-700/80 bg-zinc-950/80 text-white shadow-xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 active:scale-90"
                             aria-label="Slide trước"
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-6 w-6 transition-transform group-hover:-translate-x-1 md:h-8 md:w-8"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2.5}
-                                    d="M15 19l-7-7 7-7"
-                                />
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                             </svg>
                         </button>
                     </div>
-                    <div className="pointer-events-none absolute right-0 top-1/2 z-40 flex w-14 -translate-y-1/2 items-center justify-end pr-3 opacity-90 transition-opacity hover:opacity-100 md:w-24 md:pr-6 lg:pr-10">
+                    <div className="pointer-events-none absolute right-0 top-1/2 z-40 hidden w-16 -translate-y-1/2 items-center justify-end pr-4 md:flex lg:pr-8">
                         <button
                             type="button"
                             onClick={nextHero}
-                            className="group pointer-events-auto flex h-11 w-11 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950/85 text-white shadow-2xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 hover:shadow-[0_0_20px_rgba(239,68,68,0.6)] active:scale-90 md:h-14 md:w-14"
+                            className="group pointer-events-auto flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-zinc-700/80 bg-zinc-950/80 text-white shadow-xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 active:scale-90"
                             aria-label="Slide tiếp theo"
                         >
-                            <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                className="h-6 w-6 transition-transform group-hover:translate-x-1 md:h-8 md:w-8"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2.5}
-                                    d="M9 5l7 7-7 7"
-                                />
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                             </svg>
                         </button>
                     </div>
 
-                    {/* Slider Indicators */}
-                    <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 flex-row gap-1 md:gap-3">
+                    {/* App-like Slide Pill Indicators */}
+                    <div className="absolute bottom-3.5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 md:bottom-6 md:gap-2">
                         {heroMovies.map((movie, idx) => (
                             <button
                                 key={movie.slug || idx}
@@ -435,11 +423,15 @@ export default function VodLanding() {
                                     setCurrentHeroIndex(idx);
                                     startSlider();
                                 }}
-                                className="group relative flex h-6 items-center justify-center px-1"
-                                aria-label={`Go to slide ${idx + 1}`}
+                                className="group flex h-4 cursor-pointer items-center justify-center p-0.5"
+                                aria-label={`Slide ${idx + 1}`}
                             >
                                 <span
-                                    className={`h-1.5 w-6 rounded-full transition-all duration-500 group-hover:bg-zinc-400 ${idx === currentHeroIndex ? "w-10 scale-y-110 bg-red-600" : "w-4 bg-zinc-700"}`}
+                                    className={`h-1 rounded-full transition-all duration-300 ${
+                                        idx === currentHeroIndex
+                                            ? "w-6 bg-red-600 shadow-[0_0_8px_rgba(220,38,38,0.8)]"
+                                            : "w-1.5 bg-zinc-700 group-hover:bg-zinc-500"
+                                    }`}
                                 />
                             </button>
                         ))}
@@ -652,26 +644,8 @@ function MovieRow({
     onClearAll,
 }) {
     const { t } = useTranslation();
-    const rowRef = useRef(null);
-    const [showLeftArrow, setShowLeftArrow] = useState(false);
-    const [showRightArrow, setShowRightArrow] = useState(true);
-
-    const handleScroll = () => {
-        if (rowRef.current) {
-            const { scrollLeft, scrollWidth, clientWidth } = rowRef.current;
-            setShowLeftArrow(scrollLeft > 0);
-            setShowRightArrow(scrollLeft + clientWidth < scrollWidth - 10);
-        }
-    };
-
-    const scroll = (direction) => {
-        if (rowRef.current) {
-            const { clientWidth } = rowRef.current;
-            const scrollAmount =
-                direction === "left" ? -clientWidth * 0.8 : clientWidth * 0.8;
-            rowRef.current.scrollBy({ left: scrollAmount, behavior: "smooth" });
-        }
-    };
+    const { scrollRef, canScrollLeft, canScrollRight, hasOverflow, scrollLeft, scrollRight } =
+        useHorizontalScrollState([items?.length]);
 
     if (!items || items.length === 0) return null;
 
@@ -716,55 +690,46 @@ function MovieRow({
                             className="flex items-center gap-1 text-sm font-bold text-zinc-500 transition-all duration-300 hover:text-red-500 focus:opacity-100"
                         >
                             {t("common.seeMore")}
-                            <svg
-                                className="h-4 w-4"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={3}
-                                    d="M9 5l7 7-7 7"
-                                />
-                            </svg>
+                            <ChevronRightIcon className="h-4 w-4 stroke-2" />
                         </Link>
+                    )}
+                    {hasOverflow && (
+                        <div className="flex items-center gap-2">
+                            {canScrollLeft && (
+                                <Button
+                                    onPress={() => scrollLeft(0.8)}
+                                    variant="secondary"
+                                    size="sm"
+                                    isIconOnly
+                                    aria-label="Cuộn sang trái"
+                                >
+                                    <ChevronLeftIcon className="h-4 w-4 stroke-2" />
+                                </Button>
+                            )}
+                            {canScrollRight && (
+                                <Button
+                                    onPress={() => scrollRight(0.8)}
+                                    variant="secondary"
+                                    size="sm"
+                                    isIconOnly
+                                    aria-label="Cuộn sang phải"
+                                >
+                                    <ChevronRightIcon className="h-4 w-4 stroke-2" />
+                                </Button>
+                            )}
+                        </div>
                     )}
                 </div>
             </div>
             <div className="relative">
-                {showLeftArrow && (
-                    <button
-                        type="button"
-                        onClick={() => scroll("left")}
-                        className="pointer-events-auto absolute left-2 top-1/2 z-50 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950/90 text-white shadow-2xl backdrop-blur-md opacity-0 transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 hover:shadow-[0_0_16px_rgba(239,68,68,0.6)] group-hover/row:opacity-100 md:flex md:h-13 md:w-13"
-                        aria-label="Cuộn sang trái"
-                    >
-                        <svg
-                            className="h-6 w-6"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={3}
-                                d="M15 19l-7-7 7-7"
-                            />
-                        </svg>
-                    </button>
-                )}
                 <div
-                    ref={rowRef}
-                    onScroll={handleScroll}
+                    ref={scrollRef}
                     className="no-scrollbar flex gap-4 overflow-x-auto scroll-smooth px-4 py-8 transition-all md:px-12 lg:px-20"
                 >
                     {items.map((item) => (
                         <div
                             key={item.slug}
-                            className="relative w-55 shrink-0 transition-all duration-500 hover:z-40 md:w-60 lg:w-65 xl:w-70"
+                            className="relative w-40 shrink-0 transition-all duration-300 hover:z-40 sm:w-48 md:w-56 lg:w-60 xl:w-64"
                         >
                             <VodMovieCard
                                 movie={item}
@@ -776,28 +741,6 @@ function MovieRow({
                         </div>
                     ))}
                 </div>
-                {showRightArrow && (
-                    <button
-                        type="button"
-                        onClick={() => scroll("right")}
-                        className="pointer-events-auto absolute right-2 top-1/2 z-50 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950/90 text-white shadow-2xl backdrop-blur-md opacity-0 transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 hover:shadow-[0_0_16px_rgba(239,68,68,0.6)] group-hover/row:opacity-100 md:flex md:h-13 md:w-13"
-                        aria-label="Cuộn sang phải"
-                    >
-                        <svg
-                            className="h-6 w-6"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={3}
-                                d="M9 5l7 7-7 7"
-                            />
-                        </svg>
-                    </button>
-                )}
             </div>
         </div>
     );

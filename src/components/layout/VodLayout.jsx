@@ -4,7 +4,7 @@ export default function VodLayout({ children }) {
     return (
         <div className="min-h-screen bg-zinc-950 font-sans text-white selection:bg-red-600 selection:text-white">
             <VodNavbar />
-            <main>{children}</main>
+            <main className="pb-[calc(4.5rem+env(safe-area-inset-bottom,0rem))] md:pb-0">{children}</main>
 
             <style
                 dangerouslySetInnerHTML={{

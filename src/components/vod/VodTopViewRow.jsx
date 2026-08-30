@@ -1,11 +1,19 @@
 import { useRef, useState, useEffect, memo, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { HeartIcon as HeartSolidIcon } from "@heroicons/react/24/solid";
+import {
+    HeartIcon as HeartOutlineIcon,
+    ChevronLeftIcon,
+    ChevronRightIcon,
+} from "@heroicons/react/24/outline";
 import { useVodContext } from "../../contexts/VodContext";
 import MovieLanguageBadges from "./MovieLanguageBadges";
+import { Button, Tabs } from "../ui";
+import { useHorizontalScrollState } from "../../hooks/useHorizontalScrollState";
 import { tmdbService } from "../../services/vod/tmdbService";
 import { vodCache } from "../../utils/vodCache";
-import { getQualityBadge } from "../../utils/vodHelpers";
+import { getQualityBadge, getMoviePlayUrl } from "../../utils/vodHelpers";
 
 /**
  * Component hiển thị số thứ tự Top Rank chuẩn Đèn Neon Ống Uốn Thủy Tinh (Real Neon Glass Tube)
@@ -74,12 +82,8 @@ const TopViewMovieCard = memo(
 
         const favorite = isFavorite(movie.slug);
         const qualityBadge = getQualityBadge(movie.quality);
-        const episodeParam = movie.current_episode?.key
-            ? `&episode=${movie.current_episode.key}`
-            : "";
-        const serverParam = movie.server ? `&server=${movie.server}` : "";
         const currentSource = movie.source || source || "source_tmdb";
-        const playUrl = `/vod/play/${movie.slug}?source=${currentSource}${episodeParam}${serverParam}`;
+        const playUrl = getMoviePlayUrl(movie, currentSource);
 
         const handleToggleFavorite = (e) => {
             e.preventDefault();
@@ -103,36 +107,19 @@ const TopViewMovieCard = memo(
 
                             {/* Nút Yêu thích chuẩn VodMovieCard */}
                             <div className="absolute left-2 top-2 z-40">
-                                <button
-                                    type="button"
-                                    onClick={handleToggleFavorite}
-                                    className={`flex h-9 w-9 items-center justify-center rounded-full border border-white/10 shadow-2xl backdrop-blur-md transition-all duration-300 active:scale-95 ${
-                                        favorite
-                                            ? "border-red-500/30 bg-red-500/20 opacity-100 shadow-[0_0_12px_rgba(239,68,68,0.5)]"
-                                            : "bg-black/20 opacity-0 hover:bg-white/20 group-hover:opacity-100"
-                                    }`}
-                                    title={
-                                        favorite
-                                            ? t("common.remove")
-                                            : t("common.add")
-                                    }
+                                <Button
+                                    onPress={handleToggleFavorite}
+                                    variant={favorite ? "danger" : "secondary"}
+                                    size="sm"
+                                    isIconOnly
+                                    aria-label={favorite ? t("common.remove") : t("common.add")}
                                 >
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        className={`h-5 w-5 transition-all duration-300 ${
-                                            favorite
-                                                ? "fill-red-500 stroke-red-500 drop-shadow-[0_0_0.5rem_rgba(239,68,68,0.8)]"
-                                                : "fill-none stroke-white/80 group-hover:stroke-white"
-                                        }`}
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                        strokeWidth="1.5"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                    >
-                                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                                    </svg>
-                                </button>
+                                    {favorite ? (
+                                        <HeartSolidIcon className="h-4 w-4" />
+                                    ) : (
+                                        <HeartOutlineIcon className="h-4 w-4" />
+                                    )}
+                                </Button>
                             </div>
 
                             {/* Badge chuẩn hệ thống (Ngôn ngữ, Chất lượng, Năm) */}
@@ -190,6 +177,159 @@ const TopViewMovieCard = memo(
     },
 );
 
+const useTopViewTimeframe = ({ initialItems, rowRef, i18n }) => {
+    const [activeTimeframe, setActiveTimeframe] = useState("week");
+    const [currentItems, setCurrentItems] = useState(initialItems);
+    const [loadingTimeframe, setLoadingTimeframe] = useState(false);
+
+    useEffect(() => {
+        if (activeTimeframe === "week" && initialItems && initialItems.length > 0) {
+            setCurrentItems(initialItems);
+        }
+    }, [initialItems, activeTimeframe]);
+
+    const handleTimeframeChange = useCallback(
+        async (timeframe) => {
+            if (timeframe === activeTimeframe) return;
+            setActiveTimeframe(timeframe);
+
+            const language =
+                i18n?.language?.startsWith("en") ? "en-US" : "vi-VN";
+            const cacheKey = `tmdb_top_view_${timeframe}_${language}`;
+            const cached = vodCache.get(cacheKey);
+
+            if (cached && Array.isArray(cached) && cached.length > 0) {
+                setCurrentItems(cached);
+                if (rowRef.current) rowRef.current.scrollTo({ left: 0, behavior: "smooth" });
+                return;
+            }
+
+            setLoadingTimeframe(true);
+            try {
+                const res = await tmdbService.fetchTMDBTopViewByTimeframe({ timeframe, language });
+                const fetchedItems = res?.items || [];
+                if (fetchedItems.length > 0) {
+                    setCurrentItems(fetchedItems);
+                    vodCache.set(cacheKey, fetchedItems, vodCache.TTL.LISTING);
+                }
+            } catch (err) {
+                console.error("Error changing TMDB timeframe:", err);
+            } finally {
+                setLoadingTimeframe(false);
+                if (rowRef.current) rowRef.current.scrollTo({ left: 0, behavior: "smooth" });
+            }
+        },
+        [activeTimeframe, i18n?.language, rowRef],
+    );
+
+    return { activeTimeframe, currentItems, loadingTimeframe, handleTimeframeChange };
+};
+
+const TimeframeTabs = ({ activeTimeframe, onChange, t }) => (
+    <Tabs
+        selectedKey={activeTimeframe}
+        onSelectionChange={onChange}
+    >
+        <Tabs.ListContainer>
+            <Tabs.List aria-label="Top View Timeframe">
+                <Tabs.Tab id="day">
+                    <span className="font-bold text-xs">{t("vods.today") || "Hôm nay"}</span>
+                    <Tabs.Indicator />
+                </Tabs.Tab>
+                <Tabs.Tab id="week">
+                    <span className="font-bold text-xs">{t("vods.thisWeek") || "Tuần này"}</span>
+                    <Tabs.Indicator />
+                </Tabs.Tab>
+                <Tabs.Tab id="month">
+                    <span className="font-bold text-xs">{t("vods.thisMonth") || "Tháng này"}</span>
+                    <Tabs.Indicator />
+                </Tabs.Tab>
+            </Tabs.List>
+        </Tabs.ListContainer>
+    </Tabs>
+);
+
+const TopViewHeader = ({
+    title,
+    t,
+    activeTimeframe,
+    handleTimeframeChange,
+    finalLink,
+    hasOverflow,
+    canScrollLeft,
+    canScrollRight,
+    scrollLeft,
+    scrollRight,
+}) => (
+    <div className="group/title -mb-4 flex flex-col gap-3 px-4 sm:flex-row sm:items-center sm:justify-between md:px-12 lg:px-20">
+        <div className="flex items-center gap-3">
+            <h2 className="flex items-center gap-3 text-2xl font-black text-zinc-100 md:text-3xl">
+                <span className="h-8 w-1.5 rounded-full bg-red-600" />
+                {title || t("vods.topViews") || "Top Lượt Xem"}
+            </h2>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+            <TimeframeTabs
+                activeTimeframe={activeTimeframe}
+                onChange={handleTimeframeChange}
+                t={t}
+            />
+
+            {finalLink && (
+                <Link
+                    to={finalLink}
+                    className="flex items-center gap-1 text-sm font-bold text-zinc-500 transition-all duration-300 hover:text-red-500 focus:opacity-100"
+                >
+                    {t("common.seeMore") || "Xem tất cả"}
+                    <ChevronRightIcon className="h-4 w-4 stroke-3" />
+                </Link>
+            )}
+
+            {hasOverflow && (
+                <div className="flex items-center gap-2">
+                    {canScrollLeft && (
+                        <Button
+                            onPress={() => scrollLeft(0.75)}
+                            variant="secondary"
+                            size="sm"
+                            isIconOnly
+                            aria-label="Cuộn sang trái"
+                        >
+                            <ChevronLeftIcon className="h-4 w-4 stroke-2" />
+                        </Button>
+                    )}
+                    {canScrollRight && (
+                        <Button
+                            onPress={() => scrollRight(0.75)}
+                            variant="secondary"
+                            size="sm"
+                            isIconOnly
+                            aria-label="Cuộn sang phải"
+                        >
+                            <ChevronRightIcon className="h-4 w-4 stroke-2" />
+                        </Button>
+                    )}
+                </div>
+            )}
+        </div>
+    </div>
+);
+
+const TopViewSkeletonList = () => (
+    <div className="no-scrollbar flex gap-4 overflow-x-auto px-6 py-6 transition-all md:gap-6 md:px-14 lg:px-24">
+        {Array.from({ length: 6 }).map((_, idx) => (
+            <div
+                key={`top-view-skeleton-${idx}`}
+                className="relative flex items-start pt-2 pb-2"
+            >
+                <div className="h-44 w-16 shrink-0 -mr-6 animate-pulse rounded bg-zinc-900/40 md:h-56 md:w-20 md:-mr-8 lg:h-64 lg:w-24" />
+                <div className="h-64 w-[11.5rem] shrink-0 animate-pulse rounded-xl border border-white/5 bg-zinc-900/80 md:h-80 md:w-[13.5rem] lg:h-96 lg:w-[15rem]" />
+            </div>
+        ))}
+    </div>
+);
+
 /**
  * Component Hàng Phim Top View với Tabs lựa chọn Day/Week/Month, thanh tiêu đề VIP & cơ chế cuộn mượt
  */
@@ -203,77 +343,12 @@ export default function VodTopViewRow({
 }) {
     const { t, i18n } = useTranslation();
     const rowRef = useRef(null);
-    const [showLeftArrow, setShowLeftArrow] = useState(false);
-    const [showRightArrow, setShowRightArrow] = useState(true);
 
-    // State chọn khoảng thời gian: 'day' | 'week' | 'month'
-    const [activeTimeframe, setActiveTimeframe] = useState("week");
-    const [currentItems, setCurrentItems] = useState(initialItems);
-    const [loadingTimeframe, setLoadingTimeframe] = useState(false);
+    const { activeTimeframe, currentItems, loadingTimeframe, handleTimeframeChange } =
+        useTopViewTimeframe({ initialItems, rowRef, i18n });
 
-    // Đồng bộ khi initialItems thay đổi từ props
-    useEffect(() => {
-        if (activeTimeframe === "week" && initialItems && initialItems.length > 0) {
-            setCurrentItems(initialItems);
-        }
-    }, [initialItems, activeTimeframe]);
-
-    // Xử lý chuyển đổi timeframe
-    const handleTimeframeChange = useCallback(
-        async (timeframe) => {
-            if (timeframe === activeTimeframe) return;
-            setActiveTimeframe(timeframe);
-
-            const language =
-                i18n?.language && i18n.language.startsWith("en")
-                    ? "en-US"
-                    : "vi-VN";
-            const cacheKey = `tmdb_top_view_${timeframe}_${language}`;
-            const cached = vodCache.get(cacheKey);
-
-            if (cached && Array.isArray(cached) && cached.length > 0) {
-                setCurrentItems(cached);
-                if (rowRef.current) rowRef.current.scrollTo({ left: 0, behavior: "smooth" });
-                return;
-            }
-
-            setLoadingTimeframe(true);
-            try {
-                const res = await tmdbService.fetchTMDBTopViewByTimeframe({
-                    timeframe,
-                    language,
-                });
-                const fetchedItems = res?.items || [];
-                if (fetchedItems.length > 0) {
-                    setCurrentItems(fetchedItems);
-                    vodCache.set(cacheKey, fetchedItems, vodCache.TTL.LISTING);
-                }
-            } catch (err) {
-                console.error("Error changing TMDB timeframe:", err);
-            } finally {
-                setLoadingTimeframe(false);
-                if (rowRef.current) rowRef.current.scrollTo({ left: 0, behavior: "smooth" });
-            }
-        },
-        [activeTimeframe, i18n.language],
-    );
-
-    const handleScroll = () => {
-        if (rowRef.current) {
-            const { scrollLeft, scrollWidth, clientWidth } = rowRef.current;
-            setShowLeftArrow(scrollLeft > 0);
-            setShowRightArrow(scrollLeft + clientWidth < scrollWidth - 10);
-        }
-    };
-
-    const scroll = (direction) => {
-        if (rowRef.current) {
-            const { clientWidth } = rowRef.current;
-            const scrollAmount =
-                direction === "left" ? -clientWidth * 0.75 : clientWidth * 0.75;
-            rowRef.current.scrollBy({ left: scrollAmount, behavior: "smooth" });
-        }
-    };
+    const { scrollRef, canScrollLeft, canScrollRight, hasOverflow, scrollLeft, scrollRight } =
+        useHorizontalScrollState([currentItems?.length, loadingTimeframe], rowRef);
 
     let finalLink = "";
     if (link) {
@@ -286,122 +361,28 @@ export default function VodTopViewRow({
 
     return (
         <div className="group/row relative space-y-4 py-2">
-            {/* Header Chuyên Mục đồng nhất 100% với MovieRow */}
-            <div className="group/title -mb-4 flex flex-col gap-3 px-4 sm:flex-row sm:items-center sm:justify-between md:px-12 lg:px-20">
-                <div className="flex items-center gap-3">
-                    <h2 className="flex items-center gap-3 text-2xl font-black text-zinc-100 md:text-3xl">
-                        <span className="h-8 w-1.5 rounded-full bg-red-600"></span>
-                        {title || t("vods.topViews") || "Top Lượt Xem"}
-                    </h2>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                    {/* Timeframe Switcher Tabs (Day / Week / Month) */}
-                    <div className="flex items-center rounded-full border border-white/10 bg-zinc-900/90 p-1 shadow-lg backdrop-blur-md">
-                        <button
-                            type="button"
-                            onClick={() => handleTimeframeChange("day")}
-                            className={`rounded-full px-3.5 py-1 text-xs font-black transition-all duration-300 ${
-                                activeTimeframe === "day"
-                                    ? "bg-red-600 text-white shadow-lg"
-                                    : "text-zinc-400 hover:text-white"
-                            }`}
-                        >
-                            {t("vods.today") || "Hôm nay"}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => handleTimeframeChange("week")}
-                            className={`rounded-full px-3.5 py-1 text-xs font-black transition-all duration-300 ${
-                                activeTimeframe === "week"
-                                    ? "bg-red-600 text-white shadow-lg"
-                                    : "text-zinc-400 hover:text-white"
-                            }`}
-                        >
-                            {t("vods.thisWeek") || "Tuần này"}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => handleTimeframeChange("month")}
-                            className={`rounded-full px-3.5 py-1 text-xs font-black transition-all duration-300 ${
-                                activeTimeframe === "month"
-                                    ? "bg-red-600 text-white shadow-lg"
-                                    : "text-zinc-400 hover:text-white"
-                            }`}
-                        >
-                            {t("vods.thisMonth") || "Tháng này"}
-                        </button>
-                    </div>
-
-                    {/* Link Xem tất cả chuẩn MovieRow */}
-                    {finalLink && (
-                        <Link
-                            to={finalLink}
-                            className="flex items-center gap-1 text-sm font-bold text-zinc-500 transition-all duration-300 hover:text-red-500 focus:opacity-100"
-                        >
-                            {t("common.seeMore") || "Xem tất cả"}
-                            <svg
-                                className="h-4 w-4"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={3}
-                                    d="M9 5l7 7-7 7"
-                                />
-                            </svg>
-                        </Link>
-                    )}
-                </div>
-            </div>
+            <TopViewHeader
+                title={title}
+                t={t}
+                activeTimeframe={activeTimeframe}
+                handleTimeframeChange={handleTimeframeChange}
+                finalLink={finalLink}
+                hasOverflow={hasOverflow}
+                canScrollLeft={canScrollLeft}
+                canScrollRight={canScrollRight}
+                scrollLeft={scrollLeft}
+                scrollRight={scrollRight}
+            />
 
             {/* Carousel Container */}
             <div className="relative">
-                {/* Nút Cuộn Trái */}
-                {showLeftArrow && (
-                    <button
-                        type="button"
-                        onClick={() => scroll("left")}
-                        className="pointer-events-auto absolute left-2 top-1/2 z-50 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950/90 text-white opacity-0 shadow-2xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 hover:shadow-[0_0_16px_rgba(239,68,68,0.6)] active:scale-95 group-hover/row:opacity-100 md:flex md:h-13 md:w-13"
-                        aria-label="Cuộn sang trái"
-                    >
-                        <svg
-                            className="h-6 w-6"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={3}
-                                d="M15 19l-7-7 7-7"
-                            />
-                        </svg>
-                    </button>
-                )}
-
                 {/* Loading Shimmer khi đổi timeframe */}
                 {loadingTimeframe ? (
-                    <div className="no-scrollbar flex gap-4 overflow-x-auto px-6 py-6 transition-all md:gap-6 md:px-14 lg:px-24">
-                        {Array.from({ length: 6 }).map((_, idx) => (
-                            <div
-                                key={`top-view-skeleton-${idx}`}
-                                className="relative flex items-start pt-2 pb-2"
-                            >
-                                <div className="h-44 w-16 shrink-0 -mr-6 animate-pulse rounded bg-zinc-900/40 md:h-56 md:w-20 md:-mr-8 lg:h-64 lg:w-24" />
-                                <div className="h-64 w-[11.5rem] shrink-0 animate-pulse rounded-xl border border-white/5 bg-zinc-900/80 md:h-80 md:w-[13.5rem] lg:h-96 lg:w-[15rem]" />
-                            </div>
-                        ))}
-                    </div>
+                    <TopViewSkeletonList />
                 ) : (
                     /* Danh sách Phim Top View với Số thứ tự */
                     <div
-                        ref={rowRef}
-                        onScroll={handleScroll}
+                        ref={scrollRef}
                         className="no-scrollbar flex gap-4 overflow-x-auto scroll-smooth px-6 py-6 transition-all md:gap-6 md:px-14 lg:px-24"
                     >
                         {currentItems.map((item, index) => (
@@ -416,31 +397,8 @@ export default function VodTopViewRow({
                         ))}
                     </div>
                 )}
-
-                {/* Nút Cuộn Phải */}
-                {showRightArrow && (
-                    <button
-                        type="button"
-                        onClick={() => scroll("right")}
-                        className="pointer-events-auto absolute right-2 top-1/2 z-50 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-700 bg-zinc-950/90 text-white opacity-0 shadow-2xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 hover:shadow-[0_0_16px_rgba(239,68,68,0.6)] active:scale-95 group-hover/row:opacity-100 md:flex md:h-13 md:w-13"
-                        aria-label="Cuộn sang phải"
-                    >
-                        <svg
-                            className="h-6 w-6"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                        >
-                            <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={3}
-                                d="M9 5l7 7-7 7"
-                            />
-                        </svg>
-                    </button>
-                )}
             </div>
         </div>
     );
 }
+

@@ -7,23 +7,23 @@ import {
 import { db } from "./firebase";
 import { extractSeasonNumber } from "../utils/vodHelpers";
 
+const extractHistoryTmdbId = (item) =>
+    item.tmdb?.id ||
+    item.tmdb_id ||
+    item.tmdbId ||
+    (typeof item.slug === "string" && item.slug.startsWith("tmdb-")
+        ? item.slug.replace("tmdb-", "")
+        : null);
+
 /**
  * Lấy khóa định danh duy nhất cho một item trong history
  */
 export const getHistoryItemKey = (item) => {
     if (!item) return "";
 
-    const tmdbId =
-        item.tmdb?.id ||
-        item.tmdb_id ||
-        item.tmdbId ||
-        (typeof item.slug === "string" && item.slug.startsWith("tmdb-")
-            ? item.slug.replace("tmdb-", "")
-            : null);
-
-    const season = extractSeasonNumber(item);
-
+    const tmdbId = extractHistoryTmdbId(item);
     if (tmdbId) {
+        const season = extractSeasonNumber(item);
         return season && season > 1 ? `tmdb_${tmdbId}_s${season}` : `tmdb_${tmdbId}`;
     }
 
@@ -51,30 +51,31 @@ const mergeSingleEpisode = (mergedEpisodes, ep) => {
     }
 };
 
+const getPreferredHistorySlug = (existing, h) => {
+    if (existing.slug && !existing.slug.startsWith("tmdb-")) return existing.slug;
+    if (h.slug && !h.slug.startsWith("tmdb-")) return h.slug;
+    return existing.slug || h.slug;
+};
+
 const mergeTwoHistoryEntries = (existing, h) => {
     const mergedEpisodes = new Map();
     (existing.episodes || []).forEach((ep) => mergedEpisodes.set(String(ep.key), ep));
     (h.episodes || []).forEach((ep) => mergeSingleEpisode(mergedEpisodes, ep));
 
-    const preferredSlug =
-        (existing.slug && !existing.slug.startsWith("tmdb-") ? existing.slug : null) ||
-        (h.slug && !h.slug.startsWith("tmdb-") ? h.slug : null) ||
-        existing.slug ||
-        h.slug;
-
     const existingTime = new Date(existing.time || 0).getTime();
     const hTime = new Date(h.time || 0).getTime();
     const isNewer = hTime >= existingTime;
 
-    const merged = isNewer ? { ...existing, ...h } : { ...h, ...existing };
-    merged.slug = preferredSlug;
-    merged.episodes = Array.from(mergedEpisodes.values());
-    merged.time = isNewer ? (h.time || existing.time) : (existing.time || h.time);
-    merged.current_episode = isNewer
-        ? (h.current_episode || existing.current_episode)
-        : (existing.current_episode || h.current_episode);
-
-    return merged;
+    const baseObj = isNewer ? { ...existing, ...h } : { ...h, ...existing };
+    return {
+        ...baseObj,
+        slug: getPreferredHistorySlug(existing, h),
+        episodes: Array.from(mergedEpisodes.values()),
+        time: isNewer ? (h.time || existing.time) : (existing.time || h.time),
+        current_episode: isNewer
+            ? (h.current_episode || existing.current_episode)
+            : (existing.current_episode || h.current_episode),
+    };
 };
 
 /**

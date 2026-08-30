@@ -1,63 +1,13 @@
 import axios from "axios";
 import moment from "moment";
+import { TOP_TIER_LEAGUES, PRIORITY_LEAGUES } from "../../constants";
+
+export { TOP_TIER_LEAGUES, PRIORITY_LEAGUES };
 
 const API_KEY = import.meta.env.VITE_SPORTSDB_API_KEY;
 const BASE_URL = import.meta.env.VITE_SPORTSDB_BASE_URL;
 const EVENTS_API_URL = `${BASE_URL}/${API_KEY}/eventsday.php`;
 const HLS_MAPPING_URL = import.meta.env.VITE_HLS_MAPPING_URL;
-
-/**
- * Bảng xếp hạng các giải đấu hàng đầu thế giới (Top Tier Leagues)
- * Thứ hạng score càng nhỏ thì giải đấu càng được ưu tiên đưa lên trên cùng
- */
-export const TOP_TIER_LEAGUES = [
-    // Tier 1: 5 Giải VĐQG hàng đầu Châu Âu + Cúp C1, C2, C3
-    { name: "English Premier League", aliases: ["english premier league", "premier league", "fa premier league", "barclays premier league", "epl"], score: 1 },
-    { name: "UEFA Champions League", aliases: ["uefa champions league", "uefa champions", "champions league", "c1"], score: 2 },
-    { name: "Spanish La Liga", aliases: ["spanish la liga", "la liga", "laliga", "spain primera division", "spanish primera division", "la liga ea sports", "laliga ea sports"], score: 3 },
-    { name: "Italian Serie A", aliases: ["italian serie a", "serie a", "serie a tim"], score: 4 },
-    { name: "German Bundesliga", aliases: ["german bundesliga", "bundesliga", "german bundesliga 1"], score: 5 },
-    { name: "French Ligue 1", aliases: ["french ligue 1", "ligue 1", "ligue 1 mcdonalds", "ligue 1 uber eats"], score: 6 },
-    { name: "UEFA Europa League", aliases: ["uefa europa league", "europa league", "c2"], score: 7 },
-    { name: "UEFA Conference League", aliases: ["uefa europa conference league", "uefa conference league", "conference league", "c3"], score: 8 },
-    { name: "UEFA Super Cup", aliases: ["uefa super cup"], score: 9 },
-
-    // Tier 2: ĐTQG đỉnh cao
-    { name: "FIFA World Cup", aliases: ["fifa world cup", "world cup"], score: 10 },
-    { name: "UEFA European Championship", aliases: ["uefa european championship", "uefa euro", "euro championship", "euro 2024", "euro 2028"], score: 11 },
-    { name: "UEFA Nations League", aliases: ["uefa nations league", "nations league"], score: 12 },
-    { name: "Copa America", aliases: ["copa america", "conmebol copa america"], score: 13 },
-    { name: "AFC Asian Cup", aliases: ["afc asian cup", "asian cup"], score: 14 },
-    { name: "AFF Championship", aliases: ["aff championship", "aff cup", "asean cup", "asean championship"], score: 15 },
-
-    // Tier 3: Các Cúp Quốc Gia lớn & V-League
-    { name: "English FA Cup", aliases: ["english fa cup", "fa cup", "the fa cup"], score: 20 },
-    { name: "English League Cup", aliases: ["english league cup", "efl cup", "carabao cup"], score: 21 },
-    { name: "Spanish Copa del Rey", aliases: ["spanish copa del rey", "copa del rey"], score: 22 },
-    { name: "Italian Coppa Italia", aliases: ["italian coppa italia", "coppa italia"], score: 23 },
-    { name: "German DFB Pokal", aliases: ["german dfb pokal", "dfb pokal", "dfb-pokal"], score: 24 },
-    { name: "French Coupe de France", aliases: ["french coupe de france", "coupe de france"], score: 25 },
-    { name: "Vietnamese V-League", aliases: ["vietnamese v-league", "vietnamese v.league", "v-league 1", "v.league 1", "v-league", "v.league"], score: 26 },
-
-    // Tier 4: Các giải VĐQG đáng chú ý khác
-    { name: "Saudi Pro League", aliases: ["saudi professional league", "saudi pro league", "saudi arabia pro league"], score: 30 },
-    { name: "Major League Soccer", aliases: ["american major league soccer", "major league soccer", "mls"], score: 31 },
-    { name: "AFC Champions League", aliases: ["afc champions league", "afc champions league elite"], score: 32 },
-    { name: "CONMEBOL Copa Libertadores", aliases: ["conmebol libertadores", "copa libertadores"], score: 33 },
-    { name: "Dutch Eredivisie", aliases: ["dutch eredivisie", "eredivisie"], score: 34 },
-    { name: "Portuguese Primeira Liga", aliases: ["portuguese primeira liga", "primeira liga"], score: 35 },
-    { name: "English League Championship", aliases: ["english league championship", "efl championship"], score: 36 },
-    { name: "Scottish Premiership", aliases: ["scottish premiership", "scottish premier league"], score: 37 },
-    { name: "Turkish Super Lig", aliases: ["turkish super lig", "turkish super league"], score: 38 },
-    { name: "Brazilian Serie A", aliases: ["brazilian serie a", "brazil serie a", "campeonato brasileiro serie a"], score: 39 },
-    { name: "Argentinian Primera Division", aliases: ["argentinian primera division", "argentine primera division", "liga profesional de futbol"], score: 40 },
-    { name: "Spanish La Liga 2", aliases: ["spanish la liga 2", "spanish segunda division", "laliga 2", "la liga hypermotion"], score: 41 },
-    { name: "Italian Serie B", aliases: ["italian serie b", "serie b"], score: 42 },
-    { name: "German 2. Bundesliga", aliases: ["german 2. bundesliga", "2. bundesliga", "bundesliga 2"], score: 43 },
-    { name: "French Ligue 2", aliases: ["french ligue 2", "ligue 2"], score: 44 }
-];
-
-export const PRIORITY_LEAGUES = TOP_TIER_LEAGUES.map(l => l.name);
 
 /**
  * Tính điểm xếp hạng chính xác theo độ phổ biến của giải đấu

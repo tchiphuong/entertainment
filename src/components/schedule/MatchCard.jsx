@@ -2,6 +2,51 @@ import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { formatMatchDateTime } from "../../utils/dateUtils";
 
+const TeamBadgeCol = ({ badge, name, fallbackChar }) => (
+    <div className="flex min-w-0 flex-1 flex-col items-center text-center">
+        <div className="mb-2 flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 p-1.5 shadow-inner">
+            {badge ? (
+                <img
+                    loading="lazy"
+                    src={badge}
+                    alt={name}
+                    className="h-full w-full object-contain"
+                    onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                    }}
+                />
+            ) : (
+                <span className="text-sm font-black text-zinc-600">
+                    {name?.charAt(0) || fallbackChar}
+                </span>
+            )}
+        </div>
+        <h3 className="line-clamp-2 text-[11px] font-bold uppercase leading-snug text-zinc-100">
+            {name}
+        </h3>
+    </div>
+);
+
+const MatchScoreCenter = ({ hasScore, isHomeWinner, isAwayWinner, homeScore, awayScore }) => (
+    <div className="flex shrink-0 flex-col items-center justify-center px-2">
+        {hasScore ? (
+            <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1 text-lg font-black tracking-tight">
+                <span className={isHomeWinner ? "text-red-500" : "text-zinc-400"}>
+                    {homeScore}
+                </span>
+                <span className="text-zinc-600">-</span>
+                <span className={isAwayWinner ? "text-red-500" : "text-zinc-400"}>
+                    {awayScore}
+                </span>
+            </div>
+        ) : (
+            <div className="rounded-md border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[10px] font-black uppercase text-zinc-500">
+                VS
+            </div>
+        )}
+    </div>
+);
+
 const MatchCard = memo(({ event, onSelectMatch }) => {
     const { t } = useTranslation();
 
@@ -33,82 +78,33 @@ const MatchCard = memo(({ event, onSelectMatch }) => {
 
             {/* Teams & Score Matrix */}
             <div className="my-2 flex items-center justify-between gap-3">
-                {/* Home Team */}
-                <div className="flex min-w-0 flex-1 flex-col items-center text-center">
-                    <div className="mb-2 flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 p-1.5 shadow-inner">
-                        {event.strHomeTeamBadge ? (
-                            <img
-                                loading="lazy"
-                                src={event.strHomeTeamBadge}
-                                alt={event.strHomeTeam}
-                                className="h-full w-full object-contain"
-                                onError={(e) => {
-                                    e.currentTarget.style.display = "none";
-                                }}
-                            />
-                        ) : (
-                            <span className="text-sm font-black text-zinc-600">
-                                {event.strHomeTeam?.charAt(0) || "H"}
-                            </span>
-                        )}
-                    </div>
-                    <h3 className="line-clamp-2 text-[11px] font-bold uppercase leading-snug text-zinc-100">
-                        {event.strHomeTeam}
-                    </h3>
-                </div>
+                <TeamBadgeCol
+                    badge={event.strHomeTeamBadge}
+                    name={event.strHomeTeam}
+                    fallbackChar="H"
+                />
 
-                {/* Score / VS Center */}
-                <div className="flex shrink-0 flex-col items-center justify-center px-2">
-                    {hasScore ? (
-                        <div className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1 text-lg font-black tracking-tight">
-                            <span className={isHomeWinner ? "text-red-500" : "text-zinc-400"}>
-                                {event.intHomeScore}
-                            </span>
-                            <span className="text-zinc-600">-</span>
-                            <span className={isAwayWinner ? "text-red-500" : "text-zinc-400"}>
-                                {event.intAwayScore}
-                            </span>
-                        </div>
-                    ) : (
-                        <div className="rounded-md border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[10px] font-black uppercase text-zinc-500">
-                            VS
-                        </div>
-                    )}
-                </div>
+                <MatchScoreCenter
+                    hasScore={hasScore}
+                    isHomeWinner={isHomeWinner}
+                    isAwayWinner={isAwayWinner}
+                    homeScore={event.intHomeScore}
+                    awayScore={event.intAwayScore}
+                />
 
-                {/* Away Team */}
-                <div className="flex min-w-0 flex-1 flex-col items-center text-center">
-                    <div className="mb-2 flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 p-1.5 shadow-inner">
-                        {event.strAwayTeamBadge ? (
-                            <img
-                                loading="lazy"
-                                src={event.strAwayTeamBadge}
-                                alt={event.strAwayTeam}
-                                className="h-full w-full object-contain"
-                                onError={(e) => {
-                                    e.currentTarget.style.display = "none";
-                                }}
-                            />
-                        ) : (
-                            <span className="text-sm font-black text-zinc-600">
-                                {event.strAwayTeam?.charAt(0) || "A"}
-                            </span>
-                        )}
-                    </div>
-                    <h3 className="line-clamp-2 text-[11px] font-bold uppercase leading-snug text-zinc-100">
-                        {event.strAwayTeam}
-                    </h3>
-                </div>
+                <TeamBadgeCol
+                    badge={event.strAwayTeamBadge}
+                    name={event.strAwayTeam}
+                    fallbackChar="A"
+                />
             </div>
 
-            {/* Footer: Match Status & Season */}
-            <div className="mt-3 flex items-center justify-between border-t border-zinc-800/80 pt-2 text-[10px] font-bold text-zinc-500">
-                <span className="uppercase">
-                    {event.strStatus || t("schedule.scheduled") || "Chưa diễn ra"}
-                </span>
-                {event.strSeason && (
-                    <span className="text-zinc-600">
-                        Mùa {event.strSeason}
+            {/* Footer League Info & Stadium */}
+            <div className="mt-3 flex items-center justify-between border-t border-zinc-800/80 pt-2 text-[10px] text-zinc-500 font-bold">
+                <span className="truncate max-w-[140px]">{event.strLeague}</span>
+                {event.strVenue && (
+                    <span className="truncate max-w-[120px] text-right" title={event.strVenue}>
+                        📍 {event.strVenue}
                     </span>
                 )}
             </div>

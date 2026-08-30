@@ -6,6 +6,7 @@ export default defineConfig(({ mode }) => ({
     base: "/entertainment/",
     plugins: [react()],
     server: {
+        host: true,
         headers: {
             "X-Robots-Tag": "noindex, nofollow, noarchive, nosnippet, noimageindex",
             "Referrer-Policy": "no-referrer",

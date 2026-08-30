@@ -1,6 +1,13 @@
+import { ExclamationTriangleIcon, QuestionMarkCircleIcon } from "@heroicons/react/24/outline";
+import Button from "./Button";
+import Modal from "./Modal";
+
+/**
+ * ConfirmDialog - Hộp thoại xác nhận chuẩn hóa bằng HeroUI Modal + Button
+ */
 export default function ConfirmDialog({
     isOpen,
-    title,
+    title = "Xác nhận",
     message,
     onConfirm,
     onCancel,
@@ -11,50 +18,43 @@ export default function ConfirmDialog({
     if (!isOpen) return null;
 
     return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-            aria-modal="true"
-            aria-labelledby="confirm-dialog-title"
-        >
-            {/* Backdrop overlay */}
-            <button
-                type="button"
-                aria-label="Đóng modal"
-                className="fixed inset-0 cursor-default border-none bg-transparent outline-none"
-                onClick={onCancel}
-            />
+        <Modal>
+            <Modal.Backdrop isOpen={isOpen} onOpenChange={(open) => !open && onCancel?.()}>
+                <Modal.Container size="sm" placement="center">
+                    <Modal.Dialog className="p-6">
+                        <Modal.CloseTrigger onPress={onCancel} />
+                        
+                        <Modal.Header className="flex items-center gap-3">
+                            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${isDangerous ? "bg-red-500/10 text-red-500" : "bg-zinc-800 text-zinc-300"}`}>
+                                {isDangerous ? (
+                                    <ExclamationTriangleIcon className="h-5 w-5" />
+                                ) : (
+                                    <QuestionMarkCircleIcon className="h-5 w-5" />
+                                )}
+                            </div>
+                            <Modal.Heading className="text-lg font-bold text-white">
+                                {title}
+                            </Modal.Heading>
+                        </Modal.Header>
 
-            {/* Dialog panel */}
-            <div className="relative z-10 w-11/12 max-w-md rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl">
-                <div className="border-b border-zinc-800 px-6 py-4">
-                    <h3 id="confirm-dialog-title" className="text-lg font-bold text-zinc-100">
-                        {title}
-                    </h3>
-                </div>
-                <div className="px-6 py-4">
-                    <p className="text-sm text-zinc-400">{message}</p>
-                </div>
-                <div className="flex justify-end gap-3 rounded-b-2xl border-t border-zinc-800 bg-zinc-950 px-6 py-3">
-                    <button
-                        type="button"
-                        onClick={onCancel}
-                        className="rounded-xl border border-zinc-700 bg-zinc-800 px-4 py-2 text-sm font-semibold text-zinc-300 transition hover:bg-zinc-700 active:scale-95"
-                    >
-                        {cancelText}
-                    </button>
-                    <button
-                        type="button"
-                        onClick={onConfirm}
-                        className={`rounded-xl px-4 py-2 text-sm font-semibold text-white transition active:scale-95 ${
-                            isDangerous
-                                ? "bg-red-600 hover:bg-red-500"
-                                : "border border-zinc-700 bg-zinc-800 hover:bg-zinc-700"
-                        }`}
-                    >
-                        {confirmText}
-                    </button>
-                </div>
-            </div>
-        </div>
+                        <Modal.Body className="mt-2 text-sm text-zinc-300">
+                            {message}
+                        </Modal.Body>
+
+                        <Modal.Footer className="mt-6 flex justify-end gap-3">
+                            <Button variant="secondary" onPress={onCancel}>
+                                {cancelText}
+                            </Button>
+                            <Button
+                                variant={isDangerous ? "danger" : "primary"}
+                                onPress={onConfirm}
+                            >
+                                {confirmText}
+                            </Button>
+                        </Modal.Footer>
+                    </Modal.Dialog>
+                </Modal.Container>
+            </Modal.Backdrop>
+        </Modal>
     );
 }

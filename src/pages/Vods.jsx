@@ -15,6 +15,7 @@ import {
     clearFavoritesFromFirestore,
 } from "../services/firebaseHelpers";
 import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { vodCache } from "../utils/vodCache";
 import clsx from "clsx";
 import {
     Combobox,
@@ -46,6 +47,7 @@ function UserProfile({ onLogout }) {
         try {
             const result = await signInWithPopup(auth, provider);
             console.log("Đăng nhập thành công:", result.user);
+            vodCache.clear();
             setAuthError(null); // Xóa lỗi nếu có
         } catch (error) {
             // Xử lý các loại lỗi khác nhau
@@ -115,12 +117,12 @@ function UserProfile({ onLogout }) {
                     <button
                         ref={avatarRef}
                         onClick={() => setIsMenuOpen((prev) => !prev)}
-                        aria-label="Mở menu người dùng"
-                        className="relative flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 shadow-lg ring-2 ring-zinc-600/80 transition-all duration-200 hover:scale-110 hover:shadow-blue-500/20 hover:ring-blue-500/70"
+                        aria-label="Menu"
+                        className="relative flex h-9 w-9 items-center justify-center rounded-full bg-zinc-800 shadow-lg ring-2 ring-zinc-600/80 transition-all duration-200 hover:scale-110 hover:shadow-red-500/20 hover:ring-red-500/70"
                         type="button"
                     >
                         {avatarError || !currentUser.photoURL ? (
-                            <span className="bg-linear-to-br from-blue-400 to-indigo-500 bg-clip-text text-sm font-bold text-transparent">
+                            <span className="text-sm font-black text-red-500">
                                 {avatarInitial}
                             </span>
                         ) : (

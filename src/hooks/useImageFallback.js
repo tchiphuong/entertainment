@@ -1,22 +1,7 @@
 import { useCallback } from "react";
+import { SOURCES, FALLBACK_IMAGE } from "../constants";
 
-// Fallback SVG image used when movie poster or thumbnail is missing or broken
-export const FALLBACK_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(`
-    <svg xmlns="http://www.w3.org/2000/svg"
-     viewBox="0 0 96 96"
-     width="64"
-     height="96"
-     preserveAspectRatio="xMidYMid meet">
-  <rect width="96" height="96" rx="16" fill="#18181b"/>
-  <rect x="12" y="12" width="72" height="72" rx="12" fill="#27272a"/>
-  <path d="m26 62 13-14 10 10 12-13 9 9"
-        fill="none"
-        stroke="#a1a1aa"
-        stroke-width="5"
-        stroke-linecap="round"
-        stroke-linejoin="round"/>
-  <circle cx="39" cy="34" r="6" fill="#71717a"/>
-</svg>`)}`;
+export { FALLBACK_IMAGE };
 
 const CONFIG = {
     APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
@@ -24,13 +9,6 @@ const CONFIG = {
     APP_DOMAIN_SOURCE_O_FRONTEND: import.meta.env.VITE_SOURCE_O_FRONTEND,
     APP_DOMAIN_SOURCE_O_CDN_IMAGE: import.meta.env.VITE_SOURCE_O_CDN_IMAGE,
     APP_DOMAIN_SOURCE_C: import.meta.env.VITE_SOURCE_C_API,
-};
-
-const SOURCES = {
-    SOURCE_C: "source_c",
-    SOURCE_K: "source_k",
-    SOURCE_O: "source_o",
-    SOURCE_R: "source_r",
 };
 
 export const useImageFallback = () => {

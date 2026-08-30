@@ -17,7 +17,13 @@ const container = document.getElementById("root");
 const root = createRoot(container);
 
 root.render(
-    <BrowserRouter basename="/entertainment">
+    <BrowserRouter
+        basename="/entertainment"
+        future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+        }}
+    >
         <AuthProvider>
             <App />
         </AuthProvider>

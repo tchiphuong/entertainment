@@ -1,5 +1,5 @@
 import { useState, useEffect, memo } from "react";
-import { TMDB_IMAGE_BASE_URL, TMDB_IMAGE_SIZES } from "../../constants/vodConstants";
+import { TMDB_IMAGE_BASE_URL, TMDB_IMAGE_SIZES } from "../../constants";
 import { wikiService } from "../../services/vod/wikiService";
 
 /**

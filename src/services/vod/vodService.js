@@ -1,5 +1,6 @@
-import { SOURCES } from "../../constants/vodConstants";
+import { SOURCES } from "../../constants";
 import { vodCache } from "../../utils/vodCache";
+import { fetchTMDBRelated } from "./tmdbService";
 
 const CONFIG = {
     APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
@@ -51,10 +52,11 @@ const normalizeMovieForSource = (item, source) => {
 };
 
 // Tạo URL gọi API theo nguồn & TMDB ID
-const getSourceApiUrl = (slug, source, tmdbId) => {
+const getSourceApiUrl = (slug, source, tmdbId, mediaType = "movie") => {
     if (tmdbId && (source === SOURCES.SOURCE_K || source === SOURCES.SOURCE_O)) {
         const domain = source === SOURCES.SOURCE_O ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
-        return `${domain}/tmdb/movie/${tmdbId}`;
+        const typeEndpoint = mediaType === "tv" ? "tv" : "movie";
+        return `${domain}/tmdb/${typeEndpoint}/${tmdbId}`;
     }
     if (source === SOURCES.SOURCE_O) {
         return `${CONFIG.APP_DOMAIN_SOURCE_O}/v1/api/phim/${slug}`;
@@ -68,16 +70,19 @@ const getSourceApiUrl = (slug, source, tmdbId) => {
     return `${CONFIG.API_ENDPOINT}/${slug}`;
 };
 
-// Gọi fetch và fallback sang TV series nếu movie bị 404
-const fetchSourceResponse = async (slug, source, tmdbId) => {
-    const url = getSourceApiUrl(slug, source, tmdbId);
+// Gọi fetch và fallback thông minh giữa movie và tv nếu bị 404
+const fetchSourceResponse = async (slug, source, tmdbId, mediaType = null) => {
+    const preferredType = mediaType || "movie";
+    const alternateType = preferredType === "tv" ? "movie" : "tv";
+
+    const url = getSourceApiUrl(slug, source, tmdbId, preferredType);
     let res = await fetch(url);
 
     if (!res.ok && tmdbId && (source === SOURCES.SOURCE_K || source === SOURCES.SOURCE_O)) {
         const domain = source === SOURCES.SOURCE_O ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
-        const tvRes = await fetch(`${domain}/tmdb/tv/${tmdbId}`);
-        if (tvRes.ok) {
-            res = tvRes;
+        const altRes = await fetch(`${domain}/tmdb/${alternateType}/${tmdbId}`);
+        if (altRes.ok) {
+            res = altRes;
         }
     }
     return res;
@@ -99,16 +104,21 @@ const parseSourceJson = (json, source) => {
     return { movie: movieData, episodes: episodesData };
 };
 
-export const fetchSourceData = async (slug, source) => {
-    const cacheKey = `${source}_${slug}`;
+export const fetchSourceData = async (slug, source, mediaType = null) => {
+    const typeSuffix = mediaType ? `_${mediaType}` : "";
+    const cacheKey = `${source}_${slug}${typeSuffix}`;
     const cachedData = getFromCache(cacheKey);
     if (cachedData) return cachedData;
 
-    const isTmdbSlug = typeof slug === "string" && slug.startsWith("tmdb-");
-    const tmdbId = isTmdbSlug ? slug.replace("tmdb-", "") : null;
+    const isTmdbSlug =
+        (typeof slug === "string" && slug.startsWith("tmdb-")) ||
+        /^\d+$/.test(String(slug).trim());
+    const tmdbId = isTmdbSlug
+        ? String(slug).replace("tmdb-", "").trim()
+        : null;
 
     try {
-        const res = await fetchSourceResponse(slug, source, tmdbId);
+        const res = await fetchSourceResponse(slug, source, tmdbId, mediaType);
         if (!res.ok) {
             const emptyResult = { movie: null, episodes: [] };
             saveToCache(cacheKey, emptyResult);
@@ -203,6 +213,7 @@ export const vodService = {
     fetchSourceData,
     fetchTMDbData,
     fetchTMDBSeason,
+    fetchTMDBRelated,
     normalizeMovieForSource,
     getFromCache,
     saveToCache,
