@@ -1,4 +1,5 @@
 import { useMovieLanguage } from "../../hooks/useMovieLanguage";
+import { Chip } from "../ui";
 
 export default function MovieLanguageBadges({
     lang,
@@ -11,16 +12,18 @@ export default function MovieLanguageBadges({
     return (
         <div className={`flex flex-wrap gap-1 ${className}`}>
             {badges.map((b) => (
-                <span
+                <Chip
                     key={b.id}
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-bold shadow-lg ${
+                    size="sm"
+                    variant="secondary"
+                    className={`text-xs font-bold shadow-lg ${
                         useLight
                             ? `${b.bgLight} ${b.textLight} ring-1 ${b.ring}`
                             : `${b.color} ${b.textColor}`
                     }`}
                 >
                     {b.label}
-                </span>
+                </Chip>
             ))}
         </div>
     );

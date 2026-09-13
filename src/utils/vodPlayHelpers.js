@@ -10,6 +10,7 @@ import {
     TMDB_IMAGE_BASE_URL,
     TMDB_IMAGE_SIZES,
 } from "../constants";
+import { getMediaType, extractSeasonNumber } from "./vodIdentifier";
 
 const CONFIG = {
     APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
@@ -445,21 +446,37 @@ export const extractTmdbIdFromObject = (obj, slugFallback = "") => {
     );
 };
 
+const haveSameMediaTypeAndSeason = (a, b) => {
+    if (!a || !b) return true;
+    if (getMediaType(a) !== getMediaType(b)) return false;
+    const sa = extractSeasonNumber(a);
+    const sb = extractSeasonNumber(b);
+    return !(sa && sb && sa !== sb);
+};
+
 export const isHistoryItemMatch = (item, cleanSlug, movie, targetTmdbId) => {
     if (!item) return false;
     if ([cleanSlug, movie?.slug].filter(Boolean).includes(item.slug)) return true;
     const itemTmdbId = extractTmdbIdFromObject(item, item.slug);
-    if (targetTmdbId && itemTmdbId && targetTmdbId === itemTmdbId) return true;
-    if (item.name && movie?.name && item.name.toLowerCase().trim() === movie.name.toLowerCase().trim()) return true;
+    if (targetTmdbId && itemTmdbId && targetTmdbId === itemTmdbId) {
+        return haveSameMediaTypeAndSeason(item, movie);
+    }
+    if (item.name && movie?.name && item.name.toLowerCase().trim() === movie.name.toLowerCase().trim()) {
+        return haveSameMediaTypeAndSeason(item, movie);
+    }
     return false;
 };
 
-export const isWatchlistHistoryMatch = (item, routeSlug, canonicalSlug, targetTmdbId, movieName) => {
+export const isWatchlistHistoryMatch = (item, routeSlug, canonicalSlug, targetTmdbId, movieName, targetMovie = null) => {
     if (!item) return false;
     if ([routeSlug, canonicalSlug].filter(Boolean).includes(item.slug)) return true;
     const itemTmdbId = extractTmdbIdFromObject(item, item.slug);
-    if (targetTmdbId && itemTmdbId && targetTmdbId === itemTmdbId) return true;
-    if (item.name && movieName && item.name.toLowerCase().trim() === movieName.toLowerCase().trim()) return true;
+    if (targetTmdbId && itemTmdbId && targetTmdbId === itemTmdbId) {
+        return haveSameMediaTypeAndSeason(item, targetMovie);
+    }
+    if (item.name && movieName && item.name.toLowerCase().trim() === movieName.toLowerCase().trim()) {
+        return haveSameMediaTypeAndSeason(item, targetMovie);
+    }
     return false;
 };
 

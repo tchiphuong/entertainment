@@ -12,6 +12,7 @@ import {
     fetchChannels,
     handleImageFallbackError,
 } from "../services/tv/tvService";
+import { Button } from "../components/ui";
 
 const PROXY_WORKER_URL = import.meta.env.VITE_PROXY_WORKER_URL || "";
 
@@ -51,10 +52,10 @@ const ChannelInfo = React.memo(
                         <div className="flex min-w-0 flex-1 items-center justify-between gap-4">
                             <div className="flex min-w-0 flex-col">
                                 <div className="flex items-center gap-2">
-                                    <span className="rounded bg-red-600/20 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-500 ring-1 ring-inset ring-red-600/30">
+                                    <span className="rounded bg-red-600/20 px-1.5 py-0.5 text-xs font-bold uppercase tracking-wider text-red-500 ring-1 ring-inset ring-red-600/30">
                                         Live
                                     </span>
-                                    <div className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+                                    <div className="text-xs font-medium uppercase tracking-wide text-zinc-500">
                                         Đang phát
                                     </div>
                                 </div>
@@ -63,6 +64,8 @@ const ChannelInfo = React.memo(
                                         {selectedChannel.name}
                                     </div>
                                     <button
+                                        type="button"
+                                        aria-label="Yêu thích"
                                         onClick={() =>
                                             onToggleFavorite(selectedChannel.id)
                                         }
@@ -97,20 +100,21 @@ const ChannelInfo = React.memo(
                                 <div className="ml-auto flex shrink-0 items-center gap-3 border-l border-zinc-800 pl-4">
                                     <div className="hidden items-center gap-1.5 sm:flex">
                                         <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-600" />
-                                        <span className="text-[10px] font-bold uppercase tracking-tight text-zinc-500">
+                                        <span className="text-xs font-bold uppercase tracking-tight text-zinc-500">
                                             Nguồn {currentSourceIdx + 1}/{selectedChannel.configSources.length}
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-1">
                                         <div className="relative">
                                             <button
+                                                type="button"
                                                 onClick={() =>
                                                     setShowSourceDropdown(
                                                         !showSourceDropdown,
                                                     )
                                                 }
                                                 className={
-                                                    "flex h-7 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-bold transition-all " +
+                                                    "flex h-7 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-all " +
                                                     (showSourceDropdown
                                                         ? "border-red-600 bg-red-600/20 text-white"
                                                         : "border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-zinc-700 hover:text-white")
@@ -134,19 +138,26 @@ const ChannelInfo = React.memo(
 
                                             {showSourceDropdown && (
                                                 <>
-                                                    <div className="fixed inset-0 z-40" onClick={() => setShowSourceDropdown(false)} />
-                                                    <div className="animate-in fade-in slide-in-from-top-2 absolute left-0 top-full z-50 mt-1.5 min-w-[120px] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl duration-200">
+                                                    <button
+                                                        type="button"
+                                                        aria-label="Đóng danh sách nguồn"
+                                                        tabIndex={-1}
+                                                        className="fixed inset-0 z-40 cursor-default bg-transparent"
+                                                        onClick={() => setShowSourceDropdown(false)}
+                                                    />
+                                                    <div className="animate-in fade-in slide-in-from-top-2 absolute left-0 top-full z-50 mt-1.5 min-w-32 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-950 shadow-2xl duration-200">
                                                         <div className="flex flex-col p-1.5">
                                                             {selectedChannel.configSources.map((_, idx) => {
                                                                 const isSelected = currentSourceIdx === idx;
                                                                 return (
                                                                     <button
-                                                                        key={idx}
+                                                                        type="button"
+                                                                        key={`src-${selectedChannel.id}-${idx}`}
                                                                         onClick={() => {
                                                                             onSelectSource(idx);
                                                                             setShowSourceDropdown(false);
                                                                         }}
-                                                                        className={"flex items-center justify-between rounded-lg px-3 py-2 text-left text-[11px] font-bold transition-all " + (isSelected ? "bg-red-600 text-white" : "text-zinc-400 hover:bg-zinc-900 hover:text-white")}
+                                                                        className={"flex items-center justify-between rounded-lg px-3 py-2 text-left text-xs font-bold transition-all " + (isSelected ? "bg-red-600 text-white" : "text-zinc-400 hover:bg-zinc-900 hover:text-white")}
                                                                     >
                                                                         <span>Nguồn {idx + 1}</span>
                                                                         {isSelected && <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
@@ -159,6 +170,7 @@ const ChannelInfo = React.memo(
                                             )}
                                         </div>
                                         <button
+                                            type="button"
                                             onClick={() => onSelectSource((currentSourceIdx + 1) % selectedChannel.configSources.length)}
                                             className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-white"
                                             title="Đổi sang nguồn tiếp theo"
@@ -173,10 +185,14 @@ const ChannelInfo = React.memo(
                         </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                        <button
-                            onClick={onPrev}
-                            className="rounded-full border border-zinc-800 bg-zinc-950 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            isIconOnly
+                            onPress={onPrev}
+                            className="rounded-full border border-zinc-800 bg-zinc-950 p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white"
                             title="Kênh trước"
+                            aria-label="Kênh trước"
                         >
                             <svg
                                 className="h-5 w-5"
@@ -191,11 +207,15 @@ const ChannelInfo = React.memo(
                                     d="M15 19l-7-7 7-7"
                                 />
                             </svg>
-                        </button>
-                        <button
-                            onClick={onNext}
-                            className="rounded-full border border-zinc-800 bg-zinc-950 p-2 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white"
+                        </Button>
+                        <Button
+                            variant="secondary"
+                            size="sm"
+                            isIconOnly
+                            onPress={onNext}
+                            className="rounded-full border border-zinc-800 bg-zinc-950 p-2 text-zinc-400 hover:bg-zinc-800 hover:text-white"
                             title="Kênh sau"
+                            aria-label="Kênh sau"
                         >
                             <svg
                                 className="h-5 w-5"
@@ -210,7 +230,7 @@ const ChannelInfo = React.memo(
                                     d="M9 5l7 7-7 7"
                                 />
                             </svg>
-                        </button>
+                        </Button>
                     </div>
                 </div>
             </div>
@@ -273,7 +293,8 @@ const ScheduleTimeColumn = ({ isCurrent, start, end }) => (
                 (isCurrent ? "text-red-500 font-bold" : "text-zinc-500")
             }
         >
-            <span className="flex-1">{start}</span>—
+            <span className="flex-1">{start}</span>
+            <span>—</span>
             <span className="flex-1">{end}</span>
         </div>
     </div>
@@ -281,11 +302,11 @@ const ScheduleTimeColumn = ({ isCurrent, start, end }) => (
 
 const ScheduleLiveBadge = ({ remaining }) => (
     <div className="flex shrink-0 flex-col items-end gap-1">
-        <div className="rounded-full bg-red-600/20 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-red-500 ring-1 ring-inset ring-red-600/30">
+        <div className="rounded-full bg-red-600/20 px-2.5 py-0.5 text-xs font-bold uppercase tracking-wider text-red-500 ring-1 ring-inset ring-red-600/30">
             LIVE
         </div>
         {remaining && (
-            <div className="text-[10px] font-medium uppercase tracking-tighter text-zinc-500">
+            <div className="text-xs font-medium uppercase tracking-tighter text-zinc-500">
                 {remaining}
             </div>
         )}
@@ -331,7 +352,7 @@ const ScheduleItem = React.memo(
                     <div className="flex items-start justify-between gap-2">
                         <div
                             className={
-                                "line-clamp-1 text-[13px] font-semibold tracking-tight transition-colors " +
+                                "line-clamp-1 text-xs font-semibold tracking-tight transition-colors " +
                                 (isCurrent
                                     ? "text-white"
                                     : "text-zinc-300 group-hover:text-white")
@@ -347,7 +368,7 @@ const ScheduleItem = React.memo(
                     {item.desc && (
                         <div
                             className={
-                                "mt-1 line-clamp-1 text-[11px] leading-relaxed transition-opacity " +
+                                "mt-1 line-clamp-1 text-xs leading-relaxed transition-opacity " +
                                 (isCurrent
                                     ? "text-zinc-400"
                                     : "text-zinc-600 group-hover:text-zinc-400")
@@ -369,14 +390,14 @@ const ScheduleListItem = ({ item, idx, schedule, isCurrentProgram, formatTime, p
     const prevMs = resolveScheduleItemStartMs(prevItem);
     const prevDate = prevMs ? new Date(prevMs) : null;
 
-    const showDateSep = itemDate && (idx === 0 || !prevDate || itemDate.toDateString() !== prevDate.toDateString());
+    const showDateSep = itemDate && (idx === 0 || itemDate.toDateString() !== prevDate?.toDateString());
 
     return (
         <React.Fragment key={idx}>
             {showDateSep && itemDate && (
                 <div className="flex items-center gap-2 py-2">
                     <div className="h-px flex-1 bg-white/10" />
-                    <span className="rounded-full bg-white/10 px-3 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-white/50">
+                    <span className="rounded-full bg-white/10 px-3 py-0.5 text-xs font-semibold uppercase tracking-wider text-white/50">
                         {getScheduleDateLabel(itemDate)}
                     </span>
                     <div className="h-px flex-1 bg-white/10" />
@@ -423,10 +444,51 @@ const ScheduleList = React.memo(
             return () => el.removeEventListener("wheel", handleWheel);
         }, [containerRef]);
 
+        const renderScheduleContent = () => {
+            if (loading) {
+                return (
+                    <div className="flex items-center gap-2 px-5 py-4 text-xs font-bold text-zinc-400">
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-800 border-t-red-600"></div>
+                        <div>Đang tải lịch phát sóng...</div>
+                    </div>
+                );
+            }
+            if (error) {
+                return <div className="px-5 py-4 text-xs font-bold text-zinc-500">{error}</div>;
+            }
+            if (!schedule || schedule.length === 0) {
+                return (
+                    <div className="px-5 py-4 text-xs text-zinc-500">
+                        Chưa có dữ liệu lịch cho kênh này.
+                    </div>
+                );
+            }
+            return (
+                <div className="space-y-1 p-2">
+                    {schedule.map((item, idx) => {
+                        const itemStart = resolveScheduleStartMs(item) || idx;
+                        const itemKey = item.id || `sch-${itemStart}-${idx}`;
+                        return (
+                            <ScheduleListItem
+                                key={itemKey}
+                                item={item}
+                                idx={idx}
+                                schedule={schedule}
+                                isCurrentProgram={isCurrentProgram}
+                                formatTime={formatTime}
+                                programProgress={programProgress}
+                            />
+                        );
+                    })}
+                </div>
+            );
+        };
+
         return (
             <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/90 shadow-2xl">
-                <div
-                    className="relative z-10 flex cursor-pointer items-center justify-between border-b border-zinc-800 bg-zinc-950 p-4"
+                <button
+                    type="button"
+                    className="relative z-10 flex w-full cursor-pointer items-center justify-between border-b border-zinc-800 bg-zinc-950 p-4 text-left transition-colors hover:bg-zinc-900/50"
                     onClick={onToggle}
                 >
                     <h3 className="flex items-center gap-2 text-sm font-black uppercase tracking-wider text-white">
@@ -467,7 +529,7 @@ const ScheduleList = React.memo(
                             ? `Cập nhật: ${formatDateTime(lastUpdated)}`
                             : "--"}
                     </div>
-                </div>
+                </button>
 
                 <div
                     ref={containerRef}
@@ -476,32 +538,7 @@ const ScheduleList = React.memo(
                         (expanded === false ? "hidden" : "")
                     }
                 >
-                    {loading ? (
-                        <div className="flex items-center gap-2 px-5 py-4 text-xs font-bold text-zinc-400">
-                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-800 border-t-red-600"></div>
-                            <div>Đang tải lịch phát sóng...</div>
-                        </div>
-                    ) : error ? (
-                        <div className="px-5 py-4 text-xs font-bold text-zinc-500">{error}</div>
-                    ) : !schedule || schedule.length === 0 ? (
-                        <div className="px-5 py-4 text-xs text-zinc-500">
-                            Chưa có dữ liệu lịch cho kênh này.
-                        </div>
-                    ) : (
-                        <div className="space-y-1 p-2">
-                            {schedule.map((item, idx) => (
-                                <ScheduleListItem
-                                    key={idx}
-                                    item={item}
-                                    idx={idx}
-                                    schedule={schedule}
-                                    isCurrentProgram={isCurrentProgram}
-                                    formatTime={formatTime}
-                                    programProgress={programProgress}
-                                />
-                            ))}
-                        </div>
-                    )}
+                    {renderScheduleContent()}
                 </div>
             </div>
         );
@@ -549,10 +586,13 @@ const findChannelByParamId = (allChannels, paramId) => {
     );
 };
 
+let tvToastSeq = 0;
+
 export const showTvToast = (message, opts = {}) => {
     try {
         const { duration = 5000, type = "error" } = opts;
-        const id = `tv-toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        tvToastSeq += 1;
+        const id = `tv-toast-${Date.now()}-${tvToastSeq}`;
         const containerId = "tv-toast-container";
         let container = document.getElementById(containerId);
         if (!container) {
@@ -566,7 +606,7 @@ export const showTvToast = (message, opts = {}) => {
         el.id = id;
         el.textContent = message;
 
-        const base = "min-w-[200px] max-w-[420px] px-4 py-2 rounded-lg shadow-lg text-white text-sm leading-tight transform transition-all duration-200 cursor-pointer";
+        const base = "min-w-52 max-w-md px-4 py-2 rounded-lg shadow-lg text-white text-sm leading-tight transform transition-all duration-200 cursor-pointer";
         const hidden = "opacity-0 -translate-y-1";
 
         let colorClass = "bg-zinc-800 border border-zinc-700";
@@ -611,9 +651,9 @@ export const hexToBase64Url = (hexValue) => {
     try {
         const normalizedHex = String(hexValue || "").replace(/[^a-fA-F0-9]/g, "").toLowerCase();
         if (!normalizedHex || normalizedHex.length % 2 !== 0) return "";
-        const bytes = normalizedHex.match(/.{1,2}/g).map((part) => parseInt(part, 16));
-        const binary = String.fromCharCode(...bytes);
-        return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+        const bytes = normalizedHex.match(/.{1,2}/g).map((part) => Number.parseInt(part, 16));
+        const binary = String.fromCodePoint(...bytes);
+        return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
     } catch {
         return "";
     }
@@ -621,10 +661,10 @@ export const hexToBase64Url = (hexValue) => {
 
 export const base64UrlToHex = (b64url) => {
     try {
-        let b64 = String(b64url || "").replace(/-/g, "+").replace(/_/g, "/");
+        let b64 = String(b64url || "").replaceAll("-", "+").replaceAll("_", "/");
         while (b64.length % 4) b64 += "=";
         const binary = atob(b64);
-        return Array.from(binary, (c) => c.charCodeAt(0).toString(16).padStart(2, "0")).join("");
+        return Array.from(binary, (c) => c.codePointAt(0).toString(16).padStart(2, "0")).join("");
     } catch {
         return "";
     }
@@ -685,7 +725,7 @@ export const configureShakaDrm = (player, source, clearKeyMode) => {
             });
             player.configure({ drm: { clearKeys: clearKeyConfig } });
         }
-    } else if (source.licenseKey && source.licenseKey.startsWith("http")) {
+    } else if (source.licenseKey?.startsWith("http")) {
         player.configure({ drm: { servers: { "org.w3c.clearkey": source.licenseKey } } });
     }
 };
@@ -705,7 +745,7 @@ const extractRequestBodyString = (body) => {
     try {
         return new TextDecoder("utf-8").decode(body);
     } catch {
-        return Array.from(new Uint8Array(body), (byte) => String.fromCharCode(byte)).join("");
+        return Array.from(new Uint8Array(body), (byte) => String.fromCodePoint(byte)).join("");
     }
 };
 
@@ -733,6 +773,8 @@ const buildProxyPayload = (request, originalUri, source) => {
     };
 };
 
+let proxyReqSeq = 0;
+
 export const setupShakaNetworkingFilters = (player, source, useProxy, PROXY_WORKER_URL) => {
     const networkingEngine = player.getNetworkingEngine();
     if (!networkingEngine) return;
@@ -746,7 +788,8 @@ export const setupShakaNetworkingFilters = (player, source, useProxy, PROXY_WORK
         const shouldProxy = useProxy && originalUri && !originalUri.startsWith("data:");
         if (shouldProxy) {
             const payload = buildProxyPayload(request, originalUri, source);
-            const reqId = Math.random().toString(36).substring(2, 10);
+            proxyReqSeq += 1;
+            const reqId = `req_${Date.now()}_${proxyReqSeq}`;
             originalUriMap.set(reqId, originalUri);
             const proxyUrlWithId = PROXY_WORKER_URL + (PROXY_WORKER_URL.includes("?") ? "&" : "?") + "proxyReqId=" + reqId;
 
@@ -761,7 +804,7 @@ export const setupShakaNetworkingFilters = (player, source, useProxy, PROXY_WORK
     });
 
     networkingEngine.registerResponseFilter((type, response) => {
-        if (response.uri && response.uri.includes("proxyReqId=")) {
+        if (response.uri?.includes("proxyReqId=")) {
             try {
                 const urlObj = new URL(response.uri);
                 const reqId = urlObj.searchParams.get("proxyReqId");
@@ -776,7 +819,7 @@ export const setupShakaNetworkingFilters = (player, source, useProxy, PROXY_WORK
 
 export const setupShakaVideoVolume = (video) => {
     const cachedVolume = localStorage.getItem("tv-volume");
-    if (cachedVolume !== null) video.volume = parseFloat(cachedVolume);
+    if (cachedVolume !== null) video.volume = Number.parseFloat(cachedVolume);
     const cachedMuted = localStorage.getItem("tv-muted");
     if (cachedMuted !== null) video.muted = cachedMuted === "true";
 
@@ -1069,11 +1112,12 @@ export const useTvInitialChannels = ({
 
             try {
                 const response = await fetchChannels();
-                const data = Array.isArray(response)
-                    ? response
-                    : Array.isArray(response?.groups)
-                      ? response.groups
-                      : [];
+                let data = [];
+                if (Array.isArray(response)) {
+                    data = response;
+                } else if (Array.isArray(response?.groups)) {
+                    data = response.groups;
+                }
 
                 setRawGroups(data);
 
@@ -1113,7 +1157,7 @@ export const useTvActiveGroupSync = ({ groups, activeGroupId, setActiveGroupId, 
         if (!activeGroupId || !currentGroupExists) {
             if (selectedChannel) {
                 const foundGroup = groups.find(
-                    (g) => g && Array.isArray(g.channels) && g.channels.some((c) => c && c.id === selectedChannel.id),
+                    (g) => g && Array.isArray(g.channels) && g.channels.some((c) => c?.id === selectedChannel.id),
                 );
                 if (foundGroup) {
                     setActiveGroupId(foundGroup.id);
@@ -1150,7 +1194,7 @@ export const useTvUrlSync = ({
         groups.forEach((g) => {
             if (g && Array.isArray(g.channels)) {
                 g.channels.forEach((c) => {
-                    if (c && c.id && !allChannelsMap.has(c.id)) {
+                    if (c?.id && !allChannelsMap.has(c.id)) {
                         allChannelsMap.set(c.id, c);
                     }
                 });
@@ -1245,7 +1289,7 @@ export default function TV() {
         (rawGroups || []).forEach((g) => {
             if (g && Array.isArray(g.channels)) {
                 g.channels.forEach((c) => {
-                    if (c && c.id) {
+                    if (c?.id) {
                         // Ưu tiên giữ lại bản ghi đầy đủ nhất nếu trùng ID
                         if (
                             !allChannelsMap.has(c.id) ||
@@ -1583,7 +1627,7 @@ export default function TV() {
                 await destroyAllPlayers();
                 clearPendingRetries();
 
-                if (selectedChannel.configSources && selectedChannel.configSources.length > 0) {
+                if (selectedChannel?.configSources?.length > 0) {
                     const filteredSources = sortChannelSources(selectedChannel.configSources);
 
                     if (filteredSources.length === 0) {
@@ -1593,9 +1637,10 @@ export default function TV() {
                     currentSourcesRef.current = filteredSources;
                     const chCacheKey = getChannelParamId(selectedChannel) || selectedChannel.id;
                     const cachedSource = workingSourceCacheRef.current.get(chCacheKey);
-                    const startIndex = cachedSource && cachedSource.sourceIndex < filteredSources.length
-                        ? cachedSource.sourceIndex
-                        : 0;
+                    const startIndex =
+                        cachedSource?.sourceIndex < filteredSources.length
+                            ? cachedSource.sourceIndex
+                            : 0;
 
                     if (startIndex > 0) {
                         console.log(`[Cache] Bắt đầu từ source ${startIndex + 1} (đã cache từ lần phát trước)`);
@@ -1665,8 +1710,7 @@ export default function TV() {
                 const now = new Date();
                 const h = now.getHours();
                 const m = now.getMinutes();
-                for (let i = 0; i < schedule.length; i++) {
-                    const item = schedule[i];
+                for (const item of schedule) {
                     const s = toMs(item.startMs ?? item.start ?? item.s ?? null);
                     if (!s) continue;
                     const d = new Date(s);
@@ -1996,7 +2040,7 @@ export default function TV() {
 
     const handleManualSelectSource = useCallback(
         (idx) => {
-            if (!selectedChannel || !selectedChannel.configSources[idx]) return;
+            if (!selectedChannel?.configSources?.[idx]) return;
 
             // Reset trackings để bắt đầu lại từ nguồn này
             errorCountRef.current = 0;
@@ -2096,9 +2140,11 @@ export default function TV() {
 
                         {/* Nút đóng/mở EPG dạng ngăn kéo trên Desktop */}
                         <button
+                            type="button"
                             onClick={() => setShowEpg(!showEpg)}
                             className="absolute -right-4 top-1/2 z-40 hidden -translate-y-1/2 items-center justify-center rounded-l-xl border border-r-0 border-zinc-800 bg-zinc-900/90 py-8 text-zinc-400 backdrop-blur-md transition-all hover:bg-zinc-800 hover:text-white lg:flex"
                             title={showEpg ? "Đóng Lịch Phát Sóng" : "Mở Lịch Phát Sóng"}
+                            aria-label={showEpg ? "Đóng Lịch Phát Sóng" : "Mở Lịch Phát Sóng"}
                         >
                             <svg className={`h-3 w-3 transition-transform ${showEpg ? '' : 'rotate-180'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -2157,6 +2203,7 @@ export default function TV() {
                                 const isActive = activeGroupId === group.id;
                                 return (
                                     <button
+                                        type="button"
                                         key={group.id}
                                         onClick={() =>
                                             setActiveGroupId(group.id)
@@ -2224,20 +2271,8 @@ export default function TV() {
                             return (
                                 <div
                                     key={channel.id}
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={() => handleSelectChannel(channel)}
-                                    onKeyDown={(e) => {
-                                        if (
-                                            e.key === "Enter" ||
-                                            e.key === " "
-                                        ) {
-                                            e.preventDefault();
-                                            handleSelectChannel(channel);
-                                        }
-                                    }}
                                     className={
-                                        "group relative flex cursor-pointer flex-col items-center gap-3 rounded-2xl border p-4 transition-all duration-300 " +
+                                        "group relative flex flex-col items-center gap-3 rounded-2xl border p-4 transition-all duration-300 " +
                                         (isSelected
                                             ? "border-red-600 bg-red-600/10 shadow-lg ring-1 ring-red-600"
                                             : "border-zinc-800/80 bg-zinc-900/60 hover:scale-[1.03] hover:border-zinc-700 hover:bg-zinc-800/70")
@@ -2276,40 +2311,48 @@ export default function TV() {
                                             />
                                         </svg>
                                     </button>
-                                    <div className="relative flex h-16 w-16 items-center justify-center">
-                                        {channel.logo ? (
-                                            <img
-                                                src={channel.logo}
-                                                alt={channel.name}
-                                                onError={
-                                                    handleImageFallbackError
-                                                }
-                                                className={
-                                                    "h-full w-full object-contain transition-transform duration-500 group-hover:scale-110 " +
-                                                    (isSelected
-                                                        ? "drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]"
-                                                        : "opacity-80 group-hover:opacity-100")
-                                                }
-                                                loading="lazy"
-                                            />
-                                        ) : (
-                                            <div className="flex h-full w-full items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 p-2">
-                                                <span className="text-2xl font-bold text-zinc-600">
-                                                    {channel.name[0]}
-                                                </span>
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div
-                                        className={
-                                            "line-clamp-1 w-full text-center text-xs font-bold tracking-tight transition-colors " +
-                                            (isSelected
-                                                ? "text-red-500"
-                                                : "text-zinc-300 group-hover:text-white")
-                                        }
+
+                                    {/* Select Channel Button */}
+                                    <button
+                                        type="button"
+                                        onClick={() => handleSelectChannel(channel)}
+                                        className="flex w-full cursor-pointer flex-col items-center gap-3 focus:outline-none"
                                     >
-                                        {channel.name}
-                                    </div>
+                                        <div className="relative flex h-16 w-16 items-center justify-center">
+                                            {channel.logo ? (
+                                                <img
+                                                    src={channel.logo}
+                                                    alt={channel.name}
+                                                    onError={
+                                                        handleImageFallbackError
+                                                    }
+                                                    className={
+                                                        "h-full w-full object-contain transition-transform duration-500 group-hover:scale-110 " +
+                                                        (isSelected
+                                                            ? "drop-shadow-[0_0_8px_rgba(239,68,68,0.6)]"
+                                                            : "opacity-80 group-hover:opacity-100")
+                                                    }
+                                                    loading="lazy"
+                                                />
+                                            ) : (
+                                                <div className="flex h-full w-full items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 p-2">
+                                                    <span className="text-2xl font-bold text-zinc-600">
+                                                        {channel.name[0]}
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div
+                                            className={
+                                                "line-clamp-1 w-full text-center text-xs font-bold tracking-tight transition-colors " +
+                                                (isSelected
+                                                    ? "text-red-500"
+                                                    : "text-zinc-300 group-hover:text-white")
+                                            }
+                                        >
+                                            {channel.name}
+                                        </div>
+                                    </button>
                                 </div>
                             );
                         })}
@@ -2317,11 +2360,14 @@ export default function TV() {
                 </div>
 
                 {showScrollTopButton && (
-                    <button
-                        onClick={() =>
+                    <Button
+                        variant="secondary"
+                        size="lg"
+                        isIconOnly
+                        onPress={() =>
                             window.scrollTo({ top: 0, behavior: "smooth" })
                         }
-                        className="fixed bottom-6 right-6 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-white shadow-xl transition-colors hover:bg-zinc-800"
+                        className="fixed bottom-6 right-6 z-40 rounded-full border border-zinc-800 bg-zinc-900 text-white shadow-xl hover:bg-zinc-800"
                         aria-label="Trở về đầu trang"
                     >
                         <svg
@@ -2337,7 +2383,7 @@ export default function TV() {
                                 d="M5 15l7-7 7 7"
                             />
                         </svg>
-                    </button>
+                    </Button>
                 )}
             </div>
         </div>

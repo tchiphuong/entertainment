@@ -6,7 +6,7 @@ import { HeartIcon as HeartOutlineIcon, XMarkIcon } from "@heroicons/react/24/ou
 import { useVodContext } from "../../contexts/VodContext";
 import { FALLBACK_IMAGE } from "../../constants";
 import MovieLanguageBadges from "./MovieLanguageBadges";
-import { Button } from "../ui";
+import { Button, Chip } from "../ui";
 import { getMoviePlayUrl, getQualityBadge, getMovieImage } from "../../utils/vodHelpers";
 
 const defaultGetImageUrl = (m, type) => {
@@ -57,21 +57,21 @@ const VodMovieDeleteButton = ({ onDelete, t }) => {
 const VodMovieTopRightBadges = ({ movie, qualityBadge, t }) => (
     <div className="absolute right-2 top-2 z-30 flex flex-col items-end gap-1">
         {movie.isTrailer ? (
-            <div className="rounded-full bg-red-600/90 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg backdrop-blur-sm">
+            <Chip color="danger" size="sm" className="font-black uppercase tracking-wider shadow-lg">
                 {t("vods.comingSoon")}
-            </div>
+            </Chip>
         ) : (
             <>
                 <MovieLanguageBadges lang={movie.lang} className="flex-col items-end" />
                 {qualityBadge && (
-                    <div className="rounded-full border border-white/20 bg-black/80 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg ring-1 ring-white/10 backdrop-blur-sm">
+                    <Chip variant="secondary" size="sm" className="border border-white/20 bg-black/80 font-black uppercase tracking-wider text-white shadow-lg">
                         {qualityBadge}
-                    </div>
+                    </Chip>
                 )}
                 {movie.year && (
-                    <div className="rounded-full border border-white/20 bg-black/80 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white shadow-lg ring-1 ring-white/10 backdrop-blur-sm">
+                    <Chip variant="secondary" size="sm" className="border border-white/20 bg-black/80 font-black uppercase tracking-wider text-white shadow-lg">
                         {movie.year}
-                    </div>
+                    </Chip>
                 )}
             </>
         )}
@@ -84,13 +84,13 @@ const VodMovieMeta = ({ movie }) => (
             {movie.name}
         </p>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-            <p className="line-clamp-1 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+            <p className="line-clamp-1 text-xs font-bold uppercase tracking-widest text-zinc-500">
                 {movie.origin_name || ""}
             </p>
             {movie.current_episode?.value && (
-                <span className="shrink-0 rounded-full bg-zinc-800 px-2 py-0.5 text-[9px] font-black uppercase text-red-500 ring-1 ring-white/5">
+                <Chip size="sm" variant="secondary" className="shrink-0 bg-zinc-800 font-black uppercase text-red-500 ring-1 ring-white/5">
                     {movie.current_episode.value}
-                </span>
+                </Chip>
             )}
         </div>
     </div>

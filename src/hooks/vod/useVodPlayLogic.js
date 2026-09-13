@@ -57,10 +57,33 @@ export const useVodPlayRouteParams = () => {
     const [searchParams, setSearchParams] = useSearchParams();
     const querySlug = searchParams.get("slug");
     const slug = params.slug || querySlug || "";
+    const wildcard = params["*"] || "";
+
+    let idParam = searchParams.get("id");
+    let typeParam = searchParams.get("type");
+    let seasonParam = searchParams.get("season");
+
+    if (wildcard) {
+        const subParams = new URLSearchParams(wildcard);
+        if (!typeParam && subParams.has("type")) typeParam = subParams.get("type");
+        if (!seasonParam && subParams.has("season")) seasonParam = subParams.get("season");
+        if (!idParam && subParams.has("id")) idParam = subParams.get("id");
+    }
+
     const episodeParam = searchParams.get("episode");
     const serverParam = searchParams.get("server");
     const sourceParam = searchParams.get("source") || SOURCES.SOURCE_K;
-    return { slug, episodeParam, serverParam, sourceParam, searchParams, setSearchParams };
+    return {
+        slug,
+        idParam,
+        typeParam,
+        seasonParam,
+        episodeParam,
+        serverParam,
+        sourceParam,
+        searchParams,
+        setSearchParams,
+    };
 };
 
 export const useVodPlayCountdown = (playNextEpisode) => {
@@ -213,6 +236,9 @@ export const useVodPlaySyncRefs = ({ autoplayEnabled, episodes, activeEpisode, c
 export const useVodPlayDetailSync = ({
     slug,
     sourceParam,
+    idParam = null,
+    typeParam = null,
+    seasonParam = null,
     setMovie,
     setEpisodes,
     activeEpisode,
@@ -234,7 +260,7 @@ export const useVodPlayDetailSync = ({
         tmdbImages: fetchedTmdbImages,
         tmdbVideos: fetchedTmdbVideos,
         tmdbRelated: fetchedTmdbRelated,
-    } = useMovieDetail(slug, sourceParam);
+    } = useMovieDetail(slug, sourceParam, idParam, typeParam, seasonParam);
 
     useEffect(() => {
         setIsLoading(movieLoading);
@@ -332,7 +358,7 @@ export const useVodPlayerManagement = ({
 
         const history = Array.isArray(viewHistory) ? [...viewHistory] : [];
         const movieIndex = history.findIndex((item) =>
-            isWatchlistHistoryMatch(item, routeSlug, canonicalSlug, targetTmdbId, movieName)
+            isWatchlistHistoryMatch(item, routeSlug, canonicalSlug, targetTmdbId, movieName, targetMovie)
         );
 
         const updatedHistory = dedupeHistory(updateWatchHistory(history, movieIndex, payload));

@@ -105,7 +105,6 @@ export default [
             "*.json",
             "homepageLists.json",
             "src/pages/Vods.jsx",
-            "src/pages/VodPlay.jsx",
         ],
     },
 ];

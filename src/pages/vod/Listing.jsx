@@ -11,6 +11,7 @@ import { MovieGridSkeleton } from "../../components/vod/VodSkeletons";
 import { useImageFallback } from "../../hooks/useImageFallback";
 import VodMovieCard from "../../components/vod/VodMovieCard";
 import VodLayout from "../../components/layout/VodLayout";
+import { Button, Chip } from "../../components/ui";
 import clsx from "clsx";
 import { useVodContext } from "../../contexts/VodContext";
 import {
@@ -37,8 +38,8 @@ import {
     fetchHistoryFromFirestore,
     dedupeHistory,
 } from "../../services/firebaseHelpers";
-import { getMovieUniqueKey } from "../../utils/vodHelpers";
-import { tmdbService } from "../../services/vod/tmdbService";
+import { getMovieUniqueKey, distinctMovies } from "../../utils/vodHelpers";
+import { tmdbService, fetchTMDBJson } from "../../services/vod/tmdbService";
 import ActorAvatar from "../../components/vod/ActorAvatar";
 
 const filterMetadataCache = new Map();
@@ -372,10 +373,11 @@ const aggregateMergedItems = (sections, SOURCES) => {
 };
 
 const aggregateActorItems = (actorMovies, currentPage, pageSize) => {
-    const totalItemsCount = actorMovies.length;
-    const totalPages = Math.ceil(actorMovies.length / pageSize) || 1;
+    const uniqueMovies = distinctMovies(actorMovies);
+    const totalItemsCount = uniqueMovies.length;
+    const totalPages = Math.ceil(uniqueMovies.length / pageSize) || 1;
     const startIndex = (currentPage - 1) * pageSize;
-    const items = actorMovies.slice(startIndex, startIndex + pageSize);
+    const items = uniqueMovies.slice(startIndex, startIndex + pageSize);
     return { items, totalPages, totalItemsCount };
 };
 
@@ -393,10 +395,12 @@ export const aggregateItems = ({
     SOURCES,
 }) => {
     if (isHistoryCategory) {
-        return { items: historyItems, totalPages: 1, totalItemsCount: historyItems.length };
+        const items = distinctMovies(historyItems);
+        return { items, totalPages: 1, totalItemsCount: items.length };
     }
     if (isFavoritesCategory) {
-        return { items: favoriteItems, totalPages: 1, totalItemsCount: favoriteItems.length };
+        const items = distinctMovies(favoriteItems);
+        return { items, totalPages: 1, totalItemsCount: items.length };
     }
     if (currentActor && actorMovies && actorMovies.length > 0) {
         return aggregateActorItems(actorMovies, currentPage, pageSize);
@@ -406,14 +410,14 @@ export const aggregateItems = ({
     }
     const section = sections["listing"] || {};
     return {
-        items: section.items || [],
+        items: distinctMovies(section.items || []),
         totalPages: section.totalPages || 1,
         totalItemsCount: section.totalItems || 0,
     };
 };
 
 export const normalizeLibraryItems = (rawItems, t) => {
-    return (Array.isArray(rawItems) ? rawItems : [])
+    const normalized = (Array.isArray(rawItems) ? rawItems : [])
         .filter((item) => item?.slug)
         .map((item) => {
             const poster =
@@ -447,6 +451,7 @@ export const normalizeLibraryItems = (rawItems, t) => {
                 lang: item.lang || "",
             };
         });
+    return distinctMovies(normalized);
 };
 
 export const getSlugName = (slug, list) => {
@@ -603,13 +608,20 @@ export const useVodMetadata = (activeSource, filterMetadataCache) => {
     return { availableCategories, availableCountries, metadataLoading };
 };
 
-export const useVodHistory = (isHistoryCategory, currentUser, t) => {
+export const useVodHistory = (isHistoryCategory, currentUser, t, rawContextHistory = []) => {
     const [historyItems, setHistoryItems] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
 
     useEffect(() => {
         const loadHistory = async () => {
             if (!isHistoryCategory) return;
+
+            if (Array.isArray(rawContextHistory) && rawContextHistory.length > 0) {
+                const deduped = dedupeHistory(rawContextHistory);
+                setHistoryItems(normalizeLibraryItems(deduped, t));
+                setHistoryLoading(false);
+                return;
+            }
 
             setHistoryLoading(true);
             try {
@@ -632,7 +644,7 @@ export const useVodHistory = (isHistoryCategory, currentUser, t) => {
         };
 
         loadHistory();
-    }, [isHistoryCategory, currentUser?.uid, t]);
+    }, [isHistoryCategory, currentUser?.uid, rawContextHistory, t]);
 
     return { historyItems, historyLoading };
 };
@@ -652,13 +664,11 @@ export const useVodFavorites = (isFavoritesCategory, rawFavorites, t) => {
 
 const fetchPersonIdByName = async (actorQuery) => {
     try {
-        const baseUrl = import.meta.env.VITE_TMDB_BASE_URL;
-        const apiKey = import.meta.env.VITE_TMDB_API_KEY;
-        const searchUrl = `${baseUrl}/search/person?api_key=${apiKey}&query=${encodeURIComponent(actorQuery)}&language=vi-VN`;
-        const sRes = await fetch(searchUrl);
-        if (!sRes.ok) return null;
-        const sData = await sRes.json();
-        return sData.results?.[0]?.id || null;
+        const baseUrl = import.meta.env.VITE_TMDB_BASE_URL || "https://api.themoviedb.org/3";
+        const sData = await fetchTMDBJson(
+            (apiKey) => `${baseUrl}/search/person?api_key=${apiKey}&query=${encodeURIComponent(actorQuery)}&language=vi-VN`,
+        );
+        return sData?.results?.[0]?.id || null;
     } catch {
         return null;
     }
@@ -852,9 +862,14 @@ const resolveActorAndQuery = (actor, getUrlParam) => {
 };
 
 const resolveCategoryAndListContext = (category, getUrlParam) => {
+    const isLibrary = category === "history" || category === "favorites";
     const isListType = Boolean(category && DANH_SACH_TYPES.has(category));
     const activeListContext = getUrlParam("type_list") || (isListType ? category : "");
-    const currentCategory = getUrlParam("category") || (isListType ? "" : category) || "";
+    let currentCategory = "";
+    if (!isLibrary) {
+        const fallbackCategory = isListType ? "" : (category || "");
+        currentCategory = getUrlParam("category") || fallbackCategory;
+    }
     return { activeListContext, currentCategory };
 };
 
@@ -907,22 +922,19 @@ export const getRawSearchCategories = ({
     finalTitle,
     SOURCES,
 }) => {
-    if (currentActor) return [];
+    if (currentActor || isLibraryCategory) return [];
     if (isMergedView) {
         return [
             buildSourceConfig(SOURCES.SOURCE_K, paramsContext, { title: "Source K" }),
             buildSourceConfig(SOURCES.SOURCE_C, paramsContext, { title: "Source C" }),
         ];
     }
-    if (!isLibraryCategory) {
-        return [
-            buildSourceConfig(activeSource || SOURCES.SOURCE_K, paramsContext, {
-                id: "listing",
-                title: finalTitle,
-            }),
-        ];
-    }
-    return [];
+    return [
+        buildSourceConfig(activeSource || SOURCES.SOURCE_K, paramsContext, {
+            id: "listing",
+            title: finalTitle,
+        }),
+    ];
 };
 
 export const computeListingLoading = ({
@@ -1059,9 +1071,9 @@ const ListingFilterCountBadge = ({ currentCountry, currentCategory, currentYear,
 
     if (count === 0) return null;
     return (
-        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[10px] text-white">
+        <Chip color="danger" size="sm" className="h-4 min-w-4 px-1 text-xs text-white">
             {count}
-        </span>
+        </Chip>
     );
 };
 
@@ -1124,9 +1136,11 @@ const ListingHeaderBar = ({
                     {t("vods.foundMovies", { count: totalItemsCount })}
                 </p>
                 {!isLibraryCategory && !currentActor && (
-                    <button
+                    <Button
                         type="button"
-                        onClick={() => setShowFilters(!showFilters)}
+                        onPress={() => setShowFilters(!showFilters)}
+                        variant={showFilters ? "primary" : "secondary"}
+                        size="sm"
                         className={clsx(
                             "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition-all",
                             showFilters
@@ -1148,7 +1162,7 @@ const ListingHeaderBar = ({
                         <svg className={clsx("h-3 w-3 transition-transform", showFilters && "rotate-180")} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                         </svg>
-                    </button>
+                    </Button>
                 )}
             </div>
         </div>
@@ -1160,7 +1174,7 @@ const ListingHeaderBar = ({
                 handleFilterSelect={handleFilterSelect}
                 t={t}
             />
-            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+            <p className="text-xs font-bold uppercase tracking-widest text-zinc-500">
                 {t("vods.pageOf", { page: currentPage, totalPages })}
             </p>
         </div>
@@ -1192,7 +1206,7 @@ const ListingFilterPanel = ({
     return (
         <div className="animate-in fade-in slide-in-from-top-2 mb-8 space-y-6 rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-6 duration-300">
             <section>
-                <h4 className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                <h4 className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
                     {t("vods.source") || "Nguồn phim"}
                 </h4>
                 <div className="flex flex-wrap gap-2">
@@ -1215,7 +1229,7 @@ const ListingFilterPanel = ({
             </section>
 
             <section>
-                <h4 className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                <h4 className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
                     Định dạng
                 </h4>
                 <div className="flex flex-wrap gap-2">
@@ -1238,7 +1252,7 @@ const ListingFilterPanel = ({
             </section>
 
             <section>
-                <h4 className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                <h4 className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
                     {t("vods.country") || "Quốc gia"}
                 </h4>
                 {metadataLoading ? (
@@ -1269,7 +1283,7 @@ const ListingFilterPanel = ({
             </section>
 
             <section>
-                <h4 className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                <h4 className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
                     {t("vods.category") || "Thể loại"}
                 </h4>
                 {metadataLoading ? (
@@ -1300,7 +1314,7 @@ const ListingFilterPanel = ({
             </section>
 
             <section>
-                <h4 className="mb-3 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                <h4 className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
                     {t("vods.year") || "Năm phát hành"}
                 </h4>
                 <div className="flex flex-wrap gap-2">
@@ -1346,18 +1360,21 @@ const ListingPagination = ({ isLibraryCategory, totalPages, currentPage, handleP
     return (
         <div className="mt-6 flex flex-col items-center gap-6">
             <div className="flex items-center justify-center gap-2">
-                <button
+                <Button
                     type="button"
-                    onClick={() => handlePageChange(currentPage - 1)}
-                    disabled={currentPage === 1}
+                    onPress={() => handlePageChange(currentPage - 1)}
+                    isDisabled={currentPage === 1}
+                    variant="secondary"
+                    size="sm"
+                    isIconOnly
                     title={`${t("vods.prevPage") || "Trang trước"} (←)`}
                     aria-label={`${t("vods.prevPage") || "Trang trước"} (Phím mũi tên trái)`}
-                    className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400 transition-all hover:border-red-600 hover:text-white disabled:opacity-30"
+                    className="h-10 w-10 rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-red-600 hover:text-white disabled:opacity-30"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                     </svg>
-                </button>
+                </Button>
 
                 <div className="flex items-center gap-1">
                     {generateVisiblePages(totalPages, currentPage).map((pageNum) => (
@@ -1376,22 +1393,25 @@ const ListingPagination = ({ isLibraryCategory, totalPages, currentPage, handleP
                     ))}
                 </div>
 
-                <button
+                <Button
                     type="button"
-                    onClick={() => handlePageChange(currentPage + 1)}
-                    disabled={currentPage === totalPages}
+                    onPress={() => handlePageChange(currentPage + 1)}
+                    isDisabled={currentPage === totalPages}
+                    variant="secondary"
+                    size="sm"
+                    isIconOnly
                     title={`${t("vods.nextPage") || "Trang tiếp theo"} (→)`}
                     aria-label={`${t("vods.nextPage") || "Trang tiếp theo"} (Phím mũi tên phải)`}
-                    className="flex h-10 w-10 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400 transition-all hover:border-red-600 hover:text-white disabled:opacity-30"
+                    className="h-10 w-10 rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-red-600 hover:text-white disabled:opacity-30"
                 >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
-                </button>
+                </Button>
             </div>
 
             <div className="flex items-center gap-3 rounded-full border border-zinc-800 bg-zinc-950/50 px-5 py-2.5 backdrop-blur-sm">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">
+                <span className="text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
                     {t("vods.jumpTo")}
                 </span>
                 <div className="flex items-center gap-2">
@@ -1415,19 +1435,22 @@ const ListingPagination = ({ isLibraryCategory, totalPages, currentPage, handleP
                         {totalPages.toLocaleString(i18n.language === "vi" ? "vi-VN" : "en-US")}
                     </span>
                 </div>
-                <button
+                <Button
                     type="button"
-                    onClick={(e) => {
-                        const input = e.currentTarget.parentElement.querySelector("input");
-                        const val = Number.parseInt(input.value);
+                    size="sm"
+                    variant="secondary"
+                    onPress={(e) => {
+                        const container = e.currentTarget.closest("div");
+                        const input = container ? container.querySelector("input") : null;
+                        const val = input ? Number.parseInt(input.value) : Number.NaN;
                         if (val >= 1 && val <= totalPages) {
                             handlePageChange(val);
                         }
                     }}
-                    className="ml-1 rounded-full bg-zinc-800 px-3 py-1 text-[10px] font-black uppercase text-zinc-400 transition-colors hover:bg-red-600 hover:text-white"
+                    className="ml-1 rounded-full bg-zinc-800 px-3 py-1 text-xs font-black uppercase text-zinc-400 hover:bg-red-600 hover:text-white"
                 >
                     {t("vods.go")}
-                </button>
+                </Button>
             </div>
         </div>
     );
@@ -1446,13 +1469,15 @@ const ListingEmptyState = ({ navigate, t }) => (
                 Rất tiếc, chúng tôi không tìm thấy nội dung nào trong danh mục này hiện tại.
             </p>
         </div>
-        <button
+        <Button
             type="button"
-            onClick={() => navigate("/vod")}
-            className="rounded-full bg-zinc-800 px-6 py-2 text-sm font-bold text-white transition-all hover:bg-zinc-700"
+            onPress={() => navigate("/vod")}
+            variant="secondary"
+            size="md"
+            className="rounded-full bg-zinc-800 px-6 py-2 text-sm font-bold text-white hover:bg-zinc-700"
         >
             {t("vods.backToVodHub")}
-        </button>
+        </Button>
     </div>
 );
 
@@ -1465,7 +1490,7 @@ export default function Listing() {
     const pageSize = PAGINATION.LISTING_PAGE_SIZE;
     const { getImageUrl, handleImageError } = useImageFallback();
     const { currentUser } = useAuth();
-    const { favorites: rawFavorites } = useVodContext();
+    const { favorites: rawFavorites, history: rawHistory } = useVodContext();
     const [showFilters, setShowFilters] = useState(false);
 
     const {
@@ -1485,7 +1510,7 @@ export default function Listing() {
     } = useListingParams(category, country, searchParams, actor);
 
     const { availableCategories, availableCountries, metadataLoading } = useVodMetadata(activeSource, filterMetadataCache);
-    const { historyItems, historyLoading } = useVodHistory(isHistoryCategory, currentUser, t);
+    const { historyItems, historyLoading } = useVodHistory(isHistoryCategory, currentUser, t, rawHistory);
     const { favoriteItems, favoriteLoading } = useVodFavorites(isFavoritesCategory, rawFavorites, t);
     const {
         actorDetail,
@@ -1715,7 +1740,7 @@ export default function Listing() {
                     <div className={GRID_CONFIG.LISTING_GRID_CLASSES}>
                         {items.map((movie, index) => (
                             <VodMovieCard
-                                key={`${movie.slug || movie.id || movie._id}_${index}`}
+                                key={getMovieUniqueKey(movie) || `${movie.slug || movie.id || movie._id}_${index}`}
                                 movie={movie}
                                 source={activeSource}
                                 getImageUrl={getImageUrl}

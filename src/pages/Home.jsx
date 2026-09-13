@@ -38,17 +38,17 @@ const compareTournaments = (a, b) => {
 const MatchStatusBadge = ({ match }) => {
     if (match.match_status === "live") {
         return (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1 text-xs font-bold text-white shadow-lg">
-                <span className="h-2 w-2 rounded-full bg-white animate-ping" />
-                Live
-            </span>
+            <Chip color="danger" variant="primary" size="sm" className="font-bold shadow-lg">
+                <span className="h-2 w-2 rounded-full bg-white animate-ping mr-1" />
+                <span>Live</span>
+            </Chip>
         );
     }
     if (match.match_status === "pending" && match.timestamp) {
         return (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-3 py-1 text-xs font-bold text-white shadow-lg">
+            <Chip color="warning" variant="primary" size="sm" className="font-bold shadow-lg">
                 Sắp diễn ra
-            </span>
+            </Chip>
         );
     }
     return null;
@@ -73,6 +73,21 @@ const extractTournamentList = (allMatches) => {
     return tournamentList;
 };
 
+const formatTournamentOptionLabel = (option) => (
+    <div className="flex items-center gap-2">
+        {option.logo && (
+            <img
+                loading="lazy"
+                src={option.logo}
+                alt={option.label}
+                className="h-5 w-5 shrink-0 object-contain"
+                onError={(e) => { e.target.style.visibility = 'hidden'; e.target.onerror = null; }}
+            />
+        )}
+        <span>{option.label}</span>
+    </div>
+);
+
 const MatchTournamentHeader = ({ tournament }) => {
     if (!tournament) return null;
     return (
@@ -95,7 +110,7 @@ const MatchTournamentHeader = ({ tournament }) => {
 
 const MatchDateTimeBlock = ({ match }) => (
     <div className="flex flex-col items-center justify-center">
-        {match._isHotMatch && match.date && match.date.length === 8 && (
+        {match._isHotMatch && match.date?.length === 8 && (
             <span className="mb-0.5 text-xs font-semibold text-zinc-400">
                 {`${match.date.substring(6, 8)}/${match.date.substring(4, 6)}`}
             </span>
@@ -318,20 +333,7 @@ export default function Home() {
                                 }}
                                 classNamePrefix="react-select"
                                 placeholder={t("tv.selectTournament")}
-                                formatOptionLabel={(option) => (
-                                    <div className="flex items-center gap-2">
-                                        {option.logo && (
-                                            <img
-                                                loading="lazy"
-                                                src={option.logo}
-                                                alt={option.label}
-                                                className="h-5 w-5 shrink-0 object-contain"
-                                                onError={(e) => { e.target.style.visibility = 'hidden'; e.target.onerror = null; }}
-                                            />
-                                        )}
-                                        <span>{option.label}</span>
-                                    </div>
-                                )}
+                                formatOptionLabel={formatTournamentOptionLabel}
                             />
                         </div>
                     </div>
@@ -354,10 +356,10 @@ export default function Home() {
                 )}
 
                 {/* Normal Matches Grouped by Date */}
-                {Object.keys(groupedNormalMatches).length > 0 ? (
+                {Object.keys(groupedNormalMatches).length > 0 && (
                     <div className="space-y-8">
                         {Object.keys(groupedNormalMatches)
-                            .sort()
+                            .sort((a, b) => a.localeCompare(b))
                             .map((dateKey) => (
                                 <div key={dateKey}>
                                     <div className="mb-4">
@@ -387,26 +389,32 @@ export default function Home() {
                                 </div>
                             ))}
                     </div>
-                ) : matches.length > 0 && hotMatches.length === 0 ? ( // Only show "empty" if truly empty (no hot, no normal)
+                )}
+
+                {Object.keys(groupedNormalMatches).length === 0 && matches.length > 0 && hotMatches.length === 0 && (
                     <div className="py-20 text-center">
                         <p className="mb-2 text-xl font-semibold text-zinc-400">
                             {t("tv.noMatches")}
                         </p>
                         <p className="text-sm text-zinc-500">{t("tv.checkBackLater")}</p>
                     </div>
-                ) : null}
+                )}
             </main>
 
-            <button
-                onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-                className={`fixed bottom-8 right-8 flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 p-4 text-lg font-bold text-white shadow-lg transition-all duration-300 hover:scale-110 hover:bg-blue-700 hover:shadow-xl ${
+            <Button
+                variant="primary"
+                size="lg"
+                isIconOnly
+                aria-label="Cuộn lên đầu trang"
+                onPress={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                className={`fixed bottom-8 right-8 z-40 rounded-full font-bold shadow-lg transition-all duration-300 hover:scale-110 ${
                     showScrollButton
                         ? "pointer-events-auto opacity-100"
                         : "pointer-events-none opacity-0"
                 }`}
             >
                 ↑
-            </button>
+            </Button>
         </div>
     );
 }

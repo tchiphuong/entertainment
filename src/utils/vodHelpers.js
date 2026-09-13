@@ -219,168 +219,19 @@ export function getQualityBadge(quality) {
     return quality || "";
 }
 
-const ROMAN_SEASON_MAP = {
-    i: 1,
-    ii: 2,
-    iii: 3,
-    iv: 4,
-    v: 5,
-    vi: 6,
-    vii: 7,
-    viii: 8,
-    ix: 9,
-    x: 10,
-};
-
-const matchKeywordSeason = (text) => {
-    const kwMatch = /(?:ph[aâầ]n|season|m[uù]a|ss|part)\.?\s*(\d{1,2})/i.exec(text);
-    if (kwMatch?.[1]) {
-        const num = Number.parseInt(kwMatch[1], 10);
-        if (num > 0 && num <= 50) return num;
-    }
-    return null;
-};
-
-const matchRomanSeason = (text) => {
-    const romanMatch = /(?:ph[aâầ]n|season|m[uù]a)\.?\s*(i{1,3}|iv|v|vi{0,3}|ix|x)\b/i.exec(text);
-    if (romanMatch?.[1]) {
-        const roman = romanMatch[1].toLowerCase();
-        if (ROMAN_SEASON_MAP[roman]) return ROMAN_SEASON_MAP[roman];
-    }
-    return null;
-};
-
-const matchPrefixSSeason = (text) => {
-    const sMatch = /(?:^|\b|\s|-)s(\d{1,2})(?:$|\b|\s|-|\.)/i.exec(text);
-    if (sMatch?.[1]) {
-        const num = Number.parseInt(sMatch[1], 10);
-        if (num > 0 && num <= 50) return num;
-    }
-    return null;
-};
-
-const matchSlugTrailingSeason = (movie) => {
-    const isSeries =
-        movie.type === "tv" ||
-        movie.type === "series" ||
-        movie.chieurap === false ||
-        Boolean(movie.episode_current);
-
-    if (isSeries && movie.slug) {
-        const slugNumMatch = /(?:^|-)(\d{1,2})$/.exec(movie.slug.trim());
-        if (slugNumMatch?.[1]) {
-            const num = Number.parseInt(slugNumMatch[1], 10);
-            if (num > 1 && num <= 50) return num;
-        }
-    }
-    return null;
-};
-
-/**
- * Trích xuất số season từ thông tin phim (tmdb object, name, origin_name, slug)
- * @param {object} movie
- * @returns {number|null}
- */
-export function extractSeasonNumber(movie) {
-    if (!movie) return null;
-    if (movie.tmdb?.season && Number(movie.tmdb.season) > 0) {
-        return Number(movie.tmdb.season);
-    }
-    if (movie.season && Number(movie.season) > 0) {
-        return Number(movie.season);
-    }
-
-    const text = [
-        movie.slug,
-        movie.name,
-        movie.origin_name,
-        movie.episode_current,
-    ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-    return (
-        matchKeywordSeason(text) ||
-        matchRomanSeason(text) ||
-        matchPrefixSSeason(text) ||
-        matchSlugTrailingSeason(movie)
-    );
-}
-
-const getTmdbUniqueKey = (movie, tmdbId) => {
-    const season = extractSeasonNumber(movie);
-    if (season) return `tmdb_${tmdbId}_s${season}`;
-
-    const type = movie.tmdb?.type || movie.type;
-    const isSeries =
-        type === "tv" ||
-        type === "series" ||
-        movie.chieurap === false ||
-        Boolean(movie.episode_current);
-
-    if (isSeries) {
-        return movie.slug ? `tmdb_${tmdbId}_${movie.slug}` : `tmdb_${tmdbId}_s1`;
-    }
-    return `tmdb_${tmdbId}`;
-};
-
-/**
- * Lấy khóa duy nhất (Unique Key) cho một phim để gộp các bản ghi trùng nhau
- * - Nếu có TMDB ID:
- *   + Phim bộ (hoặc có season): `tmdb_${tmdbId}_s${season}` hoặc `tmdb_${tmdbId}_${slug}`
- *   + Phim lẻ: `tmdb_${tmdbId}`
- * - Nếu không có TMDB ID: fallback về `slug`
- * @param {object} movie
- * @returns {string}
- */
-export function getMovieUniqueKey(movie) {
-    if (!movie) return "";
-    const tmdbId = movie.tmdb?.id || movie.tmdbId;
-    if (tmdbId) return getTmdbUniqueKey(movie, tmdbId);
-    return movie.slug ? `slug_${movie.slug}` : `id_${movie._id || movie.id || ""}`;
-}
-
-/**
- * Lấy định danh phát phim chuẩn hóa cho URL (/vod/play/:idOrSlug):
- * - Ưu tiên trả về TMDB ID (dạng chuỗi số, ví dụ "157336") nếu có tmdbId / tmdb_id / tmdb.id
- * - Chỉ khi không có TMDB ID mới fallback về slug gốc của phim
- * @param {object} movie
- * @returns {string}
- */
-export function getMoviePlaySlug(movie) {
-    if (!movie) return "";
-    const tmdbId =
-        movie.tmdbId ||
-        movie.tmdb_id ||
-        movie.tmdb?.id ||
-        (movie.source === "source_tmdb" && movie.id ? movie.id : null);
-
-    if (tmdbId) {
-        return String(tmdbId).replace(/^tmdb-/, "");
-    }
-    return movie.slug ? String(movie.slug).replace(/^tmdb-/, "") : "";
-}
-
-/**
- * Lấy URL phát phim chuẩn hóa (/vod/play/{tmdbId || slug}?source=...) đồng bộ cho tất cả source
- * @param {object} movie
- * @param {string} fallbackSource
- * @returns {string}
- */
-export function getMoviePlayUrl(movie, fallbackSource = "source_k") {
-    if (!movie) return "#";
-    const playSlug = getMoviePlaySlug(movie);
-    if (!playSlug) return "#";
-
-    const source = movie.source || fallbackSource;
-    const episodeParam = movie.current_episode?.key
-        ? `&episode=${movie.current_episode.key}`
-        : "";
-    const serverParam = movie.server ? `&server=${movie.server}` : "";
-
-    return `/vod/play/${playSlug}?source=${source}${episodeParam}${serverParam}`;
-}
+export {
+    extractSeasonNumber,
+    extractTmdbId,
+    getMediaType,
+    getTmdbUniqueKey,
+    getMovieUniqueKey,
+    getHistoryItemKey,
+    isMovieMatch,
+    distinctMovies,
+    slugify,
+    getMoviePlaySlug,
+    getMoviePlayUrl,
+} from "./vodIdentifier";
 
 /**
  * Đảm bảo URL video YouTube là dạng embed URL

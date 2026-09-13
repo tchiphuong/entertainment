@@ -13,7 +13,12 @@ import { Button, Tabs } from "../ui";
 import { useHorizontalScrollState } from "../../hooks/useHorizontalScrollState";
 import { tmdbService } from "../../services/vod/tmdbService";
 import { vodCache } from "../../utils/vodCache";
-import { getQualityBadge, getMoviePlayUrl } from "../../utils/vodHelpers";
+import {
+    getQualityBadge,
+    getMoviePlayUrl,
+    distinctMovies,
+    getMovieUniqueKey,
+} from "../../utils/vodHelpers";
 
 /**
  * Component hiển thị số thứ tự Top Rank chuẩn Đèn Neon Ống Uốn Thủy Tinh (Real Neon Glass Tube)
@@ -184,7 +189,7 @@ const useTopViewTimeframe = ({ initialItems, rowRef, i18n }) => {
 
     useEffect(() => {
         if (activeTimeframe === "week" && initialItems && initialItems.length > 0) {
-            setCurrentItems(initialItems);
+            setCurrentItems(distinctMovies(initialItems));
         }
     }, [initialItems, activeTimeframe]);
 
@@ -199,7 +204,7 @@ const useTopViewTimeframe = ({ initialItems, rowRef, i18n }) => {
             const cached = vodCache.get(cacheKey);
 
             if (cached && Array.isArray(cached) && cached.length > 0) {
-                setCurrentItems(cached);
+                setCurrentItems(distinctMovies(cached));
                 if (rowRef.current) rowRef.current.scrollTo({ left: 0, behavior: "smooth" });
                 return;
             }
@@ -209,8 +214,9 @@ const useTopViewTimeframe = ({ initialItems, rowRef, i18n }) => {
                 const res = await tmdbService.fetchTMDBTopViewByTimeframe({ timeframe, language });
                 const fetchedItems = res?.items || [];
                 if (fetchedItems.length > 0) {
-                    setCurrentItems(fetchedItems);
-                    vodCache.set(cacheKey, fetchedItems, vodCache.TTL.LISTING);
+                    const deduped = distinctMovies(fetchedItems);
+                    setCurrentItems(deduped);
+                    vodCache.set(cacheKey, deduped, vodCache.TTL.LISTING);
                 }
             } catch (err) {
                 console.error("Error changing TMDB timeframe:", err);
@@ -387,7 +393,7 @@ export default function VodTopViewRow({
                     >
                         {currentItems.map((item, index) => (
                             <TopViewMovieCard
-                                key={item.slug || item.id || index}
+                                key={getMovieUniqueKey(item) || `${item.slug || item.id || "top"}_${index}`}
                                 movie={item}
                                 rank={index + 1}
                                 source={source}

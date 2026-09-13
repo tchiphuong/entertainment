@@ -16,6 +16,7 @@ import {
 } from "../services/firebaseHelpers";
 import { GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
 import { vodCache } from "../utils/vodCache";
+import { distinctMovies } from "../utils/vodHelpers";
 import clsx from "clsx";
 import {
     Combobox,
@@ -1102,19 +1103,11 @@ export default function Vods() {
                 }
             });
 
-            // dedupe theo slug (giữ item đầu tiên gặp)
-            const map = new Map();
-            combinedItems.forEach((it) => {
-                if (!it) return;
-                const key = it.slug || it.id || it._id || JSON.stringify(it);
-                if (!map.has(key)) {
-                    // Thêm trường source
-                    it.source = it.source || it._normalizedSource || "A"; // giả sử normalize đã set
-                    map.set(key, it);
-                }
+            // dedupe theo key chuẩn hóa mới (TMDB + Season / Slug)
+            const items = distinctMovies(combinedItems).map((it) => {
+                it.source = it.source || it._normalizedSource || "A";
+                return it;
             });
-
-            const items = Array.from(map.values());
             setMovies(items);
             setTotalPages(1); // Không phân trang cho ALL
         } catch (err) {

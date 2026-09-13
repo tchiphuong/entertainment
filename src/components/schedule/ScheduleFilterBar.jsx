@@ -60,7 +60,7 @@ export default function ScheduleFilterBar({
                         aria-label={t("schedule.selectDate") || "Chọn ngày thi đấu"}
                         className="w-full"
                     >
-                        <Label className="absolute -top-2 left-3 z-10 rounded bg-zinc-900 px-1 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                        <Label className="absolute -top-2 left-3 z-10 rounded bg-zinc-900 px-1 text-xs font-black uppercase tracking-wider text-zinc-400">
                             {t("schedule.selectDate") || "Chọn ngày"}
                         </Label>
                         <Group className="relative flex w-full items-center justify-between rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-sm font-bold text-white transition-colors focus-within:border-red-600 hover:border-zinc-700">
@@ -95,7 +95,7 @@ export default function ScheduleFilterBar({
 
                         <Popover
                             placement="bottom start"
-                            className="z-50 min-w-[280px] rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
+                            className="z-50 min-w-72 rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
                         >
                             <Dialog className="outline-none">
                                 <Calendar aria-label="Lịch thi đấu thể thao" className="w-full bg-transparent text-white">
@@ -125,7 +125,7 @@ export default function ScheduleFilterBar({
                                     <CalendarGrid className="w-full border-collapse">
                                         <CalendarGridHeader>
                                             {(day) => (
-                                                <CalendarHeaderCell className="pb-2 text-center text-[11px] font-semibold text-zinc-400">
+                                                <CalendarHeaderCell className="pb-2 text-center text-xs font-semibold text-zinc-400">
                                                     {day}
                                                 </CalendarHeaderCell>
                                             )}
@@ -152,7 +152,7 @@ export default function ScheduleFilterBar({
                     aria-label={t("common.search") || "Tìm kiếm"}
                     className="relative w-full flex-1"
                 >
-                    <Label className="absolute -top-2 left-3 z-10 rounded bg-zinc-900 px-1 text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                    <Label className="absolute -top-2 left-3 z-10 rounded bg-zinc-900 px-1 text-xs font-black uppercase tracking-wider text-zinc-400">
                         {t("common.search") || "Tìm kiếm"}
                     </Label>
                     <div className="relative">

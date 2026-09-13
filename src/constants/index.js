@@ -118,22 +118,6 @@ export const FILTER_TYPE_LIST = [
 
 export const CATEGORIES = [
     {
-        id: "history",
-        title: "Lịch Sử",
-        titleKey: "vods.history",
-        type: "lich-su",
-        source: "",
-        isView: false,
-    },
-    {
-        id: "favorites",
-        title: "Yêu Thích",
-        titleKey: "vods.favorites",
-        type: "yeu-thich",
-        source: "",
-        isView: false,
-    },
-    {
         id: "new",
         title: "Phim Mới Cập Nhật",
         titleKey: "vods.newMovies",

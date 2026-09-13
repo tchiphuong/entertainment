@@ -127,7 +127,7 @@ class SmartCacheManager {
         const entries = [];
         for (let i = 0; i < localStorage.length; i++) {
             const k = localStorage.key(i);
-            if (!k || !k.startsWith(CACHE_PREFIX)) continue;
+            if (!k?.startsWith(CACHE_PREFIX)) continue;
 
             try {
                 const raw = localStorage.getItem(k);
@@ -179,7 +179,7 @@ class SmartCacheManager {
             const keysToRemove = [];
             for (let i = 0; i < localStorage.length; i++) {
                 const k = localStorage.key(i);
-                if (k && k.startsWith(CACHE_PREFIX)) {
+                if (k?.startsWith(CACHE_PREFIX)) {
                     keysToRemove.push(k);
                 }
             }

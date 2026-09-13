@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { useTranslation } from "react-i18next";
 import { formatMatchDateTime } from "../../utils/dateUtils";
+import { Button, Chip } from "../ui";
 
 const TeamBadgeCol = ({ badge, name, fallbackChar }) => (
     <div className="flex min-w-0 flex-1 flex-col items-center text-center">
@@ -21,7 +22,7 @@ const TeamBadgeCol = ({ badge, name, fallbackChar }) => (
                 </span>
             )}
         </div>
-        <h3 className="line-clamp-2 text-[11px] font-bold uppercase leading-snug text-zinc-100">
+        <h3 className="line-clamp-2 text-xs font-bold uppercase leading-snug text-zinc-100">
             {name}
         </h3>
     </div>
@@ -40,7 +41,7 @@ const MatchScoreCenter = ({ hasScore, isHomeWinner, isAwayWinner, homeScore, awa
                 </span>
             </div>
         ) : (
-            <div className="rounded-md border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-[10px] font-black uppercase text-zinc-500">
+            <div className="rounded-md border border-zinc-800 bg-zinc-950 px-2.5 py-1 text-xs font-black uppercase text-zinc-500">
                 VS
             </div>
         )}
@@ -62,18 +63,25 @@ const MatchCard = memo(({ event, onSelectMatch }) => {
         <div className="group relative flex flex-col justify-between rounded-xl border border-zinc-800 bg-zinc-900/90 p-4 transition-all duration-300 hover:border-zinc-700 hover:shadow-xl">
             {/* Header: Match Time & Details Link */}
             <div className="mb-4 flex items-center justify-between border-b border-zinc-800/80 pb-2.5">
-                <span className="rounded-full bg-zinc-800 px-2.5 py-0.5 text-[10px] font-black tracking-wider text-zinc-300">
-                    {formattedTime}
-                </span>
+                <div className="flex items-center gap-1.5">
+                    <Chip
+                        variant="secondary"
+                        size="sm"
+                        className="font-black text-xs tracking-wider text-zinc-300"
+                    >
+                        {formattedTime}
+                    </Chip>
+                </div>
 
-                <button
-                    type="button"
-                    onClick={() => onSelectMatch(event)}
-                    className="flex items-center gap-1 text-xs font-bold text-zinc-400 transition-colors hover:text-red-500"
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onPress={() => onSelectMatch(event)}
+                    className="flex items-center gap-1 text-xs font-bold text-zinc-400 hover:text-red-500 h-auto p-0"
                 >
-                    {t("schedule.matchDetails") || "Chi tiết"}
+                    <span>{t("schedule.matchDetails") || "Chi tiết"}</span>
                     <span className="transition-transform group-hover:translate-x-0.5">→</span>
-                </button>
+                </Button>
             </div>
 
             {/* Teams & Score Matrix */}
@@ -100,11 +108,15 @@ const MatchCard = memo(({ event, onSelectMatch }) => {
             </div>
 
             {/* Footer League Info & Stadium */}
-            <div className="mt-3 flex items-center justify-between border-t border-zinc-800/80 pt-2 text-[10px] text-zinc-500 font-bold">
-                <span className="truncate max-w-[140px]">{event.strLeague}</span>
+            <div className="mt-3 flex items-center justify-between border-t border-zinc-800/80 pt-2 text-xs text-zinc-500 font-bold">
+                <span className="truncate max-w-36">{event.strLeague}</span>
                 {event.strVenue && (
-                    <span className="truncate max-w-[120px] text-right" title={event.strVenue}>
-                        📍 {event.strVenue}
+                    <span className="flex items-center gap-1 truncate max-w-32 text-right" title={event.strVenue}>
+                        <svg className="h-3 w-3 shrink-0 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <span className="truncate">{event.strVenue}</span>
                     </span>
                 )}
             </div>

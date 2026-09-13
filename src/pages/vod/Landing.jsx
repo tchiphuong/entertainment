@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -7,7 +7,7 @@ import {
 } from "../../components/vod/VodSkeletons";
 
 import { ChevronLeftIcon, ChevronRightIcon } from "@heroicons/react/24/outline";
-import { Button } from "../../components/ui";
+import { Button, Chip } from "../../components/ui";
 import { useVodData } from "../../hooks/useVodData";
 import { useImageFallback } from "../../hooks/useImageFallback";
 import { useHorizontalScrollState } from "../../hooks/useHorizontalScrollState";
@@ -15,7 +15,7 @@ import MovieLanguageBadges from "../../components/vod/MovieLanguageBadges";
 import VodMovieCard from "../../components/vod/VodMovieCard";
 import VodTopViewRow from "../../components/vod/VodTopViewRow";
 import { CATEGORIES, SOURCES } from "../../constants";
-import { getMoviePlayUrl } from "../../utils/vodHelpers";
+import { getMoviePlayUrl, distinctMovies, getMovieUniqueKey } from "../../utils/vodHelpers";
 import VodLayout from "../../components/layout/VodLayout";
 import { useVodContext } from "../../contexts/VodContext";
 
@@ -33,33 +33,51 @@ const HeroSlideBadges = ({ movie, idx }) => (
                 </div>
             </div>
         )}
-        <span className="flex items-center gap-1 rounded-full bg-red-600 px-2.5 py-0.5 text-[0.625rem] font-black uppercase text-white shadow-sm md:text-xs">
+        <Chip
+            color="danger"
+            variant="primary"
+            size="sm"
+            className="font-black text-xs"
+        >
             TOP {idx + 1} • HOT
-        </span>
+        </Chip>
         {movie.year && (
-            <span className="rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2 py-0.5 text-[0.625rem] font-bold text-zinc-300 md:text-xs">
+            <Chip
+                variant="secondary"
+                size="sm"
+                className="font-bold text-xs text-zinc-300"
+            >
                 {movie.year}
-            </span>
+            </Chip>
         )}
         {movie.quality && (
-            <span className="rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2 py-0.5 text-[0.625rem] font-bold text-white md:text-xs">
+            <Chip
+                variant="secondary"
+                size="sm"
+                className="font-bold text-xs text-white"
+            >
                 {movie.quality}
-            </span>
+            </Chip>
         )}
         <MovieLanguageBadges lang={movie.lang} useLight={true} />
         {movie.episode_current && !movie.isTrailer && (
-            <span className="hidden rounded-md border border-zinc-700/80 bg-zinc-900/90 px-2 py-0.5 text-[0.625rem] font-bold text-zinc-300 sm:inline-block md:text-xs">
+            <Chip
+                variant="secondary"
+                size="sm"
+                className="hidden sm:inline-flex font-bold text-xs text-zinc-300"
+            >
                 {movie.episode_current}
-            </span>
+            </Chip>
         )}
     </div>
 );
 
 const HeroSlideActionButtons = ({ movie, isFav, navigate, toggleFavorite, t }) => (
     <div className="flex items-center gap-2.5 pt-2 md:gap-4 md:pt-4">
-        <button
-            type="button"
-            onClick={() =>
+        <Button
+            variant="primary"
+            size="lg"
+            onPress={() =>
                 navigate(getMoviePlayUrl(movie, "source_k"), {
                     state: {
                         backgrounds: {
@@ -69,28 +87,24 @@ const HeroSlideActionButtons = ({ movie, isFav, navigate, toggleFavorite, t }) =
                     },
                 })
             }
-            className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-2xl md:rounded-full bg-red-600 py-3 px-5 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-red-600/30 transition-all hover:bg-red-500 active:scale-95 md:flex-none md:px-8 md:py-3.5 md:text-sm"
+            className="flex-1 md:flex-none font-black uppercase tracking-wider text-xs md:text-sm px-6 md:px-8 shadow-lg shadow-red-600/30"
         >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 fill-current md:h-5 md:w-5" viewBox="0 0 24 24">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 fill-current md:h-5 md:w-5 mr-1" viewBox="0 0 24 24">
                 <path d="M8 5v14l11-7z" />
             </svg>
             <span>{t("vods.watchNow") || "Xem Ngay"}</span>
-        </button>
+        </Button>
 
-        <button
-            type="button"
-            onClick={() => toggleFavorite(movie)}
-            className={`flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-2xl md:rounded-full border transition-all active:scale-90 md:h-12 md:px-6 md:text-sm ${
-                isFav
-                    ? "border-red-600 bg-red-600/20 text-red-500 shadow-md shadow-red-600/20"
-                    : "border-zinc-700/80 bg-zinc-900/90 text-zinc-300 hover:border-zinc-500 hover:text-white"
-            }`}
-            title={isFav ? t("common.remove") : t("common.add")}
+        <Button
+            variant={isFav ? "danger" : "secondary"}
+            size="lg"
+            onPress={() => toggleFavorite(movie)}
+            className="h-11 md:h-12 px-4 md:px-6 font-bold text-xs md:text-sm"
             aria-label="Yêu thích"
         >
             <svg
                 xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
+                className="h-5 w-5 mr-1"
                 fill={isFav ? "currentColor" : "none"}
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -102,14 +116,15 @@ const HeroSlideActionButtons = ({ movie, isFav, navigate, toggleFavorite, t }) =
                     d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
                 />
             </svg>
-            <span className="hidden md:inline font-bold">
+            <span className="hidden md:inline">
                 {isFav ? t("common.remove") || "Đã lưu" : t("vods.favorites") || "Yêu thích"}
             </span>
-        </button>
+        </Button>
 
-        <button
-            type="button"
-            onClick={() =>
+        <Button
+            variant="secondary"
+            size="lg"
+            onPress={() =>
                 navigate(getMoviePlayUrl(movie, "source_k"), {
                     state: {
                         backgrounds: {
@@ -119,13 +134,13 @@ const HeroSlideActionButtons = ({ movie, isFav, navigate, toggleFavorite, t }) =
                     },
                 })
             }
-            className="flex h-11 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-2xl md:rounded-full border border-zinc-700/80 bg-zinc-900/90 px-3.5 text-xs font-bold text-zinc-200 transition-all hover:bg-zinc-800 hover:text-white active:scale-95 md:h-12 md:px-6 md:text-sm"
+            className="h-11 md:h-12 px-4 md:px-6 font-bold text-xs md:text-sm"
         >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span className="hidden sm:inline">{t("vods.info") || "Chi tiết"}</span>
-        </button>
+        </Button>
     </div>
 );
 
@@ -189,7 +204,7 @@ const HeroSlideItem = ({
                     )}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold text-zinc-300 md:text-sm">
+                <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-zinc-300 md:text-sm">
                     {movie.category?.length > 0 ? (
                         movie.category.slice(0, 5).map((c, i, arr) => (
                             <span key={c.id || i} className="flex items-center gap-1.5">
@@ -273,12 +288,12 @@ export default function VodLanding() {
     // Đồng bộ history từ VodContext
     useEffect(() => {
         const normalizedHistory = normalizeLibraryItems(rawHistory);
-        setHistoryItems(normalizedHistory);
+        setHistoryItems(distinctMovies(normalizedHistory));
     }, [rawHistory, normalizeLibraryItems]);
 
     useEffect(() => {
         const normalizedFavorites = normalizeLibraryItems(rawFavorites);
-        setFavoriteItems(normalizedFavorites);
+        setFavoriteItems(distinctMovies(normalizedFavorites));
         setFavoriteLoading(false);
     }, [rawFavorites, normalizeLibraryItems]);
 
@@ -374,7 +389,7 @@ export default function VodLanding() {
                 >
                     {heroMovies.map((movie, idx) => (
                         <HeroSlideItem
-                            key={movie.slug || idx}
+                            key={getMovieUniqueKey(movie) || `${movie.slug || movie.id || "hero"}_${idx}`}
                             movie={movie}
                             idx={idx}
                             isActive={idx === currentHeroIndex}
@@ -389,35 +404,39 @@ export default function VodLanding() {
 
                     {/* Navigation Arrows (Desktop Only) */}
                     <div className="pointer-events-none absolute left-0 top-1/2 z-40 hidden w-16 -translate-y-1/2 items-center justify-start pl-4 md:flex lg:pl-8">
-                        <button
-                            type="button"
-                            onClick={prevHero}
-                            className="group pointer-events-auto flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-zinc-700/80 bg-zinc-950/80 text-white shadow-xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 active:scale-90"
+                        <Button
+                            variant="secondary"
+                            size="lg"
+                            isIconOnly
+                            onPress={prevHero}
+                            className="pointer-events-auto rounded-full border border-zinc-700/80 bg-zinc-950/80 text-white shadow-xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600"
                             aria-label="Slide trước"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                             </svg>
-                        </button>
+                        </Button>
                     </div>
                     <div className="pointer-events-none absolute right-0 top-1/2 z-40 hidden w-16 -translate-y-1/2 items-center justify-end pr-4 md:flex lg:pr-8">
-                        <button
-                            type="button"
-                            onClick={nextHero}
-                            className="group pointer-events-auto flex h-12 w-12 cursor-pointer items-center justify-center rounded-full border border-zinc-700/80 bg-zinc-950/80 text-white shadow-xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600 active:scale-90"
+                        <Button
+                            variant="secondary"
+                            size="lg"
+                            isIconOnly
+                            onPress={nextHero}
+                            className="pointer-events-auto rounded-full border border-zinc-700/80 bg-zinc-950/80 text-white shadow-xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600"
                             aria-label="Slide tiếp theo"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                             </svg>
-                        </button>
+                        </Button>
                     </div>
 
                     {/* App-like Slide Pill Indicators */}
                     <div className="absolute bottom-3.5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 md:bottom-6 md:gap-2">
                         {heroMovies.map((movie, idx) => (
                             <button
-                                key={movie.slug || idx}
+                                key={getMovieUniqueKey(movie) || `${movie.slug || movie.id || "hero_dot"}_${idx}`}
                                 type="button"
                                 onClick={() => {
                                     setCurrentHeroIndex(idx);
@@ -488,8 +507,6 @@ export default function VodLanding() {
                     ? CATEGORIES.filter(
                           (cat) =>
                               cat.isView !== false &&
-                              cat.id !== "history" &&
-                              cat.id !== "favorites" &&
                               cat.id !== "top-view",
                       ).map((cat) => (
                           <MovieRowSkeleton key={cat.id} title={t(cat.titleKey || cat.title)} />
@@ -497,8 +514,6 @@ export default function VodLanding() {
                     : CATEGORIES.filter(
                           (cat) =>
                               cat.isView !== false &&
-                              cat.id !== "history" &&
-                              cat.id !== "favorites" &&
                               cat.id !== "top-view",
                       ).map((cat) => {
                           const categoryLink = cat.type?.startsWith("quoc-gia/")
@@ -584,7 +599,7 @@ export default function VodLanding() {
                                 {t("footer.apps")}
                             </h4>
                             <div className="flex flex-col gap-3">
-                                <div className="flex cursor-pointer items-center gap-2 rounded border border-zinc-800 bg-zinc-900 px-4 py-2 text-[10px] font-bold text-zinc-300 transition-colors hover:bg-zinc-800">
+                                <div className="flex cursor-pointer items-center gap-2 rounded border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-bold text-zinc-300 transition-colors hover:bg-zinc-800">
                                     <img
                                         loading="lazy"
                                         src="https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg"
@@ -592,7 +607,7 @@ export default function VodLanding() {
                                         className="h-6"
                                     />
                                 </div>
-                                <div className="flex cursor-pointer items-center gap-2 rounded border border-zinc-800 bg-zinc-900 px-4 py-2 text-[10px] font-bold text-zinc-300 transition-colors hover:bg-zinc-800">
+                                <div className="flex cursor-pointer items-center gap-2 rounded border border-zinc-800 bg-zinc-900 px-4 py-2 text-xs font-bold text-zinc-300 transition-colors hover:bg-zinc-800">
                                     <img
                                         loading="lazy"
                                         src="https://upload.wikimedia.org/wikipedia/commons/3/3c/Download_on_the_App_Store_Badge.svg"
@@ -604,7 +619,7 @@ export default function VodLanding() {
                         </div>
                     </div>
                 </div>
-                <div className="mx-auto mt-20 flex max-w-7xl flex-col items-center justify-between gap-4 border-t border-dashed border-zinc-900 pt-8 text-[10px] font-bold uppercase tracking-[0.2em] md:flex-row">
+                <div className="mx-auto mt-20 flex max-w-7xl flex-col items-center justify-between gap-4 border-t border-dashed border-zinc-900 pt-8 text-xs font-bold uppercase tracking-[0.2em] md:flex-row">
                     <p>
                         &copy; 2026 MoviesHub Entertainment. All rights
                         reserved.
@@ -635,7 +650,7 @@ export default function VodLanding() {
 
 function MovieRow({
     title,
-    items,
+    items: rawItems,
     source,
     link,
     getImageUrl,
@@ -644,6 +659,7 @@ function MovieRow({
     onClearAll,
 }) {
     const { t } = useTranslation();
+    const items = useMemo(() => distinctMovies(rawItems), [rawItems]);
     const { scrollRef, canScrollLeft, canScrollRight, hasOverflow, scrollLeft, scrollRight } =
         useHorizontalScrollState([items?.length]);
 
@@ -659,10 +675,12 @@ function MovieRow({
                     </h2>
                     {/* Nút xóa tất cả lịch sử */}
                     {onClearAll && items.length > 0 && (
-                        <button
+                        <Button
                             type="button"
-                            onClick={onClearAll}
-                            className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 transition-all hover:border-red-600/50 hover:bg-red-600/10 hover:text-red-500 active:scale-95"
+                            onPress={onClearAll}
+                            variant="secondary"
+                            size="sm"
+                            className="flex items-center gap-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-zinc-500 hover:border-red-600/50 hover:bg-red-600/10 hover:text-red-500"
                             title={t("common.clearAll") || "Xóa tất cả"}
                         >
                             <svg
@@ -680,7 +698,7 @@ function MovieRow({
                                 />
                             </svg>
                             {t("common.clearAll") || "Xóa tất cả"}
-                        </button>
+                        </Button>
                     )}
                 </div>
                 <div className="flex items-center gap-3">
@@ -726,9 +744,9 @@ function MovieRow({
                     ref={scrollRef}
                     className="no-scrollbar flex gap-4 overflow-x-auto scroll-smooth px-4 py-8 transition-all md:px-12 lg:px-20"
                 >
-                    {items.map((item) => (
+                    {items.map((item, index) => (
                         <div
-                            key={item.slug}
+                            key={getMovieUniqueKey(item) || `${item.slug || item.id || "item"}_${index}`}
                             className="relative w-40 shrink-0 transition-all duration-300 hover:z-40 sm:w-48 md:w-56 lg:w-60 xl:w-64"
                         >
                             <VodMovieCard

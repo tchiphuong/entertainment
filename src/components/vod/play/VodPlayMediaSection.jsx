@@ -17,6 +17,7 @@ import {
     TMDB_IMAGE_SIZES,
 } from "../../../constants";
 import { useHorizontalScrollState } from "../../../hooks/useHorizontalScrollState";
+import { distinctMovies, getMovieUniqueKey } from "../../../utils/vodHelpers";
 
 export const MovieTitle = ({ movie, tmdbImages }) => {
     const titleLogo = useMemo(() => {
@@ -399,6 +400,84 @@ const MediaGalleryPostersList = ({
     </div>
 );
 
+const getTrailerList = (tmdbVideos, trailerUrl) => {
+    const list =
+        Array.isArray(tmdbVideos) && tmdbVideos.length > 0
+            ? tmdbVideos.filter((v) => v?.site === "YouTube" && Boolean(v?.key))
+            : [];
+    if (list.length > 0 || !trailerUrl) return list;
+
+    const ytMatch = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/.exec(trailerUrl);
+    if (ytMatch?.[1]) {
+        return [
+            {
+                id: "custom_trailer",
+                key: ytMatch[1],
+                name: "Trailer Chính Thức",
+                type: "Trailer",
+                site: "YouTube",
+            },
+        ];
+    }
+    return [];
+};
+
+const buildAvailableTabs = (hasVideos, hasBackdrops, hasPosters, trailerCount, backdropCount, posterCount, t) => {
+    const tabs = [];
+    if (hasVideos) tabs.push({ id: "videos", label: t("vodPlay.trailers") || "Trailers & Videos", count: trailerCount });
+    if (hasBackdrops) tabs.push({ id: "backdrops", label: t("vodPlay.backdrops") || "Hình nền", count: backdropCount });
+    if (hasPosters) tabs.push({ id: "posters", label: t("vodPlay.posters") || "Áp phích", count: posterCount });
+    return tabs;
+};
+
+const MediaGalleryTabContent = ({
+    activeTab,
+    hasVideos,
+    trailerList,
+    onSelectTrailer,
+    hasBackdrops,
+    backdrops,
+    hasPosters,
+    posters,
+    scrollRef,
+    setModalImages,
+    setCurrentImageIndex,
+    setShowImageModal,
+}) => {
+    if (activeTab === "videos" && hasVideos) {
+        return (
+            <MediaGalleryVideosList
+                scrollRef={scrollRef}
+                trailerList={trailerList}
+                onSelectTrailer={onSelectTrailer}
+            />
+        );
+    }
+    if (activeTab === "backdrops" && hasBackdrops) {
+        return (
+            <MediaGalleryBackdropsList
+                scrollRef={scrollRef}
+                backdrops={backdrops}
+                setModalImages={setModalImages}
+                setCurrentImageIndex={setCurrentImageIndex}
+                setShowImageModal={setShowImageModal}
+            />
+        );
+    }
+    if (activeTab === "posters" && hasPosters) {
+        return (
+            <MediaGalleryPostersList
+                scrollRef={scrollRef}
+                posters={posters}
+                setModalImages={setModalImages}
+                setCurrentImageIndex={setCurrentImageIndex}
+                setShowImageModal={setShowImageModal}
+            />
+        );
+    }
+    return null;
+};
+
 export const MovieMediaGallery = ({
     tmdbVideos,
     movie,
@@ -410,27 +489,10 @@ export const MovieMediaGallery = ({
 }) => {
     const { t } = useTranslation();
 
-    const trailerList = useMemo(() => {
-        const list =
-            Array.isArray(tmdbVideos) && tmdbVideos.length > 0
-                ? tmdbVideos.filter((v) => v?.site === "YouTube" && Boolean(v?.key))
-                : [];
-        if (list.length === 0 && movie?.trailer_url) {
-            const ytMatch = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([\w-]+)/.exec(movie.trailer_url);
-            if (ytMatch?.[1]) {
-                return [
-                    {
-                        id: "custom_trailer",
-                        key: ytMatch[1],
-                        name: "Trailer Chính Thức",
-                        type: "Trailer",
-                        site: "YouTube",
-                    },
-                ];
-            }
-        }
-        return list;
-    }, [tmdbVideos, movie?.trailer_url]);
+    const trailerList = useMemo(
+        () => getTrailerList(tmdbVideos, movie?.trailer_url),
+        [tmdbVideos, movie?.trailer_url],
+    );
 
     const backdrops = useMemo(() => tmdbImages?.backdrops || [], [tmdbImages]);
     const posters = useMemo(() => tmdbImages?.posters || [], [tmdbImages]);
@@ -439,13 +501,19 @@ export const MovieMediaGallery = ({
     const hasBackdrops = backdrops.length > 0;
     const hasPosters = posters.length > 0;
 
-    const availableTabs = useMemo(() => {
-        const tabs = [];
-        if (hasVideos) tabs.push({ id: "videos", label: t("vodPlay.trailers") || "Trailers & Videos", count: trailerList.length });
-        if (hasBackdrops) tabs.push({ id: "backdrops", label: t("vodPlay.backdrops") || "Hình nền", count: backdrops.length });
-        if (hasPosters) tabs.push({ id: "posters", label: t("vodPlay.posters") || "Áp phích", count: posters.length });
-        return tabs;
-    }, [hasVideos, hasBackdrops, hasPosters, trailerList.length, backdrops.length, posters.length, t]);
+    const availableTabs = useMemo(
+        () =>
+            buildAvailableTabs(
+                hasVideos,
+                hasBackdrops,
+                hasPosters,
+                trailerList.length,
+                backdrops.length,
+                posters.length,
+                t,
+            ),
+        [hasVideos, hasBackdrops, hasPosters, trailerList.length, backdrops.length, posters.length, t],
+    );
 
     const [activeTab, setActiveTab] = useState(availableTabs[0]?.id || "videos");
 
@@ -503,40 +571,27 @@ export const MovieMediaGallery = ({
                 )}
             </div>
 
-            {activeTab === "videos" && hasVideos && (
-                <MediaGalleryVideosList
-                    scrollRef={scrollRef}
-                    trailerList={trailerList}
-                    onSelectTrailer={onSelectTrailer}
-                />
-            )}
-
-            {activeTab === "backdrops" && hasBackdrops && (
-                <MediaGalleryBackdropsList
-                    scrollRef={scrollRef}
-                    backdrops={backdrops}
-                    setModalImages={setModalImages}
-                    setCurrentImageIndex={setCurrentImageIndex}
-                    setShowImageModal={setShowImageModal}
-                />
-            )}
-
-            {activeTab === "posters" && hasPosters && (
-                <MediaGalleryPostersList
-                    scrollRef={scrollRef}
-                    posters={posters}
-                    setModalImages={setModalImages}
-                    setCurrentImageIndex={setCurrentImageIndex}
-                    setShowImageModal={setShowImageModal}
-                />
-            )}
+            <MediaGalleryTabContent
+                activeTab={activeTab}
+                hasVideos={hasVideos}
+                trailerList={trailerList}
+                onSelectTrailer={onSelectTrailer}
+                hasBackdrops={hasBackdrops}
+                backdrops={backdrops}
+                hasPosters={hasPosters}
+                posters={posters}
+                scrollRef={scrollRef}
+                setModalImages={setModalImages}
+                setCurrentImageIndex={setCurrentImageIndex}
+                setShowImageModal={setShowImageModal}
+            />
         </section>
     );
 };
 
 export const MovieRelated = ({ tmdbRelated, getMovieImage }) => {
     const { t } = useTranslation();
-    const relatedList = Array.isArray(tmdbRelated) ? tmdbRelated : [];
+    const relatedList = useMemo(() => distinctMovies(tmdbRelated), [tmdbRelated]);
 
     const { scrollRef, canScrollLeft, canScrollRight, hasOverflow, scrollLeft, scrollRight } =
         useHorizontalScrollState([relatedList.length]);
@@ -586,9 +641,9 @@ export const MovieRelated = ({ tmdbRelated, getMovieImage }) => {
                 ref={scrollRef}
                 className="no-scrollbar flex gap-4 md:gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory py-4 px-1"
             >
-                {tmdbRelated.map((relatedMovie) => (
+                {relatedList.map((relatedMovie, index) => (
                     <div
-                        key={relatedMovie.id || relatedMovie.slug}
+                        key={getMovieUniqueKey(relatedMovie) || `${relatedMovie.id || relatedMovie.slug}_${index}`}
                         className="w-36 sm:w-44 md:w-52 shrink-0 snap-start"
                     >
                         <VodMovieCard

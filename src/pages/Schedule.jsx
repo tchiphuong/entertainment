@@ -1,12 +1,85 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
-import { Button } from "react-aria-components";
+import { Button, Chip } from "../components/ui";
 import LoadingSpinner from "../components/ui/LoadingSpinner";
 import ScheduleFilterBar from "../components/schedule/ScheduleFilterBar";
 import LeagueSection from "../components/schedule/LeagueSection";
 import LeagueStandings from "../components/schedule/LeagueStandings";
 import MatchDetailModal from "../components/schedule/MatchDetailModal";
 import { scheduleService } from "../services/schedule/scheduleService";
+
+const ScheduleHeader = ({ activeTab, setActiveTab, totalMatches, t }) => {
+    const isMatches = activeTab === "matches";
+    return (
+        <header className="sticky top-0 z-30 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur-md">
+            <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between md:px-8">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-600/30 bg-red-600/10 text-red-500 shadow-sm">
+                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    </div>
+                    <div>
+                        <h1 className="text-base font-black uppercase tracking-wider text-white">
+                            {isMatches
+                                ? t("schedule.title") || "Lịch Thi Đấu Thể Thao"
+                                : "Bảng Xếp Hạng Giải Đấu"}
+                        </h1>
+                        <p className="text-xs font-medium text-zinc-400">
+                            {isMatches
+                                ? "Cập nhật trực tiếp kết quả & kênh phát sóng"
+                                : "Theo dõi vị trí, điểm số & phong độ các câu lạc bộ"}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Tab Switcher (HeroUI Buttons) */}
+                <div className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/90 p-1 shadow-inner">
+                    <Button
+                        onPress={() => setActiveTab("matches")}
+                        variant={isMatches ? "primary" : "ghost"}
+                        size="sm"
+                        className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wider transition-all ${
+                            isMatches
+                                ? "bg-red-600 text-white shadow-md"
+                                : "text-zinc-400 hover:text-white"
+                        }`}
+                    >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <span>Lịch Thi Đấu</span>
+                        {isMatches && totalMatches > 0 && (
+                            <Chip
+                                size="sm"
+                                variant="secondary"
+                                className="h-4 min-w-4 px-1 text-xs font-bold bg-black/40 text-white"
+                            >
+                                {totalMatches}
+                            </Chip>
+                        )}
+                    </Button>
+
+                    <Button
+                        onPress={() => setActiveTab("standings")}
+                        variant={!isMatches ? "primary" : "ghost"}
+                        size="sm"
+                        className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wider transition-all ${
+                            !isMatches
+                                ? "bg-red-600 text-white shadow-md"
+                                : "text-zinc-400 hover:text-white"
+                        }`}
+                    >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        <span>Bảng Xếp Hạng</span>
+                    </Button>
+                </div>
+            </div>
+        </header>
+    );
+};
 
 export default function Schedule() {
     const { t } = useTranslation();
@@ -85,65 +158,12 @@ export default function Schedule() {
     return (
         <div className="min-h-screen bg-zinc-950 font-sans text-white selection:bg-red-600/30">
             {/* Header Lịch Thi Đấu & Bảng Xếp Hạng */}
-            <header className="sticky top-0 z-30 border-b border-zinc-800 bg-zinc-950/90 backdrop-blur-md">
-                <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between md:px-8">
-                    <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-600/30 bg-red-600/10 text-red-500 shadow-sm">
-                            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                        </div>
-                        <div>
-                            <h1 className="text-base font-black uppercase tracking-wider text-white">
-                                {activeTab === "matches"
-                                    ? t("schedule.title") || "Lịch Thi Đấu Thể Thao"
-                                    : "Bảng Xếp Hạng Giải Đấu"}
-                            </h1>
-                            <p className="text-[11px] font-medium text-zinc-400">
-                                {activeTab === "matches"
-                                    ? "Cập nhật trực tiếp kết quả & kênh phát sóng"
-                                    : "Theo dõi vị trí, điểm số & phong độ các câu lạc bộ"}
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Tab Switcher (HeroUI Buttons) */}
-                    <div className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900/90 p-1 shadow-inner">
-                        <Button
-                            onPress={() => setActiveTab("matches")}
-                            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wider transition-all outline-none cursor-pointer ${
-                                activeTab === "matches"
-                                    ? "bg-red-600 text-white shadow-md"
-                                    : "text-zinc-400 hover:text-white hover:bg-zinc-800"
-                            }`}
-                        >
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <span>Lịch Thi Đấu</span>
-                            {activeTab === "matches" && totalMatches > 0 && (
-                                <span className="rounded-full bg-black/30 px-1.5 py-0.5 text-[10px] font-bold">
-                                    {totalMatches}
-                                </span>
-                            )}
-                        </Button>
-
-                        <Button
-                            onPress={() => setActiveTab("standings")}
-                            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wider transition-all outline-none cursor-pointer ${
-                                activeTab === "standings"
-                                    ? "bg-red-600 text-white shadow-md"
-                                    : "text-zinc-400 hover:text-white hover:bg-zinc-800"
-                            }`}
-                        >
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                            </svg>
-                            <span>Bảng Xếp Hạng</span>
-                        </Button>
-                    </div>
-                </div>
-            </header>
+            <ScheduleHeader
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                totalMatches={totalMatches}
+                t={t}
+            />
 
             <div className="mx-auto max-w-7xl px-4 py-6 md:px-8">
                 {activeTab === "matches" ? (
@@ -161,7 +181,7 @@ export default function Schedule() {
 
                         {/* Loading State */}
                         {loading && (
-                            <div className="flex min-h-[360px] items-center justify-center py-20">
+                            <div className="flex min-h-96 items-center justify-center py-20">
                                 <LoadingSpinner />
                             </div>
                         )}

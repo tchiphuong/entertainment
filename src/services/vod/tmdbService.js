@@ -10,10 +10,127 @@ import {
     TMDB_THEATRICAL_RELEASE_TYPES,
 } from "../../constants";
 import { smartCache, CACHE_TTL } from "../../utils/smartCache";
+import { slugify } from "../../utils/vodIdentifier";
+
+const TMDB_API_KEYS = [
+    import.meta.env.VITE_TMDB_API_KEY,
+    import.meta.env.VITE_TMDB_API_KEY_2,
+    import.meta.env.VITE_TMDB_API_KEY_3,
+    import.meta.env.VITE_TMDB_API_KEY_FALLBACK,
+]
+    .flatMap((k) => (typeof k === "string" ? k.split(",") : []))
+    .map((k) => k?.trim())
+    .filter((k, idx, arr) => Boolean(k) && arr.indexOf(k) === idx);
+
+const FINAL_TMDB_KEYS = TMDB_API_KEYS.length > 0 ? TMDB_API_KEYS : [
+    "3356865d41894a2fa9bfa84b2b5f59bb",
+    "1865f43a0549ca50d341dd9ab8b29f49",
+    "304ca56b1b7b57ca7a47d9b59946be94",
+];
 
 const CONFIG = {
-    TMDB_API_KEY: import.meta.env.VITE_TMDB_API_KEY,
-    TMDB_BASE_URL: import.meta.env.VITE_TMDB_BASE_URL,
+    TMDB_API_KEYS: FINAL_TMDB_KEYS,
+    TMDB_BASE_URL: import.meta.env.VITE_TMDB_BASE_URL || "https://api.themoviedb.org/3",
+};
+
+// Quản lý trạng thái cooldown của từng key nhằm tránh lỗi 429 rate limit
+const keyCooldownMap = new Map();
+let keyIndex = 0;
+
+const RATE_LIMIT_COOLDOWN_MS = 60 * 1000; // 1 phút khi bị 429
+const UNAUTHORIZED_COOLDOWN_MS = 5 * 60 * 1000; // 5 phút khi bị 401
+
+/**
+ * Lấy API key khả dụng theo cơ chế Round-Robin để chia đều tải và ngừa 429
+ */
+export const getNextTmdbApiKey = () => {
+    const now = Date.now();
+    const total = FINAL_TMDB_KEYS.length;
+
+    for (let i = 0; i < total; i++) {
+        const candidate = FINAL_TMDB_KEYS[(keyIndex + i) % total];
+        const cooldownUntil = keyCooldownMap.get(candidate) || 0;
+        if (now >= cooldownUntil) {
+            keyIndex = (keyIndex + i + 1) % total;
+            return candidate;
+        }
+    }
+
+    let earliestKey = FINAL_TMDB_KEYS[0];
+    let earliestTime = keyCooldownMap.get(earliestKey) || 0;
+    for (const k of FINAL_TMDB_KEYS) {
+        const time = keyCooldownMap.get(k) || 0;
+        if (time < earliestTime) {
+            earliestTime = time;
+            earliestKey = k;
+        }
+    }
+    return earliestKey;
+};
+
+const markKeyLimited = (key, statusCode = 429) => {
+    const duration = statusCode === 401 ? UNAUTHORIZED_COOLDOWN_MS : RATE_LIMIT_COOLDOWN_MS;
+    keyCooldownMap.set(key, Date.now() + duration);
+    console.warn(`[TMDB] Key ...${key.slice(-6)} bị mã ${statusCode}. Tạm chuyển sang fallback key trong ${duration / 1000}s`);
+};
+
+const buildTmdbUrl = (urlOrBuilder, apiKey) => {
+    if (typeof urlOrBuilder === "function") {
+        return urlOrBuilder(apiKey);
+    }
+    if (typeof urlOrBuilder === "string") {
+        if (urlOrBuilder.includes("api_key=")) {
+            return urlOrBuilder.replace(/api_key=[^&]+/, `api_key=${apiKey}`);
+        }
+        const sep = urlOrBuilder.includes("?") ? "&" : "?";
+        return `${urlOrBuilder}${sep}api_key=${apiKey}`;
+    }
+    return "";
+};
+
+/**
+ * Thực hiện gọi TMDB API với cơ chế tự động thử lại qua danh sách fallback keys khi gặp lỗi 429 hoặc 401
+ */
+export const fetchTMDBApi = async (urlOrBuilder, fetchOptions = {}) => {
+    const maxAttempts = FINAL_TMDB_KEYS.length;
+    let lastError = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const apiKey = getNextTmdbApiKey();
+        const url = buildTmdbUrl(urlOrBuilder, apiKey);
+        if (!url) break;
+
+        try {
+            const res = await fetch(url, fetchOptions);
+
+            if (res.status === 429 || res.status === 401) {
+                markKeyLimited(apiKey, res.status);
+                continue;
+            }
+
+            return res;
+        } catch (err) {
+            lastError = err;
+            console.warn(`[TMDB] Fetch lỗi với key ...${apiKey.slice(-6)}:`, err);
+        }
+    }
+
+    if (lastError) throw lastError;
+    return null;
+};
+
+/**
+ * Fetch dữ liệu JSON từ TMDB API an toàn với fallback keys
+ */
+export const fetchTMDBJson = async (urlOrBuilder, fetchOptions = {}) => {
+    try {
+        const res = await fetchTMDBApi(urlOrBuilder, fetchOptions);
+        if (!res || !res.ok) return null;
+        return await res.json();
+    } catch (e) {
+        console.warn("[TMDB] Lỗi fetchTMDBJson:", e);
+        return null;
+    }
 };
 
 const getTmdbTitle = (item) =>
@@ -47,6 +164,23 @@ const getTmdbDirector = (item) =>
 const getTmdbMediaType = (item, isMovie) =>
     item.media_type || (isMovie ? MEDIA_TYPES.MOVIE : MEDIA_TYPES.TV);
 
+const resolveTmdbSlug = (item, movieTitle) => {
+    if (movieTitle) return slugify(movieTitle);
+    return item?.id ? String(item.id) : "";
+};
+
+const resolveTmdbCategories = (genres) => {
+    return Array.isArray(genres)
+        ? genres.map((g) => ({ id: g.id, name: g.name, slug: String(g.id) }))
+        : [];
+};
+
+const resolveTmdbActors = (credits) => {
+    return Array.isArray(credits?.cast)
+        ? credits.cast.map((c) => c.name)
+        : [];
+};
+
 /**
  * Chuẩn hóa một item phim trả về từ TMDB API thành format chung của hệ sinh thái VOD
  * @param {object} item - Dữ liệu thô từ TMDB
@@ -61,6 +195,8 @@ export const normalizeTMDBMovie = (item, source = SOURCES.SOURCE_TMDB) => {
     const rating = typeof item.vote_average === "number" ? item.vote_average : null;
     const isMovie = Boolean(item.title || item.runtime || item.release_date);
     const mediaType = getTmdbMediaType(item, isMovie);
+    const movieTitle = getTmdbTitle(item);
+    const movieSlug = resolveTmdbSlug(item, movieTitle);
 
     return {
         ...item,
@@ -68,8 +204,8 @@ export const normalizeTMDBMovie = (item, source = SOURCES.SOURCE_TMDB) => {
         tmdbId: item.id,
         tmdb_id: item.id,
         tmdb: item,
-        slug: item.id ? String(item.id) : "",
-        name: getTmdbTitle(item),
+        slug: movieSlug,
+        name: movieTitle,
         origin_name: getTmdbOriginTitle(item),
         poster_url: posterUrl,
         thumb_url: thumbUrl,
@@ -78,15 +214,15 @@ export const normalizeTMDBMovie = (item, source = SOURCES.SOURCE_TMDB) => {
         year: year,
         quality: getTmdbQuality(rating),
         rating: rating,
-        vote_count: item.vote_count || 0,
-        lang: item.original_language || "en",
-        content: item.overview || "",
+        vote_count: item.vote_count ?? 0,
+        lang: item.original_language ?? "en",
+        content: item.overview ?? "",
         source: source || SOURCES.SOURCE_TMDB,
         media_type: mediaType,
         type: mediaType === MEDIA_TYPES.MOVIE ? "single" : "series",
         time: getTmdbDuration(item),
-        category: (item.genres || []).map((g) => ({ id: g.id, name: g.name, slug: String(g.id) })),
-        actor: (item.credits?.cast || []).map((c) => c.name),
+        category: resolveTmdbCategories(item.genres),
+        actor: resolveTmdbActors(item.credits),
         director: getTmdbDirector(item),
     };
 };
@@ -102,28 +238,22 @@ export const fetchTMDBTrending = async ({
     language = DEFAULT_TMDB_LANG,
     region = DEFAULT_REGION,
 } = {}) => {
-    const apiKey = CONFIG.TMDB_API_KEY;
     const baseUrl = CONFIG.TMDB_BASE_URL;
     const regionParam = region ? `&region=${region}` : "";
-    const url = `${baseUrl}/trending/${mediaType}/${timeWindow}?api_key=${apiKey}&language=${language}&page=${page}${regionParam}`;
+    const data = await fetchTMDBJson(
+        (apiKey) => `${baseUrl}/trending/${mediaType}/${timeWindow}?api_key=${apiKey}&language=${language}&page=${page}${regionParam}`,
+    );
 
-    try {
-        const res = await fetch(url);
-        if (!res.ok) return { items: [], totalPages: 1, totalItems: 0 };
-        const data = await res.json();
-        const results = Array.isArray(data.results) ? data.results : [];
-        const items = results.map((item) => normalizeTMDBMovie(item));
+    if (!data) return { items: [], totalPages: 1, totalItems: 0 };
+    const results = Array.isArray(data.results) ? data.results : [];
+    const items = results.map((item) => normalizeTMDBMovie(item));
 
-        return {
-            items,
-            totalPages: data.total_pages || 1,
-            totalItems: data.total_results || items.length,
-            page: data.page || page,
-        };
-    } catch (e) {
-        console.error("fetchTMDBTrending error:", e);
-        return { items: [], totalPages: 1, totalItems: 0 };
-    }
+    return {
+        items,
+        totalPages: data.total_pages || 1,
+        totalItems: data.total_results || items.length,
+        page: data.page || page,
+    };
 };
 
 /**
@@ -136,28 +266,22 @@ export const fetchTMDBPopular = async ({
     language = DEFAULT_TMDB_LANG,
     region = DEFAULT_REGION,
 } = {}) => {
-    const apiKey = CONFIG.TMDB_API_KEY;
     const baseUrl = CONFIG.TMDB_BASE_URL;
     const regionParam = region ? `&region=${region}` : "";
-    const url = `${baseUrl}/${mediaType}/popular?api_key=${apiKey}&language=${language}&page=${page}${regionParam}`;
+    const data = await fetchTMDBJson(
+        (apiKey) => `${baseUrl}/${mediaType}/popular?api_key=${apiKey}&language=${language}&page=${page}${regionParam}`,
+    );
 
-    try {
-        const res = await fetch(url);
-        if (!res.ok) return { items: [], totalPages: 1, totalItems: 0 };
-        const data = await res.json();
-        const results = Array.isArray(data.results) ? data.results : [];
-        const items = results.map((item) => normalizeTMDBMovie(item));
+    if (!data) return { items: [], totalPages: 1, totalItems: 0 };
+    const results = Array.isArray(data.results) ? data.results : [];
+    const items = results.map((item) => normalizeTMDBMovie(item));
 
-        return {
-            items,
-            totalPages: data.total_pages || 1,
-            totalItems: data.total_results || items.length,
-            page: data.page || page,
-        };
-    } catch (e) {
-        console.error("fetchTMDBPopular error:", e);
-        return { items: [], totalPages: 1, totalItems: 0 };
-    }
+    return {
+        items,
+        totalPages: data.total_pages || 1,
+        totalItems: data.total_results || items.length,
+        page: data.page || page,
+    };
 };
 
 /**
@@ -170,29 +294,23 @@ export const fetchTMDBNowPlaying = async ({
     region = DEFAULT_REGION,
     withReleaseType = TMDB_THEATRICAL_RELEASE_TYPES,
 } = {}) => {
-    const apiKey = CONFIG.TMDB_API_KEY;
     const baseUrl = CONFIG.TMDB_BASE_URL;
     const regionParam = region ? `&region=${region}` : "";
     const releaseTypeParam = withReleaseType ? `&with_release_type=${withReleaseType}` : "";
-    const url = `${baseUrl}/${TMDB_ENDPOINTS.NOW_PLAYING}?api_key=${apiKey}&language=${language}&page=${page}${regionParam}${releaseTypeParam}`;
+    const data = await fetchTMDBJson(
+        (apiKey) => `${baseUrl}/${TMDB_ENDPOINTS.NOW_PLAYING}?api_key=${apiKey}&language=${language}&page=${page}${regionParam}${releaseTypeParam}`,
+    );
 
-    try {
-        const res = await fetch(url);
-        if (!res.ok) return { items: [], totalPages: 1, totalItems: 0 };
-        const data = await res.json();
-        const results = Array.isArray(data.results) ? data.results : [];
-        const items = results.map((item) => normalizeTMDBMovie(item));
+    if (!data) return { items: [], totalPages: 1, totalItems: 0 };
+    const results = Array.isArray(data.results) ? data.results : [];
+    const items = results.map((item) => normalizeTMDBMovie(item));
 
-        return {
-            items,
-            totalPages: data.total_pages || 1,
-            totalItems: data.total_results || items.length,
-            page: data.page || page,
-        };
-    } catch (e) {
-        console.error("fetchTMDBNowPlaying error:", e);
-        return { items: [], totalPages: 1, totalItems: 0 };
-    }
+    return {
+        items,
+        totalPages: data.total_pages || 1,
+        totalItems: data.total_results || items.length,
+        page: data.page || page,
+    };
 };
 
 /**
@@ -205,28 +323,22 @@ export const fetchTMDBTopRated = async ({
     language = DEFAULT_TMDB_LANG,
     region = DEFAULT_REGION,
 } = {}) => {
-    const apiKey = CONFIG.TMDB_API_KEY;
     const baseUrl = CONFIG.TMDB_BASE_URL;
     const regionParam = region ? `&region=${region}` : "";
-    const url = `${baseUrl}/${mediaType}/top_rated?api_key=${apiKey}&language=${language}&page=${page}${regionParam}`;
+    const data = await fetchTMDBJson(
+        (apiKey) => `${baseUrl}/${mediaType}/top_rated?api_key=${apiKey}&language=${language}&page=${page}${regionParam}`,
+    );
 
-    try {
-        const res = await fetch(url);
-        if (!res.ok) return { items: [], totalPages: 1, totalItems: 0 };
-        const data = await res.json();
-        const results = Array.isArray(data.results) ? data.results : [];
-        const items = results.map((item) => normalizeTMDBMovie(item));
+    if (!data) return { items: [], totalPages: 1, totalItems: 0 };
+    const results = Array.isArray(data.results) ? data.results : [];
+    const items = results.map((item) => normalizeTMDBMovie(item));
 
-        return {
-            items,
-            totalPages: data.total_pages || 1,
-            totalItems: data.total_results || items.length,
-            page: data.page || page,
-        };
-    } catch (e) {
-        console.error("fetchTMDBTopRated error:", e);
-        return { items: [], totalPages: 1, totalItems: 0 };
-    }
+    return {
+        items,
+        totalPages: data.total_pages || 1,
+        totalItems: data.total_results || items.length,
+        page: data.page || page,
+    };
 };
 
 /**
@@ -261,12 +373,12 @@ const extractBrandLogo = (type, mainData) => {
     return null;
 };
 
-const fetchTMDBImagesMetadata = async (baseUrl, endpoint, tmdbId, apiKey) => {
-    const imgUrl = `${baseUrl}/${endpoint}/${tmdbId}/images?api_key=${apiKey}&include_image_language=vi,null,en`;
+const fetchTMDBImagesMetadata = async (baseUrl, endpoint, tmdbId) => {
     try {
-        const imgRes = await fetch(imgUrl);
-        if (!imgRes.ok) return {};
-        const imgData = await imgRes.json();
+        const imgData = await fetchTMDBJson(
+            (apiKey) => `${baseUrl}/${endpoint}/${tmdbId}/images?api_key=${apiKey}&include_image_language=vi,null,en`,
+        );
+        if (!imgData) return {};
 
         const titleLogo = imgData.logos?.find((l) => l.iso_639_1 === "vi") || imgData.logos?.find((l) => l.iso_639_1 === "en");
         const viPoster = imgData.posters?.find((p) => p.iso_639_1 === "vi");
@@ -282,12 +394,12 @@ const fetchTMDBImagesMetadata = async (baseUrl, endpoint, tmdbId, apiKey) => {
     }
 };
 
-const fetchTMDBSeasonMetadata = async (baseUrl, tmdbId, parsedSeason, apiKey, language, mainData) => {
+const fetchTMDBSeasonMetadata = async (baseUrl, tmdbId, parsedSeason, language, mainData) => {
     try {
-        const seasonUrl = `${baseUrl}/tv/${tmdbId}/season/${parsedSeason}?api_key=${apiKey}&language=${language}&append_to_response=images&include_image_language=vi,null,en`;
-        const seasonRes = await fetch(seasonUrl);
-        if (!seasonRes.ok) return {};
-        const seasonData = await seasonRes.json();
+        const seasonData = await fetchTMDBJson(
+            (apiKey) => `${baseUrl}/tv/${tmdbId}/season/${parsedSeason}?api_key=${apiKey}&language=${language}&append_to_response=images&include_image_language=vi,null,en`,
+        );
+        if (!seasonData) return {};
 
         const viSeasonPoster = seasonData.images?.posters?.find((p) => p.iso_639_1 === "vi");
         const seasonPoster = viSeasonPoster?.file_path || seasonData.poster_path || null;
@@ -300,7 +412,7 @@ const fetchTMDBSeasonMetadata = async (baseUrl, tmdbId, parsedSeason, apiKey, la
             backdropPath: seasonBackdrop,
         };
     } catch (error_) {
-        console.warn(`Error fetching season ${parsedSeason} for TV ${tmdbId}:`, error_);
+        console.warn(`Lỗi fetch season ${parsedSeason} của TV ${tmdbId}:`, error_);
         return {};
     }
 };
@@ -309,7 +421,6 @@ const resolveTmdbMetadataPaths = async ({
     baseUrl,
     endpoint,
     tmdbId,
-    apiKey,
     language,
     mainData,
     type,
@@ -321,7 +432,7 @@ const resolveTmdbMetadataPaths = async ({
     let titleLogoPath = null;
     let nameVi = mainData.title || mainData.name || null;
 
-    const imgMeta = await fetchTMDBImagesMetadata(baseUrl, endpoint, tmdbId, apiKey);
+    const imgMeta = await fetchTMDBImagesMetadata(baseUrl, endpoint, tmdbId);
     if (imgMeta.titleLogoPath) titleLogoPath = imgMeta.titleLogoPath;
     if (imgMeta.posterPath) posterPath = imgMeta.posterPath;
     if (imgMeta.backdropPath) backdropPath = imgMeta.backdropPath;
@@ -331,7 +442,6 @@ const resolveTmdbMetadataPaths = async ({
             baseUrl,
             tmdbId,
             parsedSeason,
-            apiKey,
             language,
             mainData,
         );
@@ -378,20 +488,17 @@ export const fetchTMDBMetadata = async ({
         ttl: CACHE_TTL.STATIC_METADATA,
         swr: true,
         fetcher: async () => {
-            const apiKey = CONFIG.TMDB_API_KEY;
             const baseUrl = CONFIG.TMDB_BASE_URL;
             const endpoint = type === "tv" ? "tv" : "movie";
-            const mainUrl = `${baseUrl}/${endpoint}/${tmdbId}?api_key=${apiKey}&language=${language}`;
-
-            const mainRes = await fetch(mainUrl);
-            if (!mainRes.ok) return null;
-            const mainData = await mainRes.json();
+            const mainData = await fetchTMDBJson(
+                (apiKey) => `${baseUrl}/${endpoint}/${tmdbId}?api_key=${apiKey}&language=${language}`,
+            );
+            if (!mainData) return null;
 
             return resolveTmdbMetadataPaths({
                 baseUrl,
                 endpoint,
                 tmdbId,
-                apiKey,
                 language,
                 mainData,
                 type,
@@ -415,13 +522,10 @@ export const fetchTMDBPersonDetail = async (personId, language = "vi-VN") => {
         ttl: CACHE_TTL.DETAIL,
         swr: true,
         fetcher: async () => {
-            const apiKey = CONFIG.TMDB_API_KEY;
             const baseUrl = CONFIG.TMDB_BASE_URL;
-            const url = `${baseUrl}/person/${personId}?api_key=${apiKey}&language=${language}`;
-
-            const res = await fetch(url);
-            if (!res.ok) return null;
-            return await res.json();
+            return await fetchTMDBJson(
+                (apiKey) => `${baseUrl}/person/${personId}?api_key=${apiKey}&language=${language}`,
+            );
         },
     });
 };
@@ -467,13 +571,11 @@ export const fetchTMDBPersonCredits = async (personId, language = "vi-VN") => {
         ttl: CACHE_TTL.DETAIL,
         swr: true,
         fetcher: async () => {
-            const apiKey = CONFIG.TMDB_API_KEY;
             const baseUrl = CONFIG.TMDB_BASE_URL;
-            const url = `${baseUrl}/person/${personId}/combined_credits?api_key=${apiKey}&language=${language}`;
-
-            const res = await fetch(url);
-            if (!res.ok) return { items: [], categories: [], totalPages: 1, totalItems: 0 };
-            const data = await res.json();
+            const data = await fetchTMDBJson(
+                (apiKey) => `${baseUrl}/person/${personId}/combined_credits?api_key=${apiKey}&language=${language}`,
+            );
+            if (!data) return { items: [], categories: [], totalPages: 1, totalItems: 0 };
             const castList = Array.isArray(data.cast) ? data.cast : [];
 
             const castMap = new Map();
@@ -518,16 +620,12 @@ export const fetchTMDBRelated = async (tmdbId, mediaType = "movie", language = D
         ttl: CACHE_TTL.DETAIL,
         swr: true,
         fetcher: async () => {
-            const apiKey = CONFIG.TMDB_API_KEY;
             const baseUrl = CONFIG.TMDB_BASE_URL;
 
-            // Fetch cả recommendations và similar song song
-            const recUrl = `${baseUrl}/${type}/${tmdbId}/recommendations?api_key=${apiKey}&language=${language}&page=1`;
-            const simUrl = `${baseUrl}/${type}/${tmdbId}/similar?api_key=${apiKey}&language=${language}&page=1`;
-
-            const [recRes, simRes] = await Promise.all([
-                fetch(recUrl).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-                fetch(simUrl).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+            // Fetch cả recommendations và similar song song qua resilient pool
+            const [recData, simData] = await Promise.all([
+                fetchTMDBJson((apiKey) => `${baseUrl}/${type}/${tmdbId}/recommendations?api_key=${apiKey}&language=${language}&page=1`),
+                fetchTMDBJson((apiKey) => `${baseUrl}/${type}/${tmdbId}/similar?api_key=${apiKey}&language=${language}&page=1`),
             ]);
 
             const map = new Map();
@@ -541,21 +639,15 @@ export const fetchTMDBRelated = async (tmdbId, mediaType = "movie", language = D
                 }
             };
 
-            addToList(recRes?.results);
-            addToList(simRes?.results);
+            addToList(recData?.results);
+            addToList(simData?.results);
 
             // Fallback nếu kết quả ít hơn 6 phim
             if (map.size < 6 && language !== "en-US") {
-                try {
-                    const fallbackUrl = `${baseUrl}/${type}/${tmdbId}/recommendations?api_key=${apiKey}&language=en-US&page=1`;
-                    const fallbackRes = await fetch(fallbackUrl);
-                    if (fallbackRes.ok) {
-                        const fallbackData = await fallbackRes.json();
-                        addToList(fallbackData?.results);
-                    }
-                } catch (e) {
-                    console.warn("fetchTMDBRelated fallback error:", e);
-                }
+                const fallbackData = await fetchTMDBJson(
+                    (apiKey) => `${baseUrl}/${type}/${tmdbId}/recommendations?api_key=${apiKey}&language=en-US&page=1`,
+                );
+                addToList(fallbackData?.results);
             }
 
             const items = Array.from(map.values())
@@ -571,7 +663,44 @@ export const fetchTMDBRelated = async (tmdbId, mediaType = "movie", language = D
     });
 };
 
+/**
+ * Tìm kiếm TMDB kết quả khớp đầu tiên theo tên phim (dành cho các phim nguồn chưa có sẵn TMDB ID)
+ * @param {string} query - Tên phim cần tìm
+ * @param {string} mediaType - "movie" hoặc "tv"
+ * @returns {Promise<{ id: string, media_type: string }|null>}
+ */
+export const searchTMDBFirstMatch = async (query, mediaType = null) => {
+    if (!query || typeof query !== "string") return null;
+    const cleanQuery = query.replace(/\(.*?\)/g, "").trim();
+    if (!cleanQuery) return null;
+
+    const baseUrl = CONFIG.TMDB_BASE_URL;
+    if (!baseUrl) return null;
+
+    const endpoint = mediaType === "tv" || mediaType === "movie" ? mediaType : "multi";
+    const cacheKey = `tmdb_search_${endpoint}_${cleanQuery.toLowerCase()}`;
+
+    return smartCache.fetchWithCache({
+        key: cacheKey,
+        ttl: CACHE_TTL.LISTING,
+        fetcher: async () => {
+            const data = await fetchTMDBJson(
+                (apiKey) => `${baseUrl}/search/${endpoint}?api_key=${apiKey}&query=${encodeURIComponent(cleanQuery)}&page=1`,
+            );
+            const first = data?.results?.[0];
+            if (!first?.id) return null;
+            return {
+                id: String(first.id),
+                media_type: first.media_type || mediaType || (first.title ? "movie" : "tv"),
+            };
+        },
+    });
+};
+
 export const tmdbService = {
+    getNextTmdbApiKey,
+    fetchTMDBApi,
+    fetchTMDBJson,
     fetchTMDBTrending,
     fetchTMDBPopular,
     fetchTMDBNowPlaying,
@@ -581,5 +710,7 @@ export const tmdbService = {
     fetchTMDBPersonDetail,
     fetchTMDBPersonCredits,
     fetchTMDBRelated,
+    searchTMDBFirstMatch,
     normalizeTMDBMovie,
 };
+

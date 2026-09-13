@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { SOURCES, TYPE_CONFIG } from "../constants";
 import { vodService } from "../services/vod/vodService";
-import { normalizeTMDBMovie } from "../services/vod/tmdbService";
+import { normalizeTMDBMovie, searchTMDBFirstMatch } from "../services/vod/tmdbService";
 import {
     getEpisodeKey,
     extractBestTrailerUrl,
@@ -31,18 +31,18 @@ const determineSources = (initialSource) => {
 };
 
 // Helper fetch dữ liệu nguồn
-const fetchSourcesData = async (slug, isTmdb, sources) => {
+const fetchSourcesData = async (slug, isTmdb, sources, tmdbId = null, mediaType = "movie") => {
     const results = [];
     const resultsBySource = {};
 
-    if (isTmdb) {
+    if (isTmdb && tmdbId) {
         try {
-            const kRes = await vodService.fetchSourceData(slug, SOURCES.SOURCE_K);
+            const kRes = await vodService.fetchSourceData(slug, SOURCES.SOURCE_K, tmdbId, mediaType);
             results.push({ src: SOURCES.SOURCE_K, res: kRes });
             resultsBySource[SOURCES.SOURCE_K] = kRes;
             const realSlug = kRes?.movie?.slug;
             if (realSlug) {
-                // Tích hợp SOURCE_C trong fallback
+                // Tích hợp SOURCE_C bằng realSlug từ KKPhim
                 const otherPromises = [SOURCES.SOURCE_C].map(async (src) => {
                     try {
                         const res = await vodService.fetchSourceData(realSlug, src);
@@ -84,20 +84,31 @@ const fetchSourcesData = async (slug, isTmdb, sources) => {
 const isSeriesType = (type) =>
     type === "series" || type === "tv" || type === "tvshows";
 
+const extractTmdbFromSourceResult = (res, initialMediaType) => {
+    const movie = res?.movie;
+    const currentTmdbId = movie?.tmdb?.id || movie?.tmdb_id;
+    if (!currentTmdbId) return null;
+
+    return {
+        tmdbId: currentTmdbId,
+        tmdbType: isSeriesType(movie.type) ? "tv" : (initialMediaType || "movie"),
+        tmdbInfo: movie.tmdb,
+    };
+};
+
 // Helper tìm thông tin TMDB tốt nhất từ các nguồn
-const findBestTmdbInfo = (resultsBySource, initialTmdbId = null) => {
+const findBestTmdbInfo = (resultsBySource, initialTmdbId = null, initialMediaType = null) => {
     const tmdbPriority = [SOURCES.SOURCE_K, SOURCES.SOURCE_C];
     let foundTmdbId = initialTmdbId;
-    let foundTmdbType = null;
+    let foundTmdbType = initialMediaType || "movie";
     let bestTmdbInfo = null;
 
     for (const src of tmdbPriority) {
-        const res = resultsBySource[src];
-        const currentTmdbId = res?.movie?.tmdb?.id || res?.movie?.tmdb_id;
-        if (currentTmdbId) {
-            foundTmdbId = currentTmdbId;
-            foundTmdbType = isSeriesType(res.movie?.type) ? "tv" : "movie";
-            bestTmdbInfo = res.movie.tmdb;
+        const parsed = extractTmdbFromSourceResult(resultsBySource[src], initialMediaType);
+        if (parsed) {
+            foundTmdbId = parsed.tmdbId;
+            foundTmdbType = parsed.tmdbType;
+            bestTmdbInfo = parsed.tmdbInfo;
             break;
         }
     }
@@ -192,14 +203,13 @@ const extractTmdbIdFromSlug = (slug, isNumericId) => {
     return null;
 };
 
-const parseSlugTmdbInfo = (slug, initialSource) => {
+const parseSlugTmdbInfo = (slug, initialSource, initialId, initialType) => {
     const isNumericId = /^\d+$/.test(String(slug).trim());
-    const isTmdb =
-        (typeof slug === "string" && slug.startsWith("tmdb-")) ||
-        isNumericId ||
-        initialSource === SOURCES.SOURCE_TMDB;
-    const tmdbIdFromSlug = extractTmdbIdFromSlug(slug, isNumericId);
-    return { isTmdb, tmdbIdFromSlug };
+    const rawTmdbId = initialId || extractTmdbIdFromSlug(slug, isNumericId);
+    const tmdbIdFromSlug = rawTmdbId ? String(rawTmdbId).trim() : null;
+    const isTmdb = Boolean(tmdbIdFromSlug) || initialSource === SOURCES.SOURCE_TMDB;
+    const mediaType = initialType || "movie";
+    return { isTmdb, tmdbIdFromSlug, mediaType };
 };
 
 const applyTmdbDetailsToState = (details, firstMovieData, setters) => {
@@ -218,7 +228,28 @@ const applyTrailerToEpisodes = (episodesList, movieData, videos = []) => {
     return appendTrailerServerGroup(episodesList, trailerUrl);
 };
 
-export const useMovieDetail = (slug, initialSource = null) => {
+const resolveMovieTmdbId = async (initialTmdbId, initialTmdbType, movieData) => {
+    if (initialTmdbId || !movieData) {
+        return { tmdbId: initialTmdbId, tmdbType: initialTmdbType };
+    }
+    const searchTitle = movieData.original_name || movieData.origin_name || movieData.name;
+    const matched = await searchTMDBFirstMatch(searchTitle, initialTmdbType);
+    if (matched?.id) {
+        return {
+            tmdbId: matched.id,
+            tmdbType: matched.media_type || initialTmdbType,
+        };
+    }
+    return { tmdbId: null, tmdbType: initialTmdbType };
+};
+
+export const useMovieDetail = (
+    slug,
+    initialSource = null,
+    initialId = null,
+    initialType = null,
+    _initialSeason = null,
+) => {
     const { i18n } = useTranslation();
     const [movie, setMovie] = useState(null);
     const [episodes, setEpisodes] = useState([]);
@@ -239,12 +270,40 @@ export const useMovieDetail = (slug, initialSource = null) => {
         setError(null);
 
         try {
-            const { isTmdb, tmdbIdFromSlug } = parseSlugTmdbInfo(slug, initialSource);
+            const { isTmdb, tmdbIdFromSlug, mediaType } = parseSlugTmdbInfo(
+                slug,
+                initialSource,
+                initialId,
+                initialType,
+            );
             const sources = determineSources(initialSource);
 
-            const { results, resultsBySource } = await fetchSourcesData(slug, isTmdb, sources);
-            const { foundTmdbId, foundTmdbType, bestTmdbInfo } = findBestTmdbInfo(resultsBySource, tmdbIdFromSlug);
-            const { firstMovieData, finalEpisodes } = processMovieAndEpisodes(results, bestTmdbInfo, foundTmdbId);
+            const { results, resultsBySource } = await fetchSourcesData(
+                slug,
+                isTmdb,
+                sources,
+                tmdbIdFromSlug,
+                mediaType,
+            );
+            const { foundTmdbId: rawTmdbId, foundTmdbType: rawTmdbType, bestTmdbInfo } = findBestTmdbInfo(
+                resultsBySource,
+                tmdbIdFromSlug,
+                mediaType,
+            );
+            const { firstMovieData, finalEpisodes } = processMovieAndEpisodes(
+                results,
+                bestTmdbInfo,
+                rawTmdbId,
+            );
+
+            const { tmdbId: foundTmdbId, tmdbType: foundTmdbType } = await resolveMovieTmdbId(
+                rawTmdbId,
+                rawTmdbType,
+                firstMovieData,
+            );
+            if (firstMovieData && foundTmdbId) {
+                firstMovieData.tmdb_id = foundTmdbId;
+            }
 
             const episodesWithTrailer = applyTrailerToEpisodes(finalEpisodes, firstMovieData);
             setMovie(firstMovieData);
@@ -280,7 +339,7 @@ export const useMovieDetail = (slug, initialSource = null) => {
             setLoading(false);
             isFetchingRef.current = false;
         }
-    }, [slug, i18n.language, initialSource]);
+    }, [slug, i18n.language, initialSource, initialId, initialType]);
 
     useEffect(() => {
         fetchAllData();

@@ -15,6 +15,7 @@ import {
     handleCastTV,
     ensureYoutubeEmbedUrl,
 } from "../../utils/vodPlayHelpers";
+import { extractSeasonNumber } from "../../utils/vodHelpers";
 import {
     VodPlayerContainer,
 } from "../../components/vod/play/VodPlayerSection";
@@ -60,7 +61,17 @@ export default function VodPlay() {
     const { t } = useTranslation();
     const { currentUser } = useAuth();
 
-    const { slug, episodeParam, serverParam, sourceParam, setSearchParams } = useVodPlayRouteParams();
+    const {
+        slug,
+        idParam,
+        typeParam,
+        seasonParam,
+        episodeParam,
+        serverParam,
+        sourceParam,
+        searchParams,
+        setSearchParams,
+    } = useVodPlayRouteParams();
 
     const playerRef = useRef(null);
     const currentUrlRef = useRef(null);
@@ -121,6 +132,26 @@ export default function VodPlay() {
         }
     }, [movie]);
 
+    useEffect(() => {
+        const currentId = searchParams.get("id");
+        const targetId = movie?.tmdb_id || movie?.tmdb?.id;
+        if (!currentId && targetId) {
+            setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.set("id", String(targetId));
+                if (!next.has("type") && movie?.type) {
+                    const resolvedType = movie.type === "series" || movie.type === "tv" ? "tv" : "movie";
+                    next.set("type", resolvedType);
+                }
+                if (!next.has("season")) {
+                    const season = extractSeasonNumber(movie) || 1;
+                    next.set("season", String(season));
+                }
+                return next;
+            }, { replace: true });
+        }
+    }, [movie, searchParams, setSearchParams]);
+
     const maxDigits = useMemo(() => computeMaxDigits(episodes), [episodes]);
     const formatEpisodeName = useCallback(
         (name) => formatEpisodeNameHelper(name, maxDigits, t("vodPlay.episode") || "Tập"),
@@ -132,9 +163,22 @@ export default function VodPlay() {
     }, [activeEpisode, imdbEpisodes, movie, tmdbData]);
 
     const { fetchedTmdbVideos } = useVodPlayDetailSync({
-        slug, sourceParam, setMovie, setEpisodes, activeEpisode, setActiveEpisode,
-        setTmdbData, setTmdbCredits, setTmdbImages, setTmdbVideos, setTmdbRelated,
-        setIsLoading, setMemoizedBackgrounds,
+        slug,
+        sourceParam,
+        idParam,
+        typeParam,
+        seasonParam,
+        setMovie,
+        setEpisodes,
+        activeEpisode,
+        setActiveEpisode,
+        setTmdbData,
+        setTmdbCredits,
+        setTmdbImages,
+        setTmdbVideos,
+        setTmdbRelated,
+        setIsLoading,
+        setMemoizedBackgrounds,
     });
 
     const {

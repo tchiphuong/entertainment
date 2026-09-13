@@ -9,8 +9,8 @@ import {
     PAGINATION,
 } from "../constants";
 import { vodCache } from "../utils/vodCache";
-import { tmdbService } from "../services/vod/tmdbService";
-import { extractSeasonNumber } from "../utils/vodHelpers";
+import { tmdbService, fetchTMDBJson } from "../services/vod/tmdbService";
+import { extractSeasonNumber, distinctMovies } from "../utils/vodHelpers";
 
 const CONFIG = {
     APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
@@ -221,10 +221,10 @@ const buildUrlWithParams = (domain, path, params) => {
     return `${full}${sep}${params.toString()}`;
 };
 
-const buildTmdbCategoryUrl = (cat, tmdbLang, page) => {
+const buildTmdbCategoryUrl = (cat, tmdbLang, page, apiKey) => {
     const ep = cat.type ? cat.type.replace(/^\//, "") : TMDB_ENDPOINTS.TRENDING_MOVIE_WEEK;
     const tmdbParams = new URLSearchParams();
-    tmdbParams.set("api_key", CONFIG.TMDB_API_KEY);
+    tmdbParams.set("api_key", apiKey);
     tmdbParams.set("language", tmdbLang);
     tmdbParams.set("page", page);
     if (cat.params) {
@@ -251,11 +251,9 @@ const fetchTmdbCategorySection = async (cat, tmdbLang, page, limit) => {
 
     const responses = await Promise.all(
         tmdbPageNumbers.map(async (p) => {
-            const url = buildTmdbCategoryUrl(cat, tmdbLang, p);
-            const res = await fetch(url);
-            if (!res.ok) return { results: [], total_pages: 1, total_results: 0 };
-            return res.json();
-        })
+            const data = await fetchTMDBJson((apiKey) => buildTmdbCategoryUrl(cat, tmdbLang, p, apiKey));
+            return data || { results: [], total_pages: 1, total_results: 0 };
+        }),
     );
 
     let allResults = [];
@@ -291,6 +289,9 @@ const fetchTmdbCategorySection = async (cat, tmdbLang, page, limit) => {
 const buildCategoryUrl = (cat, tmdbLang, page, limit) => {
     if (cat.source === SOURCES.SOURCE_TMDB) {
         return buildTmdbCategoryUrl(cat, tmdbLang, page);
+    }
+    if (!cat.source) {
+        return "";
     }
     const params = buildSourceSearchParams(cat, page, limit);
     let endpoint = cat.type || "";
@@ -377,7 +378,7 @@ const extractRawHeroPool = (results, categories) => {
         if (anySource) rawHeroPool = anySource.items.slice(0, 10);
     }
 
-    return rawHeroPool;
+    return distinctMovies(rawHeroPool);
 };
 
 const selectUniqueHeroImage = (candidate, fallback, usedSet) => {
@@ -473,7 +474,7 @@ const fetchTmdbCategory = async (cat, tmdbLang, page, limit, cacheKey) => {
 
         const result = {
             id: cat.id,
-            items: enrichedItems,
+            items: distinctMovies(enrichedItems),
             source: cat.source,
             totalPages: parsed.totalPages,
             totalItems: parsed.totalItems,
@@ -534,7 +535,7 @@ const fetchCustomApiCategory = async (cat, tmdbLang, page, limit, cacheKey) => {
 
         const result = {
             id: cat.id,
-            items: enrichedItems,
+            items: distinctMovies(enrichedItems),
             source: cat.source,
             totalPages,
             totalItems,
@@ -549,8 +550,11 @@ const fetchCustomApiCategory = async (cat, tmdbLang, page, limit, cacheKey) => {
     }
 };
 
-// Helper thực thi fetch từng danh mục đơn lẻ
 const fetchSingleCategory = async (cat, tmdbLang) => {
+    if (!cat?.source || cat.id === "history" || cat.id === "favorites" || cat.isView === false) {
+        return { id: cat?.id, items: [], totalPages: 1, totalItems: 0 };
+    }
+
     const cacheKey = getVodCacheKey(cat, tmdbLang);
     const cached = vodCache.get(cacheKey);
 
@@ -594,7 +598,7 @@ export const useVodData = (passedCategories) => {
             const sectionsData = {};
             results.forEach((res) => {
                 sectionsData[res.id] = {
-                    items: res.items,
+                    items: distinctMovies(res.items || []),
                     source: res.source,
                     totalPages: res.totalPages,
                     totalItems: res.totalItems,

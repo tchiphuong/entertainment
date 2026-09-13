@@ -5,35 +5,15 @@ import {
     updateDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import { extractSeasonNumber } from "../utils/vodHelpers";
+import {
+    getHistoryItemKey,
+    extractTmdbId,
+    
+    isMovieMatch,
+    distinctMovies,
+} from "../utils/vodIdentifier";
 
-const extractHistoryTmdbId = (item) =>
-    item.tmdb?.id ||
-    item.tmdb_id ||
-    item.tmdbId ||
-    (typeof item.slug === "string" && item.slug.startsWith("tmdb-")
-        ? item.slug.replace("tmdb-", "")
-        : null);
-
-/**
- * Lấy khóa định danh duy nhất cho một item trong history
- */
-export const getHistoryItemKey = (item) => {
-    if (!item) return "";
-
-    const tmdbId = extractHistoryTmdbId(item);
-    if (tmdbId) {
-        const season = extractSeasonNumber(item);
-        return season && season > 1 ? `tmdb_${tmdbId}_s${season}` : `tmdb_${tmdbId}`;
-    }
-
-    if (item.slug && !item.slug.startsWith("tmdb-")) {
-        return `slug_${item.slug.trim()}`;
-    }
-
-    const name = (item.name || "").trim().toLowerCase();
-    return name ? `name_${name}` : `id_${item._id || item.id || item.slug || ""}`;
-};
+export { getHistoryItemKey,  isMovieMatch, distinctMovies };
 
 const mergeSingleEpisode = (mergedEpisodes, ep) => {
     const epKey = String(ep.key);
@@ -134,6 +114,18 @@ export const fetchHistoryFromFirestore = async (uid) => {
 };
 
 /**
+ * Dedupe favorites array theo TMDB Key + Season / Slug, giữ item mới nhất
+ */
+export function dedupeFavorites(rawFavorites) {
+    if (!Array.isArray(rawFavorites)) return [];
+    const deduped = distinctMovies(rawFavorites);
+    return deduped.sort(
+        (a, b) =>
+            new Date(b.time || 0).getTime() - new Date(a.time || 0).getTime(),
+    );
+}
+
+/**
  * Fetch favorites từ Firestore (với fallback khi offline)
  */
 export const fetchFavoritesFromFirestore = async (uid) => {
@@ -142,7 +134,7 @@ export const fetchFavoritesFromFirestore = async (uid) => {
         const docRef = doc(db, "users", uid);
         const docSnap = await getDoc(docRef);
         if (docSnap.exists()) {
-            return docSnap.data().favorites || [];
+            return dedupeFavorites(docSnap.data().favorites || []);
         }
         return [];
     } catch (error) {
@@ -150,7 +142,8 @@ export const fetchFavoritesFromFirestore = async (uid) => {
         console.warn("Firestore offline, using localStorage:", error?.message);
         try {
             const localFavorites = localStorage.getItem("favorites");
-            return localFavorites ? JSON.parse(localFavorites) : [];
+            const parsed = localFavorites ? JSON.parse(localFavorites) : [];
+            return dedupeFavorites(parsed);
         } catch {
             return [];
         }
@@ -241,23 +234,32 @@ export const clearHistoryFromFirestore = async (uid) => {
     }
 };
 
+const toSafeString = (val) => {
+    if (typeof val === "string") return val;
+    return val ? String(val) : "";
+};
+
 /**
  * Chuẩn hóa đối tượng phim để lưu vào danh sách yêu thích
  * Chỉ giữ lại các trường metadata cần thiết để đảm bảo tính đồng nhất trên toàn hệ thống
  */
 export const normalizeMovie = (movie) => {
     if (!movie) return null;
+    const tmdbId = extractTmdbId(movie);
+
     return {
-        slug: movie.slug || "",
-        name: movie.name || "",
-        origin_name: movie.origin_name || "",
-        thumb_url: movie.thumb_url || "",
-        poster_url: movie.poster_url || "",
-        source: movie.source || "",
-        type: movie.type || "",
-        year: movie.year || "",
-        lang: movie.lang || "",
-        quality: movie.quality || "",
+        slug: toSafeString(movie.slug),
+        name: toSafeString(movie.name),
+        origin_name: toSafeString(movie.origin_name),
+        thumb_url: toSafeString(movie.thumb_url),
+        poster_url: toSafeString(movie.poster_url),
+        source: toSafeString(movie.source),
+        type: toSafeString(movie.type),
+        year: toSafeString(movie.year),
+        lang: toSafeString(movie.lang),
+        quality: toSafeString(movie.quality),
+        tmdb: movie.tmdb ?? undefined,
+        tmdb_id: tmdbId || undefined,
         time: new Date().toISOString(), // Lưu thời điểm thêm vào yêu thích
     };
 };
@@ -276,18 +278,16 @@ export const addFavoriteToFirestore = async (uid, item) => {
                 favorites: [normalizeMovie(item)],
             });
         } else {
-            // Kiểm tra xem đã có item với slug này chưa
+            // Kiểm tra xem đã có item này chưa (so khớp TMDB, season, slug)
             const data = docSnap.data();
             const favorites = Array.isArray(data.favorites)
                 ? data.favorites
                 : [];
-            const existingIndex = favorites.findIndex(
-                (f) => f.slug === item.slug,
-            );
+            const existingIndex = favorites.findIndex((f) => isMovieMatch(f, item));
 
             if (existingIndex === -1) {
-                // Chưa có, thêm mới vào đầu mảng (đã chuẩn hóa)
-                const newFavorites = [normalizeMovie(item), ...favorites];
+                // Chưa có, thêm mới vào đầu mảng và dedupe sạch sẽ
+                const newFavorites = dedupeFavorites([normalizeMovie(item), ...favorites]);
                 await updateDoc(docRef, { favorites: newFavorites });
             }
             // Đã có thì không làm gì (tránh trùng lặp)
@@ -304,7 +304,7 @@ export const addFavoriteToFirestore = async (uid, item) => {
  * Xóa item khỏi favorites trên Firestore (với fallback khi offline)
  */
 export const removeFavoriteFromFirestore = async (uid, item) => {
-    if (!uid || !item?.slug) return;
+    if (!uid || !item) return;
     try {
         const docRef = doc(db, "users", uid);
         const docSnap = await getDoc(docRef);
@@ -315,8 +315,8 @@ export const removeFavoriteFromFirestore = async (uid, item) => {
                 ? data.favorites
                 : [];
 
-            // Lọc phim theo slug để đảm bảo xóa chính xác dù metadata có thay đổi
-            const newFavorites = favorites.filter((f) => f.slug !== item.slug);
+            // Lọc phim theo isMovieMatch để đảm bảo xóa chính xác theo khóa TMDB/slug
+            const newFavorites = favorites.filter((f) => !isMovieMatch(f, item));
 
             if (newFavorites.length !== favorites.length) {
                 await updateDoc(docRef, {
@@ -349,3 +349,5 @@ export const clearFavoritesFromFirestore = async (uid) => {
         );
     }
 };
+
+export {getMovieUniqueKey} from "../utils/vodIdentifier";

@@ -2,14 +2,14 @@ import {
     toProxyImageUrl,
     handleImageFallbackError,
     FALLBACK_LOGO_DATA_URI,
-    IMAGE_PROXY_PREFIX,
+    
 } from "../../utils/imageUtils";
 
 export {
     toProxyImageUrl,
     handleImageFallbackError,
     FALLBACK_LOGO_DATA_URI,
-    IMAGE_PROXY_PREFIX,
+    
 };
 
 const parseSourceConfig = (src) => ({
@@ -300,3 +300,5 @@ export const tvService = {
     handleImageFallbackError,
     FALLBACK_LOGO_DATA_URI,
 };
+
+export {IMAGE_PROXY_PREFIX} from "../../utils/imageUtils";

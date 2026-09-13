@@ -15,6 +15,8 @@ import {
     removeHistoryFromFirestore,
     clearHistoryFromFirestore,
     dedupeHistory,
+    dedupeFavorites,
+    isMovieMatch,
     normalizeMovie,
 } from "../services/firebaseHelpers";
 
@@ -35,10 +37,11 @@ export function VodProvider({ children }) {
                 const firestoreFavs = await fetchFavoritesFromFirestore(
                     currentUser.uid,
                 );
-                setFavorites(firestoreFavs);
+                setFavorites(dedupeFavorites(firestoreFavs));
             } else {
                 const localFavs = localStorage.getItem("favorites");
-                setFavorites(localFavs ? JSON.parse(localFavs) : []);
+                const parsed = localFavs ? JSON.parse(localFavs) : [];
+                setFavorites(dedupeFavorites(parsed));
             }
         };
         loadFavorites();
@@ -97,27 +100,33 @@ export function VodProvider({ children }) {
 
     // ===== FAVORITES =====
     const isFavorite = useCallback(
-        (slug) => {
-            return favorites.some((f) => f.slug === slug);
+        (movieOrSlug) => {
+            if (!movieOrSlug) return false;
+            if (typeof movieOrSlug === "string") {
+                return favorites.some(
+                    (f) => f.slug === movieOrSlug || f.tmdb_id === movieOrSlug,
+                );
+            }
+            return favorites.some((f) => isMovieMatch(f, movieOrSlug));
         },
         [favorites],
     );
 
     const toggleFavorite = useCallback(
         async (movie) => {
-            if (!movie?.slug) return;
+            if (!movie) return;
 
-            const exists = isFavorite(movie.slug);
+            const exists = isFavorite(movie);
             let newFavorites;
 
             if (exists) {
-                newFavorites = favorites.filter((f) => f.slug !== movie.slug);
+                newFavorites = favorites.filter((f) => !isMovieMatch(f, movie));
                 if (currentUser?.uid) {
                     await removeFavoriteFromFirestore(currentUser.uid, movie);
                 }
             } else {
                 const normalized = normalizeMovie(movie);
-                newFavorites = [normalized, ...favorites];
+                newFavorites = dedupeFavorites([normalized, ...favorites]);
                 if (currentUser?.uid) {
                     await addFavoriteToFirestore(currentUser.uid, movie);
                 }

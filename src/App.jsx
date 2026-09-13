@@ -1,7 +1,5 @@
 import { Routes, Route } from "react-router-dom";
 import Home from "./pages/Home";
-import Vods from "./pages/Vods";
-import VodPlay from "./pages/VodPlay";
 import TvPage from "./pages/TV";
 import Schedule from "./pages/Schedule";
 
@@ -9,6 +7,7 @@ import Schedule from "./pages/Schedule";
 import VodLanding from "./pages/vod/Landing";
 import Play from "./pages/vod/Play";
 import Listing from "./pages/vod/Listing";
+import VodsRedirect from "./components/vod/VodsRedirect";
 import { VodProvider } from "./contexts/VodContext";
 
 export default function App() {
@@ -16,15 +15,20 @@ export default function App() {
         <VodProvider>
             <Routes>
                 <Route path="/" element={<Home />} />
-                <Route path="/vods" element={<Vods />} />
-                <Route path="/vods/browse" element={<Vods />} />
-                <Route path="/vods/play/:slug" element={<VodPlay />} />
+
+                {/* Tự động chuyển hướng từ các route cũ /vods/* về /vod/* */}
+                <Route path="/vods" element={<VodsRedirect />} />
+                <Route path="/vods/*" element={<VodsRedirect />} />
+
+                {/* New VOD System Routes */}
                 <Route path="/vod" element={<VodLanding />} />
                 <Route path="/vod/play/:slug" element={<Play />} />
+                <Route path="/vod/play/:slug/*" element={<Play />} />
                 <Route path="/vod/search" element={<Listing />} />
                 <Route path="/vod/country/:country" element={<Listing />} />
                 <Route path="/vod/category/:category" element={<Listing />} />
                 <Route path="/vod/actor/:actor" element={<Listing />} />
+
                 <Route path="/tv" element={<TvPage />} />
                 <Route path="/schedule" element={<Schedule />} />
             </Routes>

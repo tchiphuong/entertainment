@@ -88,6 +88,7 @@ export const CountdownOverlay = ({
 
 const resolveDisplayEpisodeName = (currentEpisodeId, maxDigits, episodeLabel) => {
     if (!currentEpisodeId) return "Chưa có nguồn";
+    if (String(currentEpisodeId).toLowerCase() === "full") return "Full";
     if (/^\d+$/.test(currentEpisodeId)) {
         return formatEpisodeNameHelper(currentEpisodeId, maxDigits, episodeLabel);
     }

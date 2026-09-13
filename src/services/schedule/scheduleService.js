@@ -1,6 +1,6 @@
 import axios from "axios";
 import moment from "moment";
-import { TOP_TIER_LEAGUES, PRIORITY_LEAGUES } from "../../constants";
+import { TOP_TIER_LEAGUES, PRIORITY_LEAGUES } from "../../constants/index.js";
 
 export { TOP_TIER_LEAGUES, PRIORITY_LEAGUES };
 
@@ -96,37 +96,63 @@ export const fetchEventsByDate = async (localDate) => {
     try {
         const dateStr = moment(localDate).format("YYYY-MM-DD");
         const prevDateStr = moment(localDate).subtract(1, "days").format("YYYY-MM-DD");
+        const nextDateStr = moment(localDate).add(1, "days").format("YYYY-MM-DD");
 
-        const [res1, res2] = await Promise.all([
+        const [res1, res2, res3] = await Promise.all([
             axios.get(`${EVENTS_API_URL}?d=${dateStr}&s=Soccer`),
             axios.get(`${EVENTS_API_URL}?d=${prevDateStr}&s=Soccer`),
+            axios.get(`${EVENTS_API_URL}?d=${nextDateStr}&s=Soccer`),
         ]);
 
         const allEvents = [
             ...(res1.data?.events || []),
             ...(res2.data?.events || []),
+            ...(res3.data?.events || []),
         ];
 
-        // Lọc theo ngày địa phương GMT+7
-        const filteredByLocalDate = allEvents.filter((event) => {
-            if (!event.strTime) return event.dateEvent === dateStr;
+        // Khung thời gian theo múi giờ GMT+7:
+        // Bắt đầu từ 00:00 ngày được chọn đến 07:00 rạng sáng ngày mai
+        const startWindow = moment.utc(`${dateStr}T00:00:00+07:00`).valueOf();
+        const endWindow = moment.utc(`${nextDateStr}T07:00:00+07:00`).valueOf();
 
-            const eventLocalDay = moment
-                .utc(`${event.dateEvent}T${event.strTime}`)
+        // Lọc các trận đấu nằm trong khung giờ trên
+        const filteredEvents = allEvents.filter((event) => {
+            if (!event.dateEvent) return false;
+
+            if (!event.strTime) {
+                return event.dateEvent === dateStr;
+            }
+
+            const timeClean = event.strTime.replace("Z", "");
+            const eventTimeMs = moment
+                .utc(`${event.dateEvent}T${timeClean}`)
                 .utcOffset(7)
-                .format("YYYY-MM-DD");
+                .valueOf();
 
-            return eventLocalDay === dateStr;
+            return eventTimeMs >= startWindow && eventTimeMs <= endWindow;
         });
 
         // Loại bỏ trùng lặp idEvent
         return Array.from(
-            new Map(filteredByLocalDate.map((item) => [item.idEvent, item])).values(),
+            new Map(filteredEvents.map((item) => [item.idEvent, item])).values(),
         );
     } catch (error) {
         console.error("Error fetching sports events:", error);
         return [];
     }
+};
+
+const toSafeArray = (arr) => (Array.isArray(arr) ? arr : []);
+
+const resolveHighlightVideo = (highlights, event) => {
+    const list = highlights?.tvhighlights;
+    if (Array.isArray(list)) {
+        const found = list.find(
+            (h) => h.idEvent === event.idEvent || h.strEvent === event.strEvent,
+        );
+        if (found?.strVideo) return found.strVideo;
+    }
+    return event.strVideo || null;
 };
 
 /**
@@ -139,25 +165,28 @@ export const fetchMatchDetails = async (event) => {
 
     try {
         const [lineupsRes, statsRes, tvRes, highlightsRes] = await Promise.all([
-            axios.get(`${detailBaseUrl}/lookuplineup.php?id=${event.idEvent}`),
-            axios.get(`${detailBaseUrl}/lookupeventstats.php?id=${event.idEvent}`),
-            axios.get(`${detailBaseUrl}/lookuptv.php?id=${event.idEvent}`),
-            axios.get(`${detailBaseUrl}/eventshighlights.php?d=${event.dateEvent}`),
+            axios.get(`${detailBaseUrl}/lookuplineup.php?id=${event.idEvent}`).catch(() => ({ data: {} })),
+            axios.get(`${detailBaseUrl}/lookupeventstats.php?id=${event.idEvent}`).catch(() => ({ data: {} })),
+            axios.get(`${detailBaseUrl}/lookuptv.php?id=${event.idEvent}`).catch(() => ({ data: {} })),
+            axios.get(`${detailBaseUrl}/eventshighlights.php?d=${event.dateEvent}`).catch(() => ({ data: {} })),
         ]);
 
-        const highlights = highlightsRes.data?.tvhighlights?.find(
-            (h) => h.idEvent === event.idEvent || h.strEvent === event.strEvent,
-        );
+        const videoUrl = resolveHighlightVideo(highlightsRes.data, event);
 
         return {
-            lineups: lineupsRes.data?.lineup || [],
-            stats: statsRes.data?.eventstats || [],
-            tv: tvRes.data?.tvevent || [],
-            highlights: highlights || null,
+            lineups: toSafeArray(lineupsRes.data?.lineup),
+            stats: toSafeArray(statsRes.data?.eventstats),
+            tv: toSafeArray(tvRes.data?.tvevent),
+            highlights: videoUrl ? { strVideo: videoUrl } : null,
         };
     } catch (error) {
         console.error("Error fetching match details:", error);
-        return { lineups: [], stats: [], tv: [], highlights: null };
+        return {
+            lineups: [],
+            stats: [],
+            tv: [],
+            highlights: event.strVideo ? { strVideo: event.strVideo } : null,
+        };
     }
 };
 
@@ -297,32 +326,141 @@ export const generateRecentSeasons = (count = 5) => {
     return seasons;
 };
 
+const EVENTS_SEASON_API_URL = `${BASE_URL}/${API_KEY}/eventsseason.php`;
+
+const toInt = (val) => Number.parseInt(val, 10) || 0;
+
+const applyMatchResult = (homeStats, awayStats, homeGoals, awayGoals) => {
+    if (homeStats) {
+        homeStats.goalsFor += homeGoals;
+        homeStats.goalsAgainst += awayGoals;
+        homeStats.diff = homeStats.goalsFor - homeStats.goalsAgainst;
+        if (homeGoals > awayGoals) homeStats.points += 3;
+        else if (homeGoals === awayGoals) homeStats.points += 1;
+    }
+
+    if (awayStats) {
+        awayStats.goalsFor += awayGoals;
+        awayStats.goalsAgainst += homeGoals;
+        awayStats.diff = awayStats.goalsFor - awayStats.goalsAgainst;
+        if (awayGoals > homeGoals) awayStats.points += 3;
+        else if (homeGoals === awayGoals) awayStats.points += 1;
+    }
+};
+
 /**
- * Lấy bảng xếp hạng giải đấu theo ID và Mùa giải
+ * Tính điểm và xếp hạng từ danh sách trận đấu đến vòng trước
+ */
+const calculateTableForRound = (matches, currentTeams) => {
+    const statsMap = new Map();
+    for (const t of currentTeams) {
+        statsMap.set(t.strTeam, {
+            teamName: t.strTeam,
+            teamId: t.idTeam,
+            points: 0,
+            goalsFor: 0,
+            goalsAgainst: 0,
+            diff: 0,
+        });
+    }
+
+    for (const m of matches) {
+        const homeGoals = Number.parseInt(m.intHomeScore, 10);
+        const awayGoals = Number.parseInt(m.intAwayScore, 10);
+        if (Number.isNaN(homeGoals) || Number.isNaN(awayGoals)) continue;
+
+        const homeStats = statsMap.get(m.strHomeTeam);
+        const awayStats = statsMap.get(m.strAwayTeam);
+        applyMatchResult(homeStats, awayStats, homeGoals, awayGoals);
+    }
+
+    const sortedTable = Array.from(statsMap.values()).sort(
+        (a, b) => b.points - a.points || b.diff - a.diff || b.goalsFor - a.goalsFor,
+    );
+
+    const rankMap = new Map();
+    sortedTable.forEach((item, index) => {
+        rankMap.set(item.teamName, index + 1);
+        if (item.teamId) rankMap.set(item.teamId, index + 1);
+    });
+
+    return rankMap;
+};
+
+/**
+ * Fetch toàn bộ trận đấu của mùa giải và tính bảng xếp hạng vòng trước (vòng - 1)
+ */
+export const fetchPreviousRoundRanks = async (leagueId, season, currentTeams = []) => {
+    if (!leagueId || !season || !currentTeams.length) return new Map();
+
+    try {
+        const response = await axios.get(`${EVENTS_SEASON_API_URL}?id=${leagueId}&s=${season}`);
+        const events = response.data?.events || [];
+        const played = events.filter(
+            (e) =>
+                e.intHomeScore !== null &&
+                e.intHomeScore !== "" &&
+                e.intAwayScore !== null &&
+                e.intAwayScore !== "" &&
+                e.intRound,
+        );
+
+        if (!played.length) return new Map();
+
+        const rounds = played.map((e) => Number.parseInt(e.intRound, 10)).filter(Boolean);
+        const maxRound = Math.max(...rounds);
+        if (maxRound <= 1) return new Map();
+
+        const prevRound = maxRound - 1;
+        const prevMatches = played.filter(
+            (e) => Number.parseInt(e.intRound, 10) <= prevRound,
+        );
+
+        return calculateTableForRound(prevMatches, currentTeams);
+    } catch (error) {
+        console.error("Lỗi khi tải dữ liệu vòng cũ:", error);
+        return new Map();
+    }
+};
+
+const mapStandingRow = (item, prevRankMap) => {
+    const rank = toInt(item.intRank);
+    const prevRank = prevRankMap.get(item.strTeam) ?? prevRankMap.get(item.idTeam) ?? rank;
+    const rankChange = prevRank - rank;
+
+    return {
+        rank,
+        prevRank,
+        rankChange,
+        teamId: item.idTeam,
+        teamName: item.strTeam || "",
+        badge: item.strBadge || "",
+        played: toInt(item.intPlayed),
+        win: toInt(item.intWin),
+        draw: toInt(item.intDraw),
+        loss: toInt(item.intLoss),
+        goalsFor: toInt(item.intGoalsFor),
+        goalsAgainst: toInt(item.intGoalsAgainst),
+        goalDifference: toInt(item.intGoalDifference),
+        points: toInt(item.intPoints),
+        form: (item.strForm || "").trim(),
+        description: item.strDescription || "",
+    };
+};
+
+/**
+ * Lấy bảng xếp hạng giải đấu theo ID và Mùa giải kèm biến động thứ hạng vòng - 1
  */
 export const fetchStandings = async (leagueId = "4328", season = "2024-2025") => {
     try {
-        const response = await axios.get(`${STANDINGS_API_URL}?l=${leagueId}&s=${season}`);
-        const rawTable = response.data?.table || [];
+        const standingsRes = await axios.get(`${STANDINGS_API_URL}?l=${leagueId}&s=${season}`);
+        const rawTable = standingsRes.data?.table || [];
 
-        // Chuẩn hóa dữ liệu bảng xếp hạng
+        const prevRankMap = await fetchPreviousRoundRanks(leagueId, season, rawTable);
+
+        // Chuẩn hóa dữ liệu bảng xếp hạng chuẩn theo intRank từ API kèm thứ hạng vòng cũ thật
         return rawTable
-            .map((item) => ({
-                rank: Number.parseInt(item.intRank, 10) || 0,
-                teamId: item.idTeam,
-                teamName: item.strTeam || "",
-                badge: item.strBadge || "",
-                played: Number.parseInt(item.intPlayed, 10) || 0,
-                win: Number.parseInt(item.intWin, 10) || 0,
-                draw: Number.parseInt(item.intDraw, 10) || 0,
-                loss: Number.parseInt(item.intLoss, 10) || 0,
-                goalsFor: Number.parseInt(item.intGoalsFor, 10) || 0,
-                goalsAgainst: Number.parseInt(item.intGoalsAgainst, 10) || 0,
-                goalDifference: Number.parseInt(item.intGoalDifference, 10) || 0,
-                points: Number.parseInt(item.intPoints, 10) || 0,
-                form: (item.strForm || "").trim(),
-                description: item.strDescription || "",
-            }))
+            .map((item) => mapStandingRow(item, prevRankMap))
             .sort((a, b) => a.rank - b.rank);
     } catch (error) {
         console.error("Lỗi khi tải bảng xếp hạng:", error);
@@ -344,5 +482,6 @@ export const scheduleService = {
     fetchLeagueDetails,
     fetchSupportedStandingsLeagues,
     generateRecentSeasons,
+    fetchPreviousRoundRanks,
     fetchStandings,
 };

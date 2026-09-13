@@ -73,34 +73,71 @@ const resolveEpisodeDisplayName = (server, imdbEp, formatEpisodeName, k, episode
     return server?.name || episodeLabel;
 };
 
-const EpisodeThumbnail = ({ episodeThumb, episodeLabel, k, isActive, imdbEp }) => (
-    <div className="relative aspect-video w-full overflow-hidden">
-        <img
-            loading="lazy"
-            src={episodeThumb || FALLBACK_IMAGE}
-            alt={`${episodeLabel} ${k}`}
-            className={`h-full w-full object-cover transition-transform duration-500 group-hover:scale-110 ${
-                isActive ? "" : "opacity-60 group-hover:opacity-100"
-            }`}
-            onError={(e) => {
-                e.target.onerror = null;
-                e.target.src = FALLBACK_IMAGE;
-            }}
-        />
-        {isActive && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-600 text-white shadow-lg shadow-red-600/50 ring-4 ring-red-600/30 animate-pulse">
-                    <PlayIcon className="ml-0.5 h-5 w-5 fill-current" />
+const EpisodeThumbnail = ({ episodeThumb, episodeLabel, k, isActive, imdbEp }) => {
+    const isFull = String(k || "").toLowerCase() === "full";
+    const altText = isFull ? "Full" : `${episodeLabel} ${k}`;
+
+    return (
+        <div className="relative aspect-video w-full overflow-hidden">
+            <img
+                loading="lazy"
+                src={episodeThumb || FALLBACK_IMAGE}
+                alt={altText}
+                className={`h-full w-full object-cover transition-transform duration-500 group-hover:scale-110 ${
+                    isActive ? "" : "opacity-60 group-hover:opacity-100"
+                }`}
+                onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = FALLBACK_IMAGE;
+                }}
+            />
+            {isActive && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-[2px]">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-600 text-white shadow-lg shadow-red-600/50 ring-4 ring-red-600/30 animate-pulse">
+                        <PlayIcon className="ml-0.5 h-5 w-5 fill-current" />
+                    </div>
                 </div>
-            </div>
-        )}
-        {imdbEp?.runtime && (
-            <span className="absolute bottom-1.5 right-1.5 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-zinc-300 backdrop-blur-md">
-                {formatRuntime(imdbEp.runtime)}
-            </span>
-        )}
-    </div>
-);
+            )}
+            {imdbEp?.runtime && (
+                <span className="absolute bottom-1.5 right-1.5 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold text-zinc-300 backdrop-blur-md">
+                    {formatRuntime(imdbEp.runtime)}
+                </span>
+            )}
+        </div>
+    );
+};
+
+const resolveEpisodeTitle = (k, displayName, episodeLabel) => {
+    const kStr = String(k || "").trim();
+    const dStr = String(displayName || "").trim();
+    const kLower = kStr.toLowerCase();
+    const dLower = dStr.toLowerCase();
+
+    // Trường hợp phim lẻ / bản Full: chỉ hiển thị "Full" (tránh lặp "Tập full: Full")
+    if (kLower === "full" || dLower === "full") {
+        if (dLower === "full" || !dStr || dLower === kLower) {
+            return "Full";
+        }
+        return dStr.startsWith(episodeLabel) ? dStr : `Full: ${dStr}`;
+    }
+
+    // Nếu displayName đã chứa nhãn "Tập ..."
+    if (dStr.startsWith(episodeLabel)) {
+        return dStr;
+    }
+
+    // Nếu displayName trùng với k hoặc là số thuần (tránh "Tập 1: 1")
+    if (dLower === kLower || /^\d+$/.test(dStr)) {
+        return /^\d+$/.test(kStr) ? `${episodeLabel} ${kStr}` : dStr;
+    }
+
+    // Nếu k là số và có tên tập riêng
+    if (/^\d+$/.test(kStr)) {
+        return `${episodeLabel} ${kStr}: ${dStr}`;
+    }
+
+    return dStr || kStr;
+};
 
 const EpisodeInfo = ({ k, displayName, imdbEp, isActive, episodeLabel }) => (
     <div className="flex flex-1 flex-col justify-between p-3">
@@ -111,9 +148,7 @@ const EpisodeInfo = ({ k, displayName, imdbEp, isActive, episodeLabel }) => (
                         isActive ? "text-red-500" : "text-zinc-200 group-hover:text-white"
                     }`}
                 >
-                    {displayName.startsWith(episodeLabel)
-                        ? displayName
-                        : `${episodeLabel} ${k}: ${displayName}`}
+                    {resolveEpisodeTitle(k, displayName, episodeLabel)}
                 </span>
                 {imdbEp?.vote_average > 0 && (
                     <span className="flex items-center gap-0.5 text-[10px] font-black text-amber-400">
@@ -178,7 +213,7 @@ const EpisodeCompactView = ({ isActive, k, displayName, openEpisode }) => (
         className="w-full font-black text-xs"
         title={displayName}
     >
-        {k}
+        {String(k).toLowerCase() === "full" ? "Full" : k}
     </Button>
 );
 

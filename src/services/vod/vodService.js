@@ -1,6 +1,6 @@
 import { SOURCES } from "../../constants";
 import { vodCache } from "../../utils/vodCache";
-import { fetchTMDBRelated } from "./tmdbService";
+import { fetchTMDBRelated, fetchTMDBJson } from "./tmdbService";
 
 const CONFIG = {
     APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
@@ -104,37 +104,61 @@ const parseSourceJson = (json, source) => {
     return { movie: movieData, episodes: episodesData };
 };
 
-export const fetchSourceData = async (slug, source, mediaType = null) => {
-    const typeSuffix = mediaType ? `_${mediaType}` : "";
-    const cacheKey = `${source}_${slug}${typeSuffix}`;
-    const cachedData = getFromCache(cacheKey);
-    if (cachedData) return cachedData;
+const resolveTmdbParams = (slug, explicitTmdbId, explicitMediaType) => {
+    if (explicitTmdbId === "movie" || explicitTmdbId === "tv") {
+        return { tmdbId: null, mediaType: explicitTmdbId };
+    }
 
+    let tmdbId = explicitTmdbId;
     const isTmdbSlug =
         (typeof slug === "string" && slug.startsWith("tmdb-")) ||
         /^\d+$/.test(String(slug).trim());
-    const tmdbId = isTmdbSlug
-        ? String(slug).replace("tmdb-", "").trim()
-        : null;
+    if (!tmdbId && isTmdbSlug) {
+        tmdbId = String(slug)
+            .replace(/^tmdb-/, "")
+            .replace(/^(movie|tv)-/, "")
+            .trim();
+    }
+    return { tmdbId, mediaType: explicitMediaType };
+};
+
+const isInvalidSourceCRequest = (source, slug) => {
+    return source === SOURCES.SOURCE_C && (/^\d+$/.test(String(slug).trim()) || !slug);
+};
+
+export const fetchSourceData = async (
+    slug,
+    source,
+    explicitTmdbId = null,
+    explicitMediaType = null,
+) => {
+    if (isInvalidSourceCRequest(source, slug)) {
+        return { movie: null, episodes: [] };
+    }
+
+    const { tmdbId, mediaType } = resolveTmdbParams(slug, explicitTmdbId, explicitMediaType);
+    const cacheKey = tmdbId
+        ? `${source}_tmdb_${mediaType || "movie"}_${tmdbId}`
+        : `${source}_slug_${slug}`;
+    const cachedData = getFromCache(cacheKey);
+    if (cachedData) return cachedData;
 
     try {
         const res = await fetchSourceResponse(slug, source, tmdbId, mediaType);
         if (!res.ok) {
-            const emptyResult = { movie: null, episodes: [] };
-            saveToCache(cacheKey, emptyResult);
-            return emptyResult;
+            return { movie: null, episodes: [] };
         }
 
         const json = await res.json();
         const result = parseSourceJson(json, source);
 
-        saveToCache(cacheKey, result);
+        if (result?.movie) {
+            saveToCache(cacheKey, result);
+        }
         return result;
     } catch (e) {
         console.error(`Error fetching ${source} data:`, e);
-        const errorResult = { movie: null, episodes: [] };
-        saveToCache(cacheKey, errorResult);
-        return errorResult;
+        return { movie: null, episodes: [] };
     }
 };
 
@@ -143,8 +167,7 @@ export const fetchTMDbData = async (
     type = "movie",
     language = "vi-VN",
 ) => {
-    const apiKey = import.meta.env.VITE_TMDB_API_KEY;
-    const baseUrl = import.meta.env.VITE_TMDB_BASE_URL;
+    const baseUrl = import.meta.env.VITE_TMDB_BASE_URL || "https://api.themoviedb.org/3";
     const resolvedType = type || "movie";
     const cacheKey = `tmdb_${resolvedType}_${tmdbId}_${language}`;
 
@@ -152,27 +175,19 @@ export const fetchTMDbData = async (
     if (cached) return cached;
 
     try {
-        let detailsRes = await fetch(
-            `${baseUrl}/${resolvedType}/${tmdbId}?api_key=${apiKey}&language=${language}&append_to_response=external_ids,credits,images,videos&include_image_language=vi,null,en`,
+        let details = await fetchTMDBJson(
+            (apiKey) => `${baseUrl}/${resolvedType}/${tmdbId}?api_key=${apiKey}&language=${language}&append_to_response=external_ids,credits,images,videos&include_image_language=vi,null,en`,
         );
 
-        if (!detailsRes.ok && resolvedType === "movie") {
-            const tvRes = await fetch(
-                `${baseUrl}/tv/${tmdbId}?api_key=${apiKey}&language=${language}&append_to_response=external_ids,credits,images,videos&include_image_language=vi,null,en`,
+        if (!details && resolvedType === "movie") {
+            details = await fetchTMDBJson(
+                (apiKey) => `${baseUrl}/tv/${tmdbId}?api_key=${apiKey}&language=${language}&append_to_response=external_ids,credits,images,videos&include_image_language=vi,null,en`,
             );
-            if (tvRes.ok) {
-                detailsRes = tvRes;
-            }
-        } else if (!detailsRes.ok && resolvedType === "tv") {
-            const movieRes = await fetch(
-                `${baseUrl}/movie/${tmdbId}?api_key=${apiKey}&language=${language}&append_to_response=external_ids,credits,images,videos&include_image_language=vi,null,en`,
+        } else if (!details && resolvedType === "tv") {
+            details = await fetchTMDBJson(
+                (apiKey) => `${baseUrl}/movie/${tmdbId}?api_key=${apiKey}&language=${language}&append_to_response=external_ids,credits,images,videos&include_image_language=vi,null,en`,
             );
-            if (movieRes.ok) {
-                detailsRes = movieRes;
-            }
         }
-
-        const details = detailsRes.ok ? await detailsRes.json() : null;
 
         const result = { details };
         if (details) saveToCache(cacheKey, result);
@@ -188,19 +203,17 @@ export const fetchTMDBSeason = async (
     seasonNumber,
     language = "vi-VN",
 ) => {
-    const apiKey = import.meta.env.VITE_TMDB_API_KEY;
-    const baseUrl = import.meta.env.VITE_TMDB_BASE_URL;
+    const baseUrl = import.meta.env.VITE_TMDB_BASE_URL || "https://api.themoviedb.org/3";
     const cacheKey = `tmdb_season_${tmdbId}_${seasonNumber}_${language}`;
 
     const cached = getFromCache(cacheKey);
     if (cached) return cached;
 
     try {
-        const res = await fetch(
-            `${baseUrl}/tv/${tmdbId}/season/${seasonNumber}?api_key=${apiKey}&language=${language}`,
+        const data = await fetchTMDBJson(
+            (apiKey) => `${baseUrl}/tv/${tmdbId}/season/${seasonNumber}?api_key=${apiKey}&language=${language}`,
         );
-        if (!res.ok) return null;
-        const data = await res.json();
+        if (!data) return null;
         saveToCache(cacheKey, data);
         return data;
     } catch (e) {
