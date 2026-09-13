@@ -26,8 +26,9 @@ import {
     ensureYoutubeEmbedUrl,
     extractTmdbIdFromObject,
     updateWatchHistory,
+    registerShakaNetworkFilter,
 } from "../../utils/vodPlayHelpers";
-import { dedupeHistory } from "../../services/firebaseHelpers";
+import { dedupeHistory, addHistoryToFirestore } from "../../services/firebaseHelpers";
 import shaka from "shaka-player/dist/shaka-player.ui.js";
 
 export function useLocalStorage(key, initial) {
@@ -363,7 +364,7 @@ export const useVodPlayerManagement = ({
 
         const updatedHistory = dedupeHistory(updateWatchHistory(history, movieIndex, payload));
         syncWatchlistLocalState(updatedHistory, viewHistoryRef, lastHistorySyncRef, setViewHistory);
-        syncWatchlistToFirestore(currentUser, updatedHistory, lastFirestoreSyncRef);
+        syncWatchlistToFirestore(currentUser, updatedHistory, lastFirestoreSyncRef, addHistoryToFirestore);
     };
 
     const setupShakaPlayer = async (masterUrl, episodeSlug, serverName, movieData, fallbackUrl = null, _backups = []) => {
@@ -377,6 +378,7 @@ export const useVodPlayerManagement = ({
         const player = new shaka.Player();
         await player.attach(video);
         shakaPlayerRef.current = player;
+        registerShakaNetworkFilter(player);
 
         if (player.getNetworkingEngine && typeof player.getNetworkingEngine().registerRequestFilter === "function") {
             player.getNetworkingEngine().registerRequestFilter((type, request) => {
