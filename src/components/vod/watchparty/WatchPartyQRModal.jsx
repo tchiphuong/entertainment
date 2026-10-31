@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import QRCode from "qrcode";
 import { useTranslation } from "react-i18next";
 import {
@@ -8,7 +8,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { Modal, Button } from "../../ui";
 import { CopyButton } from "../../common";
-import { getWatchPartyRoomPath } from "../../../constants";
+import { getWatchPartyShareUrl } from "../../../utils/watchPartyUtils";
 
 export const WatchPartyQRModal = ({
     isOpen,
@@ -19,9 +19,7 @@ export const WatchPartyQRModal = ({
     const { t } = useTranslation();
     const [qrDataUrl, setQrDataUrl] = useState("");
 
-    const shareUrl = typeof window !== "undefined" && roomId
-        ? `${window.location.origin}${getWatchPartyRoomPath(roomId)}`
-        : getWatchPartyRoomPath(roomId);
+    const shareUrl = useMemo(() => getWatchPartyShareUrl(roomId), [roomId]);
 
     useEffect(() => {
         if (!isOpen || !roomId) return;

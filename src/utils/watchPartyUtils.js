@@ -1,5 +1,5 @@
 import { fetchSourceData } from "../services/vod/vodService";
-import { SOURCES } from "../constants";
+import { SOURCES, getWatchPartyRoomPath } from "../constants";
 import { slugify } from "./vodIdentifier";
 
 /**
@@ -350,3 +350,20 @@ export const resolveMovieAndEpisodePayload = async (rawSlug, prefillMovie, prefi
 
     return payload;
 };
+
+/**
+ * Lấy liên kết tuyệt đối đầy đủ của phòng xem chung để chia sẻ hoặc tạo mã QR
+ * Tự động tính đúng base URL của ứng dụng (ví dụ /entertainment/ trên GitHub Pages hoặc / trên localhost)
+ */
+export const getWatchPartyShareUrl = (roomId) => {
+    if (!roomId) return "";
+    const roomPath = getWatchPartyRoomPath(roomId);
+    if (typeof window === "undefined") return roomPath;
+
+    const base = import.meta.env.BASE_URL || "/";
+    const cleanBase = base.endsWith("/") ? base.slice(0, -1) : base;
+    const cleanPath = roomPath.startsWith("/") ? roomPath : `/${roomPath}`;
+
+    return `${window.location.origin}${cleanBase}${cleanPath}`;
+};
+
