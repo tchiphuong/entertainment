@@ -16,10 +16,7 @@ import clsx from "clsx";
 import { useVodContext } from "../../contexts/VodContext";
 import {
     SOURCES,
-    SOURCE_C_COUNTRIES,
-    SOURCE_C_CATEGORIES,
     FILTER_YEARS,
-    FILTER_SOURCES,
     FILTER_TYPE_LIST,
     TMDB_SLUGS,
     TMDB_SLUG_LIST,
@@ -60,104 +57,20 @@ const generateVisiblePages = (totalPages, currentPage) => {
     return pages;
 };
 
-const fetchWithFallback = async (url) => {
-    try {
-        const res = await fetch(url);
-        if (res.ok) {
-            const data = await res.json();
-            return data?.items || data?.data?.items || data?.result || [];
-        }
-    } catch {
-        // Fallback im lặng khi nguồn ngoài không phản hồi
-    }
-    return [];
-};
-
-const mergeLists = (list1, list2, list3) => {
-    const map = new Map();
-    for (const item of [...list1, ...list2, ...list3]) {
-        if (item?.slug && item?.name) {
-            map.set(item.slug, {
-                slug: item.slug,
-                name: item.name,
-            });
-        }
-    }
-    return Array.from(map.values()).sort((a, b) =>
-        a.name.localeCompare(b.name, "vi")
-    );
-};
-
-const fetchFallbackMetadata = async (setAvailableCategories, setAvailableCountries) => {
-    try {
-        const [gRes, cRes] = await Promise.all([
-            fetch(`${import.meta.env.VITE_SOURCE_K_API}/the-loai`),
-            fetch(`${import.meta.env.VITE_SOURCE_K_API}/quoc-gia`),
-        ]);
-        const [gData, cData] = await Promise.all([gRes.json(), cRes.json()]);
-        if (gData?.items) setAvailableCategories(gData.items);
-        if (cData?.items) setAvailableCountries(cData.items);
-    } catch (fallbackError) {
-        console.error("Fallback metadata fetch failed:", fallbackError);
-    }
-};
-
-const getMergedMetadata = async () => {
-    const [kGenres, kCountries, oGenres, oCountries] = await Promise.all([
-        fetchWithFallback(`${import.meta.env.VITE_SOURCE_K_API}/the-loai`),
-        fetchWithFallback(`${import.meta.env.VITE_SOURCE_K_API}/quoc-gia`),
-        fetchWithFallback(`${import.meta.env.VITE_SOURCE_O_API}/v1/api/the-loai`),
-        fetchWithFallback(`${import.meta.env.VITE_SOURCE_O_API}/v1/api/quoc-gia`),
-    ]);
-
-    return {
-        genres: mergeLists(SOURCE_C_CATEGORIES, kGenres, oGenres),
-        countries: mergeLists(SOURCE_C_COUNTRIES, kCountries, oCountries),
-    };
-};
-
-const getSourceCMetadata = () => {
-    const sortedCat = [...SOURCE_C_CATEGORIES].sort((a, b) =>
-        a.name.localeCompare(b.name, "vi")
-    );
-    const sortedCou = [...SOURCE_C_COUNTRIES].sort((a, b) =>
-        a.name.localeCompare(b.name, "vi")
-    );
-    return { genres: sortedCat, countries: sortedCou };
-};
-
-const getSourceMetadataEndpoints = (sourceId) => {
-    if (sourceId === SOURCES.SOURCE_K) {
-        return {
-            domain: import.meta.env.VITE_SOURCE_K_API,
-            genresPath: "/the-loai",
-            countriesPath: "/quoc-gia",
-        };
-    }
-    if (sourceId === SOURCES.SOURCE_O) {
-        return {
-            domain: import.meta.env.VITE_SOURCE_O_API,
-            genresPath: "/v1/api/the-loai",
-            countriesPath: "/v1/api/quoc-gia",
-        };
-    }
-    return { domain: "", genresPath: "", countriesPath: "" };
-};
-
 const extractAndSortItems = (data) => {
-    const rawItems = data?.items || data?.data?.items || data?.result || [];
+    const rawItems = data?.data?.items || data?.items || data?.result || [];
     return rawItems
+        .filter((i) => i?.slug && i?.name)
         .map((i) => ({ slug: i.slug, name: i.name }))
         .sort((a, b) => a.name.localeCompare(b.name, "vi"));
 };
 
-const getSingleSourceMetadata = async (sourceId) => {
-    const { domain, genresPath, countriesPath } = getSourceMetadataEndpoints(sourceId);
-    if (!domain) throw new Error("No domain for source");
-
+const getSourceKMetadata = async () => {
+    const domain = import.meta.env.VITE_SOURCE_K_API;
+    if (!domain) return { genres: [], countries: [] };
     const [gRes, cRes] = await Promise.all([
-        fetch(`${domain}${genresPath}`),
-        fetch(`${domain}${countriesPath}`),
+        fetch(`${domain}/the-loai`),
+        fetch(`${domain}/quoc-gia`),
     ]);
 
     const gData = gRes.ok ? await gRes.json() : null;
@@ -167,6 +80,65 @@ const getSingleSourceMetadata = async (sourceId) => {
         genres: extractAndSortItems(gData),
         countries: extractAndSortItems(cData),
     };
+};
+
+const fetchFallbackMetadata = async (setAvailableCategories, setAvailableCountries) => {
+    try {
+        const metadata = await getSourceKMetadata();
+        if (metadata.genres.length > 0) setAvailableCategories(metadata.genres);
+        if (metadata.countries.length > 0) setAvailableCountries(metadata.countries);
+    } catch (fallbackError) {
+        console.error("Fallback metadata fetch failed:", fallbackError);
+    }
+};
+
+const getMergedMetadata = async () => {
+    return getSourceKMetadata();
+};
+
+const getSourceMetadataEndpoints = (sourceId) => {
+    if (sourceId === SOURCES.SOURCE_O) {
+        return {
+            domain: import.meta.env.VITE_SOURCE_O_API,
+            genresPath: "/v1/api/the-loai",
+            countriesPath: "/v1/api/quoc-gia",
+        };
+    }
+    return {
+        domain: import.meta.env.VITE_SOURCE_K_API,
+        genresPath: "/the-loai",
+        countriesPath: "/quoc-gia",
+    };
+};
+
+const getSingleSourceMetadata = async (sourceId) => {
+    if (sourceId === SOURCES.SOURCE_K || !sourceId || sourceId === "all") {
+        return getSourceKMetadata();
+    }
+
+    const { domain, genresPath, countriesPath } = getSourceMetadataEndpoints(sourceId);
+    if (!domain) return getSourceKMetadata();
+
+    try {
+        const [gRes, cRes] = await Promise.all([
+            fetch(`${domain}${genresPath}`),
+            fetch(`${domain}${countriesPath}`),
+        ]);
+
+        const gData = gRes.ok ? await gRes.json() : null;
+        const cData = cRes.ok ? await cRes.json() : null;
+
+        const genres = extractAndSortItems(gData);
+        const countries = extractAndSortItems(cData);
+
+        if (genres.length === 0 && countries.length === 0) {
+            return getSourceKMetadata();
+        }
+
+        return { genres, countries };
+    } catch {
+        return getSourceKMetadata();
+    }
 };
 
 export const buildSourceKOConfig = (sourceId, paramsContext) => {
@@ -227,59 +199,6 @@ export const buildSourceKOConfig = (sourceId, paramsContext) => {
     return { typeVal, useV1Val, urlParams };
 };
 
-export const buildSourceCConfig = (paramsContext) => {
-    const {
-        currentQuery,
-        currentYear,
-        currentCategory,
-        currentCountry,
-        activeListContext,
-    } = paramsContext;
-
-    if (
-        currentCountry &&
-        !SOURCE_C_COUNTRIES.some((c) => c.slug === currentCountry)
-    ) {
-        return null;
-    }
-    if (
-        currentCategory &&
-        !SOURCE_C_CATEGORIES.some((c) => c.slug === currentCategory)
-    ) {
-        return null;
-    }
-
-    const activeFiltersCount = [
-        activeListContext,
-        currentCategory,
-        currentCountry,
-        currentYear,
-        currentQuery,
-    ].filter(Boolean).length;
-    if (activeFiltersCount > 1) {
-        return null;
-    }
-
-    let typeVal;
-    let urlParams = {};
-
-    if (currentQuery) {
-        typeVal = "search";
-        urlParams = { keyword: currentQuery };
-    } else if (activeListContext) {
-        typeVal = `danh-sach/${activeListContext}`;
-    } else if (currentCategory) {
-        typeVal = `the-loai/${currentCategory}`;
-    } else if (currentCountry) {
-        typeVal = `quoc-gia/${currentCountry}`;
-    } else if (currentYear) {
-        typeVal = `nam-phat-hanh/${currentYear}`;
-    } else {
-        typeVal = "phim-moi-cap-nhat";
-    }
-
-    return { typeVal, useV1Val: false, urlParams };
-};
 
 const resolveTmdbEndpoint = (activeListContext, currentCategory, timeframe) => {
     const slug = activeListContext || currentCategory;
@@ -310,11 +229,8 @@ const buildSourceTmdbConfig = (paramsContext) => {
 export const buildSourceConfig = (sourceId, paramsContext, overrides = {}) => {
     const { currentPage, pageSize } = paramsContext;
     let configResult = null;
-
     if (sourceId === SOURCES.SOURCE_K || sourceId === SOURCES.SOURCE_O) {
         configResult = buildSourceKOConfig(sourceId, paramsContext);
-    } else if (sourceId === SOURCES.SOURCE_C) {
-        configResult = buildSourceCConfig(paramsContext);
     } else if (sourceId === SOURCES.SOURCE_TMDB) {
         configResult = buildSourceTmdbConfig(paramsContext);
     }
@@ -343,7 +259,7 @@ const aggregateMergedItems = (sections, SOURCES) => {
     const mergedItems = [];
     const seenKeys = new Set();
 
-    [SOURCES.SOURCE_O, SOURCES.SOURCE_K, SOURCES.SOURCE_C].forEach((id) => {
+    [SOURCES.SOURCE_O, SOURCES.SOURCE_K].forEach((id) => {
         const section = sections[id];
         if (section?.items) {
             section.items.forEach((item) => {
@@ -432,11 +348,6 @@ export const normalizeLibraryItems = (rawItems, t) => {
                     server.includes("source_o")
                 )
                     itemSource = SOURCES.SOURCE_O;
-                else if (
-                    server.includes(SOURCES.SOURCE_C) ||
-                    server.includes("source_c")
-                )
-                    itemSource = SOURCES.SOURCE_C;
             }
 
             return {
@@ -571,8 +482,6 @@ export const useVodMetadata = (activeSource, filterMetadataCache) => {
                 let metadata;
                 if (activeSource === "all" || !activeSource) {
                     metadata = await getMergedMetadata();
-                } else if (activeSource === SOURCES.SOURCE_C) {
-                    metadata = getSourceCMetadata();
                 } else {
                     metadata = await getSingleSourceMetadata(activeSource);
                 }
@@ -594,9 +503,7 @@ export const useVodMetadata = (activeSource, filterMetadataCache) => {
                     isError: true 
                 });
 
-                if (activeSource !== SOURCES.SOURCE_K) {
-                    await fetchFallbackMetadata(setAvailableCategories, setAvailableCountries);
-                }
+                await fetchFallbackMetadata(setAvailableCategories, setAvailableCountries);
             } finally {
                 setMetadataLoading(false);
             }
@@ -926,7 +833,6 @@ export const getRawSearchCategories = ({
     if (isMergedView) {
         return [
             buildSourceConfig(SOURCES.SOURCE_K, paramsContext, { title: "Source K" }),
-            buildSourceConfig(SOURCES.SOURCE_C, paramsContext, { title: "Source C" }),
         ];
     }
     return [
@@ -1061,12 +967,12 @@ const ListingInlineSearchForm = ({
     );
 };
 
-const ListingFilterCountBadge = ({ currentCountry, currentCategory, currentYear, activeSource, SOURCES }) => {
+const ListingFilterCountBadge = ({ currentCountry, currentCategory, currentYear, activeListContext }) => {
     const count = [
         currentCountry,
         currentCategory,
         currentYear,
-        activeSource && activeSource !== SOURCES.SOURCE_K ? activeSource : null,
+        activeListContext,
     ].filter(Boolean).length;
 
     if (count === 0) return null;
@@ -1117,8 +1023,7 @@ const ListingHeaderBar = ({
     currentCountry,
     currentCategory,
     currentYear,
-    activeSource,
-    SOURCES,
+    activeListContext,
     currentTimeframe,
     handleFilterSelect,
     currentPage,
@@ -1156,8 +1061,7 @@ const ListingHeaderBar = ({
                             currentCountry={currentCountry}
                             currentCategory={currentCategory}
                             currentYear={currentYear}
-                            activeSource={activeSource}
-                            SOURCES={SOURCES}
+                            activeListContext={activeListContext}
                         />
                         <svg className={clsx("h-3 w-3 transition-transform", showFilters && "rotate-180")} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
@@ -1184,7 +1088,6 @@ const ListingHeaderBar = ({
 const ListingFilterPanel = ({
     showFilters,
     isLibraryCategory,
-    activeSource,
     activeListContext,
     currentCountry,
     currentCategory,
@@ -1194,40 +1097,16 @@ const ListingFilterPanel = ({
     availableCategories,
     handleFilterSelect,
     clearAllFilters,
-    SOURCES,
     t,
 }) => {
     if (!showFilters || isLibraryCategory) return null;
 
     const hasActiveFilters = Boolean(
-        currentCountry || currentCategory || currentYear || (activeSource && activeSource !== SOURCES.SOURCE_K)
+        currentCountry || currentCategory || currentYear || activeListContext
     );
 
     return (
         <div className="animate-in fade-in slide-in-from-top-2 mb-8 space-y-6 rounded-2xl border border-zinc-800/50 bg-zinc-900/30 p-6 duration-300">
-            <section>
-                <h4 className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
-                    {t("vods.source") || "Nguồn phim"}
-                </h4>
-                <div className="flex flex-wrap gap-2">
-                    {FILTER_SOURCES.map((src) => (
-                        <button
-                            key={src.id}
-                            type="button"
-                            onClick={() => handleFilterSelect("source", src.id)}
-                            className={clsx(
-                                "rounded-full border px-4 py-1.5 text-xs font-bold transition-all active:scale-95",
-                                activeSource === src.id
-                                    ? "border-red-600 bg-red-600 text-white shadow-lg shadow-red-600/20"
-                                    : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-500 hover:text-white"
-                            )}
-                        >
-                            {src.name}
-                        </button>
-                    ))}
-                </div>
-            </section>
-
             <section>
                 <h4 className="mb-3 text-xs font-black uppercase tracking-[0.2em] text-zinc-500">
                     Định dạng
@@ -1706,8 +1585,7 @@ export default function Listing() {
                         currentCountry={currentCountry}
                         currentCategory={currentCategory}
                         currentYear={currentYear}
-                        activeSource={activeSource}
-                        SOURCES={SOURCES}
+                        activeListContext={activeListContext}
                         currentTimeframe={currentTimeframe}
                         handleFilterSelect={handleFilterSelect}
                         currentPage={currentPage}
@@ -1720,7 +1598,6 @@ export default function Listing() {
                 <ListingFilterPanel
                     showFilters={showFilters}
                     isLibraryCategory={isLibraryCategory}
-                    activeSource={activeSource}
                     activeListContext={activeListContext}
                     currentCountry={currentCountry}
                     currentCategory={currentCategory}
@@ -1730,7 +1607,6 @@ export default function Listing() {
                     availableCategories={availableCategories}
                     handleFilterSelect={handleFilterSelect}
                     clearAllFilters={clearAllFilters}
-                    SOURCES={SOURCES}
                     t={t}
                 />
 

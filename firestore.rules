@@ -1,0 +1,31 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 1. Quản lý thông tin và dữ liệu người dùng (History, Favorites...)
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+
+    // 2. Quản lý phòng xem chung (Watch Party) và tin nhắn chat thời gian thực
+    match /watch_party_rooms/{roomId} {
+      allow read, write: if true;
+
+      // Subcollection tin nhắn trong phòng
+      match /messages/{messageId} {
+        allow read, write: if true;
+      }
+
+      // Subcollection WebRTC signaling cho âm thanh/thoại trực tiếp
+      match /signals/{signalId} {
+        allow read, write: if true;
+      }
+    }
+
+    // 3. Mặc định cho phép đọc ghi dữ liệu nếu cần
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

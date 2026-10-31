@@ -272,3 +272,27 @@ body, html, #root, input, button, select, textarea {
     scrollbar-width: thin;
     scrollbar-color: #52525b #18181b;
 }
+
+/* Zoom Flying Reactions Animation */
+@keyframes zoomFloatUp {
+    0% {
+        opacity: 0;
+        transform: translateY(20px) scale(0.8);
+    }
+    15% {
+        opacity: 1;
+        transform: translateY(0) scale(1.05);
+    }
+    80% {
+        opacity: 0.95;
+        transform: translateY(-80px) scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-130px) scale(0.9);
+    }
+}
+
+.animate-zoom-float-up {
+    animation: zoomFloatUp 2.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}

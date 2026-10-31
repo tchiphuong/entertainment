@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import "shaka-player/dist/controls.css";
+import "../../assets/styles/shaka-player.css";
 import VodLayout from "../../components/layout/VodLayout";
 import { PlaySkeleton } from "../../components/vod/VodSkeletons";
 import { useAuth } from "../../contexts/AuthContext";
@@ -14,6 +16,7 @@ import {
     togglePiP,
     handleCastTV,
     ensureYoutubeEmbedUrl,
+    serverNameToSlug,
 } from "../../utils/vodPlayHelpers";
 import { extractSeasonNumber } from "../../utils/vodHelpers";
 import {
@@ -33,6 +36,7 @@ import {
 import {
     VodPlayBackgroundHero,
 } from "../../components/vod/play/VodPlayHeroSection";
+import { LazySection } from "../../components/common";
 import {
     useVodPlayRouteParams,
     useVodPlayState,
@@ -86,7 +90,7 @@ export default function VodPlay() {
         errorMessage, setErrorMessage, tmdbData, setTmdbData, tmdbCredits, setTmdbCredits,
         tmdbImages, setTmdbImages, tmdbVideos, setTmdbVideos, tmdbRelated, setTmdbRelated,
         imdbEpisodes, setImdbEpisodes, viewHistory, setViewHistory, favorites, setFavorites,
-        autoplayEnabled, setAutoplayEnabled,
+        autoplayEnabled, setAutoplayEnabled, seasons, setSeasons,
     } = useVodPlayState();
 
     const viewHistoryRef = useRef(viewHistory);
@@ -170,7 +174,6 @@ export default function VodPlay() {
         seasonParam,
         setMovie,
         setEpisodes,
-        activeEpisode,
         setActiveEpisode,
         setTmdbData,
         setTmdbCredits,
@@ -179,6 +182,7 @@ export default function VodPlay() {
         setTmdbRelated,
         setIsLoading,
         setMemoizedBackgrounds,
+        setSeasons,
     });
 
     const {
@@ -227,6 +231,31 @@ export default function VodPlay() {
     } = useVodPlayModals(t);
 
     const detectedSeason = useSeasonDetection(movie);
+
+    const handlePlaySeasonEpisode = useCallback(
+        ({ server, activeEpisode: group, movie: targetMovie, seasonItem }) => {
+            if (!server || !group) return;
+
+            const targetSlug = seasonItem?.slug || targetMovie?.slug || movie?.slug;
+            const currentServerSlug = serverNameToSlug(group.server_name);
+            const epNum = server.name || server.slug || "1";
+            const targetUrl = `/vod/play/${targetSlug}?episode=${encodeURIComponent(epNum)}&server=${currentServerSlug}`;
+            window.history.replaceState(null, "", `/entertainment${targetUrl}`);
+
+            if (targetMovie) {
+                setMovie((prev) => ({
+                    ...(prev || {}),
+                    ...targetMovie,
+                    slug: targetSlug,
+                    currentSeason: seasonItem?.season,
+                }));
+            }
+
+            openEpisode(server, group, targetMovie || movie);
+        },
+        [movie, openEpisode, setMovie]
+    );
+
     useMediaSession(movie, currentEpisodeId, memoizedBackgrounds);
     useFetchSeasonEpisodes(tmdbData, movie, detectedSeason, setImdbEpisodes);
     useFirestoreHistorySync(currentUser, setViewHistory, fetchHistoryFromFirestore);
@@ -258,7 +287,7 @@ export default function VodPlay() {
                 </div>
             )}
 
-            {isLoading && <PlaySkeleton />}
+            {isLoading && !movie && <PlaySkeleton />}
             {!isLoading && !movie && <NotFoundState />}
 
             <ImageModal
@@ -278,7 +307,7 @@ export default function VodPlay() {
                 t={t}
             />
 
-            {!isLoading && movie && (
+            {movie && (
                 <div className="relative min-h-screen">
                     <div className="container relative z-10 mx-auto flex-col gap-8 px-4 pb-12 pt-20">
 
@@ -326,22 +355,28 @@ export default function VodPlay() {
                                 openEpisode={openEpisode}
                                 movie={movie}
                                 formatEpisodeName={formatEpisodeName}
+                                seasons={seasons}
+                                currentSeason={detectedSeason}
+                                tmdbData={tmdbData}
+                                onPlaySeasonEpisode={handlePlaySeasonEpisode}
                             />
                         </div>
 
-                        <VodPlayMediaSection
-                            movie={movie}
-                            tmdbData={tmdbData}
-                            tmdbImages={tmdbImages}
-                            tmdbCredits={tmdbCredits}
-                            tmdbVideos={tmdbVideos}
-                            tmdbRelated={tmdbRelated}
-                            onSelectTrailer={handleSelectTrailerVideo}
-                            setModalImages={setModalImages}
-                            setCurrentImageIndex={setCurrentImageIndex}
-                            setShowImageModal={setShowImageModal}
-                            getMovieImage={getMovieImage}
-                        />
+                        <LazySection rootMargin="300px" minHeight="400px">
+                            <VodPlayMediaSection
+                                movie={movie}
+                                tmdbData={tmdbData}
+                                tmdbImages={tmdbImages}
+                                tmdbCredits={tmdbCredits}
+                                tmdbVideos={tmdbVideos}
+                                tmdbRelated={tmdbRelated}
+                                onSelectTrailer={handleSelectTrailerVideo}
+                                setModalImages={setModalImages}
+                                setCurrentImageIndex={setCurrentImageIndex}
+                                setShowImageModal={setShowImageModal}
+                                getMovieImage={getMovieImage}
+                            />
+                        </LazySection>
                     </div>
                 </div>
             )}

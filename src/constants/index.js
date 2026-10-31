@@ -10,7 +10,6 @@
 // 1. VOD SOURCES & SYSTEM CONFIG
 // ==========================================
 export const SOURCES = {
-    SOURCE_C: "source_c",
     SOURCE_K: "source_k",
     SOURCE_O: "source_o",
     SOURCE_R: "source_r",
@@ -20,15 +19,10 @@ export const SOURCES = {
 export const DEFAULT_REGION = "VN";
 export const DEFAULT_TMDB_LANG = "vi-VN";
 
-export const FILTER_YEARS = Array.from({ length: 26 }, (_, i) =>
-    (2025 - i).toString(),
+const CURRENT_SYSTEM_YEAR = new Date().getFullYear();
+export const FILTER_YEARS = Array.from({ length: 30 }, (_, i) =>
+    (CURRENT_SYSTEM_YEAR - i).toString(),
 );
-
-export const FILTER_SOURCES = [
-    { id: "all", name: "Tất cả" },
-    { id: SOURCES.SOURCE_K, name: "Từ K" },
-    { id: SOURCES.SOURCE_C, name: "Từ C" },
-];
 
 export const MEDIA_TYPES = {
     ALL: "all",
@@ -187,10 +181,10 @@ export const CATEGORIES = [
         useV1: true,
     },
     {
-        id: "tv-shows",
-        title: "TV Shows",
-        titleKey: "vods.tvShows",
-        type: "danh-sach/tv-shows",
+        id: "vien-tuong",
+        title: "Phim Viễn Tưởng",
+        titleKey: "vods.sciFi",
+        type: "the-loai/vien-tuong",
         source: "source_k",
         useV1: true,
     },
@@ -268,66 +262,6 @@ export const CATEGORIES = [
     },
 ];
 
-export const SOURCE_C_COUNTRIES = [
-    { slug: "au-my", name: "Âu Mỹ", id: "48" },
-    { slug: "anh", name: "Anh", id: "49" },
-    { slug: "trung-quoc", name: "Trung Quốc", id: "50" },
-    { slug: "indonesia", name: "Indonesia", id: "51" },
-    { slug: "viet-nam", name: "Việt Nam", id: "52" },
-    { slug: "argentina", name: "Argentina", id: "53" },
-    { slug: "ao", name: "Áo", id: "54" },
-    { slug: "uc", name: "Úc", id: "55" },
-    { slug: "bangladesh", name: "Bangladesh", id: "56" },
-    { slug: "brazil", name: "Brazil", id: "57" },
-    { slug: "bahamas", name: "Bahamas", id: "58" },
-    { slug: "belarus", name: "Belarus", id: "59" },
-    { slug: "canada", name: "Canada", id: "60" },
-    { slug: "thuy-si", name: "Thụy Sĩ", id: "61" },
-    { slug: "bo-bien-nga", name: "Bờ Biển Ngà", id: "62" },
-    { slug: "chile", name: "Chile", id: "63" },
-    { slug: "colombia", name: "Colombia", id: "64" },
-    { slug: "costa-rica", name: "Costa Rica", id: "65" },
-    { slug: "duc", name: "Đức", id: "66" },
-    { slug: "dan-mach", name: "Đan Mạch", id: "67" },
-    { slug: "tay-ban-nha", name: "Tây Ban Nha", id: "68" },
-    { slug: "phap", name: "Pháp", id: "69" },
-    { slug: "greenland", name: "Greenland", id: "70" },
-    { slug: "hong-kong", name: "Hồng Kông", id: "71" },
-    { slug: "han-quoc", name: "Hàn Quốc", id: "72" },
-    { slug: "nhat-ban", name: "Nhật Bản", id: "73" },
-    { slug: "thai-lan", name: "Thái Lan", id: "74" },
-    { slug: "dai-loan", name: "Đài Loan", id: "75" },
-    { slug: "nga", name: "Nga", id: "76" },
-    { slug: "ha-lan", name: "Hà Lan", id: "77" },
-    { slug: "quoc-gia-khac", name: "Quốc gia khác", id: "78" },
-    { slug: "philippines", name: "Philippines", id: "95" },
-    { slug: "an-do", name: "Ấn Độ", id: "96" },
-];
-
-export const SOURCE_C_CATEGORIES = [
-    { slug: "hanh-dong", name: "Hành Động", id: "7" },
-    { slug: "phieu-luu", name: "Phiêu Lưu", id: "8" },
-    { slug: "hoat-hinh", name: "Hoạt Hình", id: "9" },
-    { slug: "phim-hai", name: "Phim Hài", id: "10" },
-    { slug: "hinh-su", name: "Hình Sự", id: "11" },
-    { slug: "tai-lieu", name: "Tài Liệu", id: "12" },
-    { slug: "chinh-kich", name: "Chính Kịch", id: "13" },
-    { slug: "gia-dinh", name: "Gia Đình", id: "14" },
-    { slug: "gia-tuong", name: "Giả Tưởng", id: "15" },
-    { slug: "lich-su", name: "Lịch Sử", id: "16" },
-    { slug: "kinh-di", name: "Kinh Dị", id: "17" },
-    { slug: "phim-nhac", name: "Phim Nhạc", id: "18" },
-    { slug: "bi-an", name: "Bí Ẩn", id: "19" },
-    { slug: "lang-man", name: "Lãng Mạn", id: "20" },
-    { slug: "khoa-hoc-vien-tuong", name: "Khoa Học Viễn Tưởng", id: "21" },
-    { slug: "gay-can", name: "Gây Cấn", id: "22" },
-    { slug: "chien-tranh", name: "Chiến Tranh", id: "23" },
-    { slug: "mien-tay", name: "Miền Tây", id: "24" },
-    { slug: "co-trang", name: "Cổ Trang", id: "142" },
-    { slug: "tam-ly", name: "Tâm Lý", id: "143" },
-    { slug: "phim-18", name: "Phim 18+", id: "144" },
-    { slug: "tinh-cam", name: "Tình Cảm", id: "155" },
-];
 
 // ==========================================
 // 3. UI, PLAYER, & ROLE CONSTANTS
@@ -497,3 +431,34 @@ export const GRID_CONFIG = {
     MOBILE_COLUMNS: 2,
     DEFAULT_ROWS: 2,
 };
+
+// ==========================================
+// 8. SYSTEM ROUTES
+// ==========================================
+export const ROUTES = {
+    HOME: "/",
+    TV: "/tv",
+    SCHEDULE: "/schedule",
+    VODS_REDIRECT: "/vods",
+    VODS_REDIRECT_WILD: "/vods/*",
+    VOD: {
+        ROOT: "/vod",
+        PLAY: "/vod/play/:slug",
+        PLAY_WILDCARD: "/vod/play/:slug/*",
+        SEARCH: "/vod/search",
+        COUNTRY: "/vod/country/:country",
+        CATEGORY: "/vod/category/:category",
+        ACTOR: "/vod/actor/:actor",
+        WATCH_PARTY: "/vod/watch-party",
+        WATCH_PARTY_ROOM: "/vod/watch-party/:roomId",
+    },
+};
+
+/**
+ * Helper sinh đường dẫn động, tránh hardcode chuỗi URL
+ */
+export const getWatchPartyRoomPath = (roomId) => `/vod/watch-party/${roomId || ""}`;
+export const getVodPlayPath = (slug) => `/vod/play/${slug || ""}`;
+export const getVodCategoryPath = (category) => `/vod/category/${category || ""}`;
+export const getVodCountryPath = (country) => `/vod/country/${country || ""}`;
+export const getVodActorPath = (actor) => `/vod/actor/${actor || ""}`;

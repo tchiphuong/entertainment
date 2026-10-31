@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Select from "react-select";
 import LoadingSpinner from "../components/LoadingSpinner";
+import { LazySection } from "../components/common";
 
 // Lấy API endpoint từ biến môi trường
 const API_ENDPOINT = import.meta.env.VITE_API_ENDPOINT;
@@ -360,34 +361,44 @@ export default function Home() {
                     <div className="space-y-8">
                         {Object.keys(groupedNormalMatches)
                             .sort((a, b) => a.localeCompare(b))
-                            .map((dateKey) => (
-                                <div key={dateKey}>
-                                    <div className="mb-4">
-                                        <h2 className="border-b-2 border-blue-500 pb-2 text-lg font-bold text-zinc-100 flex items-center gap-2">
-                                            <svg className="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                            </svg>
-                                            <span>
-                                                {new Date(dateKey + "T00:00:00").toLocaleDateString("vi-VN", {
-                                                    weekday: "long",
-                                                    year: "numeric",
-                                                    month: "long",
-                                                    day: "numeric",
-                                                })}
-                                            </span>
-                                        </h2>
-                                    </div>
+                            .map((dateKey, index) => {
+                                const dateContent = (
+                                    <div key={dateKey}>
+                                        <div className="mb-4">
+                                            <h2 className="border-b-2 border-blue-500 pb-2 text-lg font-bold text-zinc-100 flex items-center gap-2">
+                                                <svg className="h-5 w-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                </svg>
+                                                <span>
+                                                    {new Date(dateKey + "T00:00:00").toLocaleDateString("vi-VN", {
+                                                        weekday: "long",
+                                                        year: "numeric",
+                                                        month: "long",
+                                                        day: "numeric",
+                                                    })}
+                                                </span>
+                                            </h2>
+                                        </div>
 
-                                    <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                                        {groupedNormalMatches[dateKey].map((match) => (
-                                            <MatchCard
-                                                key={match.id}
-                                                match={match}
-                                            />
-                                        ))}
+                                        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                                            {groupedNormalMatches[dateKey].map((match) => (
+                                                <MatchCard
+                                                    key={match.id}
+                                                    match={match}
+                                                />
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+
+                                if (index < 2) return dateContent;
+
+                                return (
+                                    <LazySection key={dateKey} rootMargin="250px" minHeight="180px">
+                                        {dateContent}
+                                    </LazySection>
+                                );
+                            })}
                     </div>
                 )}
 

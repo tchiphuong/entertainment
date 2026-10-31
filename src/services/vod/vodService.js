@@ -4,7 +4,6 @@ import { fetchTMDBRelated, fetchTMDBJson } from "./tmdbService";
 
 const CONFIG = {
     APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
-    APP_DOMAIN_SOURCE_C: import.meta.env.VITE_SOURCE_C_API,
     APP_DOMAIN_SOURCE_O: import.meta.env.VITE_SOURCE_O_API,
     API_ENDPOINT: import.meta.env.VITE_API_ENDPOINT,
 };
@@ -35,10 +34,6 @@ const normalizeMovieForSource = (item, source) => {
         m.name = m.name || m.origin_name;
         m.poster_url = fixSourceOImagePath(item.thumb_url);
         m.thumb_url = fixSourceOImagePath(item.poster_url || "");
-    } else if (source === SOURCES.SOURCE_C) {
-        // Source C: poster_url là ảnh ngang, thumb_url là ảnh dọc
-        m.poster_url = item.thumb_url;
-        m.thumb_url = item.poster_url;
     } else if (source === SOURCES.SOURCE_K) {
         m.poster_url = item.poster_url;
         m.thumb_url = item.thumb_url;
@@ -63,9 +58,6 @@ const getSourceApiUrl = (slug, source, tmdbId, mediaType = "movie") => {
     }
     if (source === SOURCES.SOURCE_K) {
         return `${CONFIG.APP_DOMAIN_SOURCE_K}/phim/${slug}`;
-    }
-    if (source === SOURCES.SOURCE_C) {
-        return `${CONFIG.APP_DOMAIN_SOURCE_C}/api/film/${slug}`;
     }
     return `${CONFIG.API_ENDPOINT}/${slug}`;
 };
@@ -122,19 +114,12 @@ const resolveTmdbParams = (slug, explicitTmdbId, explicitMediaType) => {
     return { tmdbId, mediaType: explicitMediaType };
 };
 
-const isInvalidSourceCRequest = (source, slug) => {
-    return source === SOURCES.SOURCE_C && (/^\d+$/.test(String(slug).trim()) || !slug);
-};
-
 export const fetchSourceData = async (
     slug,
     source,
     explicitTmdbId = null,
     explicitMediaType = null,
 ) => {
-    if (isInvalidSourceCRequest(source, slug)) {
-        return { movie: null, episodes: [] };
-    }
 
     const { tmdbId, mediaType } = resolveTmdbParams(slug, explicitTmdbId, explicitMediaType);
     const cacheKey = tmdbId
@@ -167,7 +152,11 @@ export const fetchTMDbData = async (
     type = "movie",
     language = "vi-VN",
 ) => {
-    const baseUrl = import.meta.env.VITE_TMDB_BASE_URL || "https://api.themoviedb.org/3";
+    const baseUrl = import.meta.env.VITE_TMDB_BASE_URL || "";
+    if (!baseUrl) {
+        console.warn("fetchTMDbData: Thiếu cấu hình VITE_TMDB_BASE_URL");
+        return null;
+    }
     const resolvedType = type || "movie";
     const cacheKey = `tmdb_${resolvedType}_${tmdbId}_${language}`;
 
@@ -203,7 +192,11 @@ export const fetchTMDBSeason = async (
     seasonNumber,
     language = "vi-VN",
 ) => {
-    const baseUrl = import.meta.env.VITE_TMDB_BASE_URL || "https://api.themoviedb.org/3";
+    const baseUrl = import.meta.env.VITE_TMDB_BASE_URL || "";
+    if (!baseUrl) {
+        console.warn("fetchTMDBSeason: Thiếu cấu hình VITE_TMDB_BASE_URL");
+        return null;
+    }
     const cacheKey = `tmdb_season_${tmdbId}_${seasonNumber}_${language}`;
 
     const cached = getFromCache(cacheKey);
@@ -213,11 +206,41 @@ export const fetchTMDBSeason = async (
         const data = await fetchTMDBJson(
             (apiKey) => `${baseUrl}/tv/${tmdbId}/season/${seasonNumber}?api_key=${apiKey}&language=${language}`,
         );
-        if (!data) return null;
+        if (!data) {
+            saveToCache(cacheKey, { episodes: [] });
+            return null;
+        }
         saveToCache(cacheKey, data);
         return data;
     } catch (e) {
-        console.error("Error fetching TMDB season data:", e);
+        console.warn("Error fetching TMDB season data:", e);
+        return null;
+    }
+};
+
+export const searchSourceK = async (keyword) => {
+    if (!keyword || !CONFIG.APP_DOMAIN_SOURCE_K) return [];
+    try {
+        const res = await fetch(`${CONFIG.APP_DOMAIN_SOURCE_K}/v1/api/tim-kiem?keyword=${encodeURIComponent(keyword)}`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data?.data?.items || [];
+    } catch (e) {
+        console.warn("searchSourceK error:", e);
+        return [];
+    }
+};
+
+export const fetchSourceKTmdb = async (tmdbId, mediaType = "movie") => {
+    if (!tmdbId || !CONFIG.APP_DOMAIN_SOURCE_K) return null;
+    try {
+        const endpoint = mediaType === "tv" ? "tv" : "movie";
+        const res = await fetch(`${CONFIG.APP_DOMAIN_SOURCE_K}/tmdb/${endpoint}/${tmdbId}`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        return data?.movie || null;
+    } catch (e) {
+        console.warn("fetchSourceKTmdb error:", e);
         return null;
     }
 };
@@ -228,6 +251,8 @@ export const vodService = {
     fetchTMDBSeason,
     fetchTMDBRelated,
     normalizeMovieForSource,
+    searchSourceK,
+    fetchSourceKTmdb,
     getFromCache,
     saveToCache,
     clearVodCache,

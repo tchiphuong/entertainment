@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, memo } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -18,12 +18,20 @@ import { CATEGORIES, SOURCES } from "../../constants";
 import { getMoviePlayUrl, distinctMovies, getMovieUniqueKey } from "../../utils/vodHelpers";
 import VodLayout from "../../components/layout/VodLayout";
 import { useVodContext } from "../../contexts/VodContext";
+import { LazySection } from "../../components/common";
+
+const isSlideInRange = (idx, current, total) => {
+    if (total <= 5) return true;
+    const diff = Math.abs(idx - current);
+    const circularDiff = Math.min(diff, total - diff);
+    return circularDiff <= 2;
+};
 
 const HeroSlideBadges = ({ movie, idx }) => (
     <div className="flex flex-wrap items-center gap-2 text-xs font-bold md:gap-3">
         {movie.tmdbBranding?.brandLogo && (
             <div className="mr-1 flex items-center border-r border-zinc-700/80 pr-3">
-                <div className="rounded-md bg-black/50 px-2 py-1 backdrop-blur-md">
+                <div className="rounded-md bg-black/80 px-2 py-1 border border-zinc-800">
                     <img
                         loading="lazy"
                         src={movie.tmdbBranding.brandLogo}
@@ -144,7 +152,7 @@ const HeroSlideActionButtons = ({ movie, isFav, navigate, toggleFavorite, t }) =
     </div>
 );
 
-const HeroSlideItem = ({
+const HeroSlideItem = memo(({
     movie,
     idx,
     isActive,
@@ -156,20 +164,24 @@ const HeroSlideItem = ({
     t,
 }) => (
     <div
-        className={`absolute inset-0 transition-opacity duration-700 ease-in-out ${
+        className={`absolute inset-0 transition-opacity duration-300 ease-out transform-gpu will-change-[opacity] ${
             isActive ? "pointer-events-auto z-10 opacity-100" : "pointer-events-none invisible z-0 opacity-0"
         }`}
     >
         <div className="absolute inset-0 z-0">
             <img
-                loading="lazy"
+                loading={isActive ? "eager" : "lazy"}
+                fetchPriority={isActive ? "high" : "low"}
+                decoding="async"
                 src={getImageUrl(movie, "thumbnail")}
                 alt={movie.name}
                 className="hidden h-full w-full object-cover object-center brightness-[0.75] md:block"
                 onError={handleImageError}
             />
             <img
-                loading="lazy"
+                loading={isActive ? "eager" : "lazy"}
+                fetchPriority={isActive ? "high" : "low"}
+                decoding="async"
                 src={getImageUrl(movie, "poster")}
                 alt={movie.name}
                 className="h-full w-full object-cover object-top brightness-[0.65] md:hidden"
@@ -179,7 +191,7 @@ const HeroSlideItem = ({
         </div>
 
         <div className="relative z-30 mx-auto flex h-full w-full max-w-[120rem] flex-col justify-end px-4 pb-12 md:justify-center md:px-12 md:pb-0 lg:px-20">
-            <div className={`max-w-3xl lg:max-w-4xl space-y-3 md:space-y-5 ${isActive ? "animate-fade-in-down" : "opacity-0"}`}>
+            <div className={`max-w-3xl lg:max-w-4xl space-y-3 md:space-y-5 ${isActive ? "opacity-100 transition-opacity duration-300" : "opacity-0 pointer-events-none"}`}>
                 <HeroSlideBadges movie={movie} idx={idx} />
 
                 <div>
@@ -231,7 +243,7 @@ const HeroSlideItem = ({
             </div>
         </div>
     </div>
-);
+));
 
 export default function VodLanding() {
     const { t } = useTranslation();
@@ -249,6 +261,10 @@ export default function VodLanding() {
     const { getImageUrl, handleImageError } = useImageFallback();
 
     const [currentHeroIndex, setCurrentHeroIndex] = useState(0);
+    const [isHovered, setIsHovered] = useState(false);
+    const isPausedRef = useRef(false);
+    isPausedRef.current = isHovered;
+
     const sliderTimerRef = useRef(null);
     const touchStartX = useRef(0);
     const touchEndX = useRef(0);
@@ -268,8 +284,6 @@ export default function VodLanding() {
                     let itemSource = SOURCES.SOURCE_K;
                     if (server.includes(SOURCES.SOURCE_O))
                         itemSource = SOURCES.SOURCE_O;
-                    if (server.includes(SOURCES.SOURCE_C))
-                        itemSource = SOURCES.SOURCE_C;
 
                     return {
                         ...item,
@@ -304,10 +318,11 @@ export default function VodLanding() {
     const startSlider = useCallback(() => {
         if (sliderTimerRef.current) clearInterval(sliderTimerRef.current);
         sliderTimerRef.current = setInterval(() => {
+            if (isPausedRef.current || (typeof document !== "undefined" && document.hidden)) return;
             setCurrentHeroIndex((prev) =>
                 heroMovies.length > 0 ? (prev + 1) % heroMovies.length : 0,
             );
-        }, 8000);
+        }, 6000);
     }, [heroMovies]);
 
     const nextHero = useCallback(() => {
@@ -325,6 +340,42 @@ export default function VodLanding() {
         );
         startSlider();
     }, [heroMovies, startSlider]);
+
+    // Preload trước ảnh của các slide liền kề (next và previous) để chuyển slide tức thì không có độ trễ
+    useEffect(() => {
+        if (!heroMovies?.length) return;
+        const total = heroMovies.length;
+        const nextIdx = (currentHeroIndex + 1) % total;
+        const prevIdx = (currentHeroIndex - 1 + total) % total;
+
+        [nextIdx, prevIdx].forEach((idx) => {
+            const m = heroMovies[idx];
+            if (!m) return;
+            const thumb = getImageUrl(m, "thumbnail");
+            const poster = getImageUrl(m, "poster");
+            if (thumb && typeof window !== "undefined") {
+                const img = new Image();
+                img.src = thumb;
+            }
+            if (poster && typeof window !== "undefined") {
+                const img = new Image();
+                img.src = poster;
+            }
+        });
+    }, [currentHeroIndex, heroMovies, getImageUrl]);
+
+    // Dừng slider khi tab bị ẩn để tiết kiệm tài nguyên
+    useEffect(() => {
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                if (sliderTimerRef.current) clearInterval(sliderTimerRef.current);
+            } else {
+                startSlider();
+            }
+        };
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+        return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+    }, [startSlider]);
 
     const isSwiping = useRef(false);
 
@@ -386,21 +437,28 @@ export default function VodLanding() {
                     onTouchStart={handleTouchStart}
                     onTouchMove={handleTouchMove}
                     onTouchEnd={handleTouchEnd}
+                    onMouseEnter={() => setIsHovered(true)}
+                    onMouseLeave={() => setIsHovered(false)}
                 >
-                    {heroMovies.map((movie, idx) => (
-                        <HeroSlideItem
-                            key={getMovieUniqueKey(movie) || `${movie.slug || movie.id || "hero"}_${idx}`}
-                            movie={movie}
-                            idx={idx}
-                            isActive={idx === currentHeroIndex}
-                            isFav={isFavorite?.(movie.slug)}
-                            getImageUrl={getImageUrl}
-                            handleImageError={handleImageError}
-                            navigate={navigate}
-                            toggleFavorite={toggleFavorite}
-                            t={t}
-                        />
-                    ))}
+                    {heroMovies.map((movie, idx) => {
+                        if (!isSlideInRange(idx, currentHeroIndex, heroMovies.length)) {
+                            return null;
+                        }
+                        return (
+                            <HeroSlideItem
+                                key={getMovieUniqueKey(movie) || `${movie.slug || movie.id || "hero"}_${idx}`}
+                                movie={movie}
+                                idx={idx}
+                                isActive={idx === currentHeroIndex}
+                                isFav={isFavorite?.(movie.slug)}
+                                getImageUrl={getImageUrl}
+                                handleImageError={handleImageError}
+                                navigate={navigate}
+                                toggleFavorite={toggleFavorite}
+                                t={t}
+                            />
+                        );
+                    })}
 
                     {/* Navigation Arrows (Desktop Only) */}
                     <div className="pointer-events-none absolute left-0 top-1/2 z-40 hidden w-16 -translate-y-1/2 items-center justify-start pl-4 md:flex lg:pl-8">
@@ -409,7 +467,7 @@ export default function VodLanding() {
                             size="lg"
                             isIconOnly
                             onPress={prevHero}
-                            className="pointer-events-auto rounded-full border border-zinc-700/80 bg-zinc-950/80 text-white shadow-xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600"
+                            className="pointer-events-auto rounded-full border border-zinc-700/80 bg-zinc-950/90 text-white shadow-xl transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600"
                             aria-label="Slide trước"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 transition-transform group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -423,7 +481,7 @@ export default function VodLanding() {
                             size="lg"
                             isIconOnly
                             onPress={nextHero}
-                            className="pointer-events-auto rounded-full border border-zinc-700/80 bg-zinc-950/80 text-white shadow-xl backdrop-blur-md transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600"
+                            className="pointer-events-auto rounded-full border border-zinc-700/80 bg-zinc-950/90 text-white shadow-xl transition-all hover:scale-110 hover:border-red-600 hover:bg-red-600"
                             aria-label="Slide tiếp theo"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -521,16 +579,22 @@ export default function VodLanding() {
                               : `/vod/category/${cat.id}?source=${cat.source}`;
 
                           return (
-                              <MovieRow
+                              <LazySection
                                   key={cat.id}
-                                  title={t(cat.titleKey || cat.title)}
-                                  items={sections[cat.id]?.items || []}
-                                  source={cat.source}
-                                  link={categoryLink}
-                                  getImageUrl={getImageUrl}
-                                  handleImageError={handleImageError}
-                                  navigate={navigate}
-                              />
+                                  rootMargin="300px"
+                                  minHeight="280px"
+                                  fallback={<MovieRowSkeleton title={t(cat.titleKey || cat.title)} />}
+                              >
+                                  <MovieRow
+                                      title={t(cat.titleKey || cat.title)}
+                                      items={sections[cat.id]?.items || []}
+                                      source={cat.source}
+                                      link={categoryLink}
+                                      getImageUrl={getImageUrl}
+                                      handleImageError={handleImageError}
+                                      navigate={navigate}
+                                  />
+                              </LazySection>
                           );
                       })}
             </div>

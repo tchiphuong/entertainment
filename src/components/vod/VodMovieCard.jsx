@@ -114,14 +114,14 @@ const VodMovieCard = memo(
         const playUrl = getMoviePlayUrl(movie, source);
 
         const handleToggleFavorite = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
             toggleFavorite(movie);
         };
 
         const handleDelete = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+            e?.preventDefault?.();
+            e?.stopPropagation?.();
             if (onDelete) onDelete(movie.slug);
         };
 
@@ -133,6 +133,7 @@ const VodMovieCard = memo(
                     <div className="aspect-2/3 relative overflow-hidden rounded-lg border border-white/5 bg-zinc-900 shadow-2xl transition-all">
                         <img
                             loading="lazy"
+                            decoding="async"
                             src={getImageUrl(movie, "poster")}
                             alt={movie.name}
                             className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"

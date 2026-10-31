@@ -1,16 +1,87 @@
-import { useState } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
 import { PlayIcon } from "@heroicons/react/24/solid";
 import { ChevronDownIcon } from "@heroicons/react/24/outline";
-import { FALLBACK_IMAGE } from "../../../constants";
+import { FALLBACK_IMAGE, SOURCES } from "../../../constants";
 import {
     formatRuntime,
     getEpisodeKey,
     extractServerType,
     resolveEpisodeThumb,
+    computeEpisodeListData,
 } from "../../../utils/vodPlayHelpers";
+import { vodService } from "../../../services/vod/vodService";
 import { Button } from "../../ui";
+
+export const SeasonTabs = ({ seasons, currentSeason, playingSeason, movie, onSelectSeason }) => {
+    const { t } = useTranslation();
+    if (!seasons || seasons.length <= 1) return null;
+
+    return (
+        <div className="flex flex-col gap-2.5 border-b border-white/5 bg-zinc-950/70 px-4 md:px-6 py-3">
+            <div className="flex items-center gap-2">
+                <span className="flex h-4 w-4 items-center justify-center text-red-500">
+                    <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20">
+                        <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a2 2 0 012-2h12a2 2 0 012 2v4a2 2 0 01-2 2H4a2 2 0 01-2-2v-4z" />
+                    </svg>
+                </span>
+                <h4 className="text-xs font-black uppercase tracking-[0.2em] text-zinc-300">
+                    {t("vodPlay.seasons") || "Các phần / Mùa phim"}
+                </h4>
+            </div>
+
+            <div className="overflow-x-auto no-scrollbar py-1">
+                <div className="flex items-center gap-2 shrink-0">
+                    {seasons.map((item) => {
+                        const isViewing = Number(item.season) === Number(currentSeason);
+                        const isPlaying =
+                            Number(item.season) === Number(playingSeason) ||
+                            (Boolean(item.slug && movie?.slug) && item.slug === movie.slug);
+
+                        return (
+                            <button
+                                key={item.season || item.slug}
+                                type="button"
+                                onClick={() => onSelectSeason(item)}
+                                className={clsx(
+                                    "flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold transition-all cursor-pointer whitespace-nowrap select-none",
+                                    isViewing
+                                        ? "border border-red-600 bg-red-600 text-white shadow-md shadow-red-600/30"
+                                        : isPlaying
+                                        ? "border border-red-600/50 bg-zinc-900 text-white hover:border-red-500 hover:bg-zinc-800"
+                                        : "border border-zinc-800 bg-zinc-900 text-zinc-400 hover:border-zinc-700 hover:bg-zinc-800 hover:text-white"
+                                )}
+                            >
+                                <span>{item.name || `Mùa ${item.season}`}</span>
+
+                                {isPlaying && !isViewing && (
+                                    <span className="flex items-center gap-1 rounded bg-red-600/20 px-1.5 py-0.5 text-[9px] font-black text-red-400 uppercase tracking-wider">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                                        {t("vodPlay.playing") || "Đang phát"}
+                                    </span>
+                                )}
+
+                                {item.episodeCount > 0 && (
+                                    <span
+                                        className={clsx(
+                                            "rounded px-1.5 py-0.5 text-[10px] font-black",
+                                            isViewing
+                                                ? "bg-black/30 text-white"
+                                                : "bg-zinc-800 text-zinc-400"
+                                        )}
+                                    >
+                                        {item.episodeCount} tập
+                                    </span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+};
 
 export const ServerTabs = ({ episodes, activeEpisode, switchTab, isOpen, onToggleOpen }) => {
     const { t } = useTranslation();
@@ -269,6 +340,46 @@ export const EpisodeGridItem = ({
     );
 };
 
+const isTmdbSeasonAvailable = (tmdbData, seasonNumber) => {
+    if (!tmdbData || !seasonNumber) return true;
+    if (Array.isArray(tmdbData.seasons) && tmdbData.seasons.length > 0) {
+        return tmdbData.seasons.some((s) => Number(s.season_number) === Number(seasonNumber));
+    }
+    if (tmdbData.number_of_seasons) {
+        return Number(seasonNumber) <= tmdbData.number_of_seasons;
+    }
+    return true;
+};
+
+const fetchSeasonEpisodesData = async (seasonItem, tmdbId, tmdbData) => {
+    try {
+        const canFetchTmdb = Boolean(
+            tmdbId &&
+            seasonItem?.season &&
+            isTmdbSeasonAvailable(tmdbData, seasonItem.season)
+        );
+
+        const fetchPromises = [
+            seasonItem?.slug
+                ? vodService.fetchSourceData(seasonItem.slug, SOURCES.SOURCE_K)
+                : Promise.resolve(null),
+            canFetchTmdb
+                ? vodService.fetchTMDBSeason(tmdbId, seasonItem.season)
+                : Promise.resolve(null),
+        ];
+
+        const [sourceRes, tmdbSeasonRes] = await Promise.all(fetchPromises);
+        return {
+            episodes: sourceRes?.episodes || [],
+            movie: sourceRes?.movie || null,
+            imdbEpisodes: tmdbSeasonRes?.episodes || [],
+        };
+    } catch (err) {
+        console.warn("fetchSeasonEpisodesData error:", err);
+        return { episodes: [], movie: null, imdbEpisodes: [] };
+    }
+};
+
 export const VodPlayEpisodesSection = ({
     episodes,
     activeEpisode,
@@ -279,25 +390,125 @@ export const VodPlayEpisodesSection = ({
     openEpisode,
     movie,
     formatEpisodeName,
+    seasons = [],
+    currentSeason = 1,
+    tmdbData,
+    onPlaySeasonEpisode,
 }) => {
     const { t } = useTranslation();
     const [isOpen, setIsOpen] = useState(true);
+    const [viewingSeason, setViewingSeason] = useState(currentSeason);
+    const [seasonCache, setSeasonCache] = useState({});
+    const [loadingSeason, setLoadingSeason] = useState(false);
+    const [activeRefServer, setActiveRefServer] = useState(null);
+
+    useEffect(() => {
+        if (currentSeason) {
+            setViewingSeason(currentSeason);
+        }
+    }, [currentSeason]);
+
+    const isCurrentSeasonView = Number(viewingSeason) === Number(currentSeason);
+
+    const handleSelectSeasonTab = useCallback(async (seasonItem) => {
+        const sNum = seasonItem.season;
+        setViewingSeason(sNum);
+        setActiveRefServer(null);
+
+        if (Number(sNum) === Number(currentSeason) || seasonCache[sNum]) {
+            return;
+        }
+
+        setLoadingSeason(true);
+        const tmdbId = movie?.tmdb_id || movie?.tmdb?.id || tmdbData?.id || seasonItem.tmdbId;
+        const result = await fetchSeasonEpisodesData(seasonItem, tmdbId, tmdbData);
+        setSeasonCache((prev) => ({ ...prev, [sNum]: result }));
+        setLoadingSeason(false);
+    }, [currentSeason, seasonCache, movie, tmdbData]);
+
+    const currentSeasonData = useMemo(() => {
+        if (isCurrentSeasonView) {
+            return {
+                episodesList: episodes,
+                activeGroup: activeEpisode,
+                items: episodeListData,
+                targetMovie: movie,
+            };
+        }
+
+        const cached = seasonCache[viewingSeason];
+        const cachedEps = cached?.episodes || [];
+        const cachedGroup = activeRefServer || cachedEps[0] || null;
+        const cachedImdb = cached?.imdbEpisodes || [];
+        const seasonMovie = cached?.movie || movie;
+        const computedList = computeEpisodeListData(cachedGroup, cachedImdb, seasonMovie, tmdbData);
+
+        return {
+            episodesList: cachedEps,
+            activeGroup: cachedGroup,
+            items: computedList,
+            targetMovie: seasonMovie,
+        };
+    }, [isCurrentSeasonView, episodes, activeEpisode, episodeListData, movie, seasonCache, viewingSeason, activeRefServer, tmdbData]);
+
+    const handleSwitchServerTab = useCallback((group) => {
+        if (isCurrentSeasonView) {
+            switchTab(group);
+        } else {
+            setActiveRefServer(group);
+        }
+    }, [isCurrentSeasonView, switchTab]);
+
+    const handleEpisodeClick = useCallback((itemServer, activeGroup, targetMovie) => {
+        if (isCurrentSeasonView) {
+            openEpisode(itemServer, activeGroup, targetMovie);
+        } else {
+            const seasonItem = seasons.find((s) => Number(s.season) === Number(viewingSeason));
+            if (onPlaySeasonEpisode) {
+                onPlaySeasonEpisode({
+                    server: itemServer,
+                    activeEpisode: activeGroup,
+                    movie: targetMovie,
+                    seasonItem,
+                });
+            } else {
+                openEpisode(itemServer, activeGroup, targetMovie);
+            }
+        }
+    }, [isCurrentSeasonView, openEpisode, seasons, viewingSeason, onPlaySeasonEpisode]);
 
     if (!episodes || episodes.length === 0) return null;
 
     return (
         <div className="overflow-hidden rounded-2xl border border-white/5 bg-zinc-900/30 shadow-2xl backdrop-blur-xl transition-all duration-300">
+            {seasons && seasons.length > 1 && (
+                <SeasonTabs
+                    seasons={seasons}
+                    currentSeason={viewingSeason}
+                    playingSeason={currentSeason}
+                    movie={movie}
+                    onSelectSeason={handleSelectSeasonTab}
+                />
+            )}
+
             <ServerTabs
-                episodes={episodes}
-                activeEpisode={activeEpisode}
-                switchTab={switchTab}
+                episodes={currentSeasonData.episodesList}
+                activeEpisode={currentSeasonData.activeGroup}
+                switchTab={handleSwitchServerTab}
                 isOpen={isOpen}
                 onToggleOpen={() => setIsOpen((prev) => !prev)}
             />
 
             {isOpen && (
                 <div className="p-4 md:p-6 animate-in fade-in slide-in-from-top-2 duration-200">
-                    {episodeListData && episodeListData.length > 0 ? (
+                    {loadingSeason ? (
+                        <div className="flex flex-col items-center justify-center py-12 text-center">
+                            <div className="h-6 w-6 animate-spin rounded-full border-2 border-red-600 border-t-transparent mb-2" />
+                            <p className="text-xs font-bold text-zinc-400">
+                                {t("vodPlay.loadingSeason") || "Đang tải danh sách tập..."}
+                            </p>
+                        </div>
+                    ) : currentSeasonData.items && currentSeasonData.items.length > 0 ? (
                         <div
                             className={`grid gap-3 md:gap-4 ${
                                 isCompactView
@@ -305,10 +516,10 @@ export const VodPlayEpisodesSection = ({
                                     : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
                             }`}
                         >
-                            {episodeListData.map((item) => {
+                            {currentSeasonData.items.map((item) => {
                                 if (!item?.server) return null;
                                 const episodeKey = String(getEpisodeKey(item.server.slug, item.server.name));
-                                const isActive = String(currentEpisodeId) === episodeKey;
+                                const isActive = isCurrentSeasonView && String(currentEpisodeId) === episodeKey;
 
                                 return (
                                     <EpisodeGridItem
@@ -319,9 +530,9 @@ export const VodPlayEpisodesSection = ({
                                         isCompactView={isCompactView}
                                         imdbEp={item.server?.imdbEp}
                                         episodeThumb={item.server?.thumb}
-                                        openEpisode={() => openEpisode(item.server, activeEpisode, movie)}
+                                        openEpisode={() => handleEpisodeClick(item.server, currentSeasonData.activeGroup, currentSeasonData.targetMovie)}
                                         formatEpisodeName={formatEpisodeName}
-                                        movie={movie}
+                                        movie={currentSeasonData.targetMovie}
                                     />
                                 );
                             })}

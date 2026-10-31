@@ -27,6 +27,7 @@ import {
     extractTmdbIdFromObject,
     updateWatchHistory,
     registerShakaNetworkFilter,
+    registerShakaUriResolver,
 } from "../../utils/vodPlayHelpers";
 import { dedupeHistory, addHistoryToFirestore } from "../../services/firebaseHelpers";
 import shaka from "shaka-player/dist/shaka-player.ui.js";
@@ -148,6 +149,7 @@ export const useVodPlayState = () => {
     const [viewHistory, setViewHistory] = useLocalStorage("viewHistory", []);
     const [favorites, setFavorites] = useLocalStorage("favorites", []);
     const [autoplayEnabled, setAutoplayEnabled] = useLocalStorage("autoplayEnabled", true);
+    const [seasons, setSeasons] = useState([]);
 
     return {
         movie, setMovie,
@@ -165,6 +167,7 @@ export const useVodPlayState = () => {
         viewHistory, setViewHistory,
         favorites, setFavorites,
         autoplayEnabled, setAutoplayEnabled,
+        seasons, setSeasons,
     };
 };
 
@@ -242,7 +245,6 @@ export const useVodPlayDetailSync = ({
     seasonParam = null,
     setMovie,
     setEpisodes,
-    activeEpisode,
     setActiveEpisode,
     setTmdbData,
     setTmdbCredits,
@@ -251,6 +253,7 @@ export const useVodPlayDetailSync = ({
     setTmdbRelated,
     setIsLoading,
     setMemoizedBackgrounds,
+    setSeasons,
 }) => {
     const {
         movie: fetchedMovie,
@@ -261,11 +264,18 @@ export const useVodPlayDetailSync = ({
         tmdbImages: fetchedTmdbImages,
         tmdbVideos: fetchedTmdbVideos,
         tmdbRelated: fetchedTmdbRelated,
+        seasons: fetchedSeasons,
     } = useMovieDetail(slug, sourceParam, idParam, typeParam, seasonParam);
 
     useEffect(() => {
         setIsLoading(movieLoading);
     }, [movieLoading, setIsLoading]);
+
+    useEffect(() => {
+        if (setSeasons && fetchedSeasons) {
+            setSeasons(fetchedSeasons);
+        }
+    }, [fetchedSeasons, setSeasons]);
 
     useEffect(() => {
         if (fetchedMovie) {
@@ -280,11 +290,15 @@ export const useVodPlayDetailSync = ({
         }
         if (fetchedEpisodes && fetchedEpisodes.length > 0) {
             setEpisodes(fetchedEpisodes);
-            if (!activeEpisode) {
-                setActiveEpisode(fetchedEpisodes[0]);
-            }
+            setActiveEpisode((prev) => {
+                if (!prev) return fetchedEpisodes[0];
+                const matchedServer = fetchedEpisodes.find(
+                    (s) => s.server_name === prev.server_name
+                );
+                return matchedServer || fetchedEpisodes[0];
+            });
         }
-    }, [fetchedMovie, fetchedEpisodes, activeEpisode, setMovie, setEpisodes, setActiveEpisode, setMemoizedBackgrounds]);
+    }, [fetchedMovie, fetchedEpisodes, setMovie, setEpisodes, setActiveEpisode, setMemoizedBackgrounds]);
 
     useEffect(() => {
         setTmdbData(fetchedTmdbData);
@@ -310,10 +324,28 @@ export const useVodPlayerManagement = ({
     const shakaPlayerRef = useRef(null);
     const shakaUiOverlayRef = useRef(null);
     const activeVideoElementRef = useRef(null);
+    const embedTimerRef = useRef(null);
 
     const destroyAllPlayers = async () => {
+        if (embedTimerRef.current) {
+            clearInterval(embedTimerRef.current);
+            embedTimerRef.current = null;
+        }
         await destroyAllPlayersHelper(activeVideoElementRef, shakaUiOverlayRef, shakaPlayerRef, currentUrlRef);
     };
+
+    useEffect(() => {
+        destroyAllPlayers();
+    }, [slug]);
+
+    useEffect(() => {
+        return () => {
+            if (embedTimerRef.current) {
+                clearInterval(embedTimerRef.current);
+                embedTimerRef.current = null;
+            }
+        };
+    }, []);
 
     const setupEmbedPlayer = async (embedUrl, episodeSlug, serverName = "") => {
         await destroyAllPlayers();
@@ -329,11 +361,21 @@ export const useVodPlayerManagement = ({
         iframe.allowFullscreen = true;
         iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
         iframe.referrerPolicy = "strict-origin-when-cross-origin";
+        // Chặn quảng cáo/popup từ embed player (Source C - streamc.xyz)
+        // allow-popups: bypass anti-adblock detection (popup bị sandbox, opaque origin → vô hại)
+        // KHÔNG cấp allow-popups-to-escape-sandbox → popup không thoát được sandbox
+        iframe.sandbox = "allow-scripts allow-same-origin allow-forms allow-fullscreen allow-popups";
 
         playerDiv.appendChild(iframe);
         const episodeKey = String(getEpisodeKey(episodeSlug, serverName));
         setCurrentEpisodeId(episodeKey);
         currentUrlRef.current = formattedUrl;
+
+        let currentPos = getLastWatchedPosition(episodeSlug, serverName) || 0;
+        embedTimerRef.current = setInterval(() => {
+            currentPos += 10;
+            setWatchlist(episodeSlug, currentPos, { name: serverName, server_name: serverName }, movie);
+        }, 10000);
     };
 
     const getLastWatchedPosition = useCallback((episodeSlug, episodeName = "") => {
@@ -367,6 +409,75 @@ export const useVodPlayerManagement = ({
         syncWatchlistToFirestore(currentUser, updatedHistory, lastFirestoreSyncRef, addHistoryToFirestore);
     };
 
+const tryLoadSingleBackup = async (player, backupUrl, setupEmbedPlayer, episodeSlug, serverName) => {
+    if ([".m3u8", ".mpd", ".m3u9"].some((ext) => backupUrl.includes(ext))) {
+        try {
+            await player.load(backupUrl);
+            return { success: true, url: backupUrl };
+        } catch {
+            return { success: false };
+        }
+    }
+    await setupEmbedPlayer(backupUrl, episodeSlug, serverName);
+    return { success: true, url: backupUrl };
+};
+
+const tryLoadBackups = async (player, backups, masterUrl, setupEmbedPlayer, episodeSlug, serverName) => {
+    if (!backups || backups.length === 0) return false;
+    // 1. Luôn ưu tiên thử tất cả link m3u8 trước (ưu tiên phát Shaka Player mượt mà, không quảng cáo)
+    for (const backup of backups) {
+        const backupUrl = backup.link_m3u8;
+        if (backupUrl && backupUrl !== masterUrl) {
+            const res = await tryLoadSingleBackup(player, backupUrl, setupEmbedPlayer, episodeSlug, serverName);
+            if (res.success) return true;
+        }
+    }
+    // 2. Fallback sang link embed (như Source C) khi không có m3u8 nào hoạt động
+    for (const backup of backups) {
+        const backupUrl = backup.link_embed;
+        if (backupUrl && backupUrl !== masterUrl) {
+            const res = await tryLoadSingleBackup(player, backupUrl, setupEmbedPlayer, episodeSlug, serverName);
+            if (res.success) return true;
+        }
+    }
+    return false;
+};
+
+    const handleShakaSuccess = ({ video, uiContainer, masterUrl, episodeSlug, serverName, movieData }) => {
+        currentUrlRef.current = masterUrl;
+
+        injectShakaAudioVersionButton({
+            uiContainer,
+            episodes: episodesRef?.current || [],
+            activeEpisode: activeEpisodeRef?.current || activeEpisode,
+            onSelectServer: switchTab,
+        });
+
+        const episodeKey = String(getEpisodeKey(episodeSlug, serverName));
+        setCurrentEpisodeId(episodeKey);
+
+        const lastPosition = getLastWatchedPosition(episodeSlug, serverName);
+        restoreVideoPosition(video, lastPosition, episodeKey, positionRestoredRef);
+
+        setupVideoTracking({
+            video, episodeSlug, serverName, movie: movieData, setWatchlist,
+            introDurationRef, skipIntroEnabledRef, autoplayEnabledRef,
+            setShowNextCountdown, setCountdownSeconds, COUNTDOWN_DURATION,
+        });
+    };
+
+    const handleShakaError = async (player, error, fallbackUrl, backups, masterUrl, episodeSlug, serverName) => {
+        console.error("Shaka Player load error:", error);
+        const backupLoaded = await tryLoadBackups(player, backups, masterUrl, setupEmbedPlayer, episodeSlug, serverName);
+        if (backupLoaded) return;
+
+        if (fallbackUrl) {
+            await setupEmbedPlayer(fallbackUrl, episodeSlug, serverName);
+            return;
+        }
+        setErrorMessage("Không thể phát video này. Vui lòng thử lại sau hoặc đổi nguồn khác.");
+    };
+
     const setupShakaPlayer = async (masterUrl, episodeSlug, serverName, movieData, fallbackUrl = null, _backups = []) => {
         const playerDiv = playerRef.current;
         if (!playerDiv) return;
@@ -379,81 +490,51 @@ export const useVodPlayerManagement = ({
         await player.attach(video);
         shakaPlayerRef.current = player;
         registerShakaNetworkFilter(player);
-
-        if (player.getNetworkingEngine && typeof player.getNetworkingEngine().registerRequestFilter === "function") {
-            player.getNetworkingEngine().registerRequestFilter((type, request) => {
-                if (request.method === "HEAD") {
-                    request.method = "GET";
-                }
-                if (request.uris && request.uris.length > 0) {
-                    const firstUri = request.uris[0];
-                    if (firstUri && typeof firstUri === "string" && !firstUri.startsWith("http") && !firstUri.startsWith("data:") && !firstUri.startsWith("blob:")) {
-                        try {
-                            const base = masterUrl.substring(0, masterUrl.lastIndexOf("/") + 1);
-                            request.uris[0] = new URL(firstUri, base).href;
-                        } catch {
-                            // ignore
-                        }
-                    }
-                }
-            });
-        }
+        registerShakaUriResolver(player, masterUrl);
 
         shakaUiOverlayRef.current = configureShakaUi(player, uiContainer, video, shaka);
 
         try {
             await player.load(masterUrl);
-            currentUrlRef.current = masterUrl;
-
-            injectShakaAudioVersionButton({
-                uiContainer,
-                episodes: episodesRef?.current || [],
-                activeEpisode: activeEpisodeRef?.current || activeEpisode,
-                onSelectServer: switchTab,
-            });
-
-            const episodeKey = String(getEpisodeKey(episodeSlug, serverName));
-            setCurrentEpisodeId(episodeKey);
-
-            const lastPosition = getLastWatchedPosition(episodeSlug, serverName);
-            restoreVideoPosition(video, lastPosition, episodeKey, positionRestoredRef);
-
-            setupVideoTracking({
-                video, episodeSlug, serverName, movie: movieData, setWatchlist,
-                introDurationRef, skipIntroEnabledRef, autoplayEnabledRef,
-                setShowNextCountdown, setCountdownSeconds, COUNTDOWN_DURATION,
-            });
+            handleShakaSuccess({ video, uiContainer, masterUrl, episodeSlug, serverName, movieData });
         } catch (error) {
-            console.error("Shaka Player load error:", error);
-            if (fallbackUrl) {
-                await setupEmbedPlayer(fallbackUrl, episodeSlug, serverName);
-                return;
-            }
-            setErrorMessage("Không thể phát video này. Vui lòng thử lại sau hoặc đổi nguồn khác.");
+            await handleShakaError(player, error, fallbackUrl, _backups, masterUrl, episodeSlug, serverName);
         }
+    };
+
+const resolveMasterPlayUrl = (server) => {
+    if (server.link_m3u8) return server.link_m3u8;
+    const m3u8Backup = server.backups?.find((b) => b.link_m3u8);
+    if (m3u8Backup?.link_m3u8) return m3u8Backup.link_m3u8;
+    return server.link_embed || null;
+};
+
+const resolveTrailerEmbedUrl = (movieData, fetchedTmdbVideos) => {
+    if (movieData?.trailer_url) return ensureYoutubeEmbedUrl(movieData.trailer_url);
+    if (!fetchedTmdbVideos || fetchedTmdbVideos.length === 0) return null;
+    const trailer = fetchedTmdbVideos.find(
+        (v) => ["Trailer", "Teaser"].includes(v.type) && v.site === "YouTube"
+    );
+    return trailer?.key ? ensureYoutubeEmbedUrl(`https://www.youtube.com/watch?v=${trailer.key}`) : null;
+};
+
+    const playFallbackTrailer = async (movieData, episodeSlug) => {
+        const trailerUrl = resolveTrailerEmbedUrl(movieData, fetchedTmdbVideos);
+        if (trailerUrl) {
+            await setupEmbedPlayer(trailerUrl, episodeSlug, "Trailer");
+            return true;
+        }
+        return false;
     };
 
     const initializePlayer = async (server, episodeSlug, movieData) => {
         setErrorMessage(null);
-        const masterUrl = server.link_m3u8 || server.link_embed;
-        const embedFallback = server.link_embed;
+        const masterUrl = resolveMasterPlayUrl(server);
+        const embedFallback = server.link_embed || server.backups?.find((b) => b.link_embed)?.link_embed;
 
         if (!masterUrl) {
-            let trailerUrl = movieData?.trailer_url;
-            if (!trailerUrl && fetchedTmdbVideos?.length > 0) {
-                const trailer = fetchedTmdbVideos.find(
-                    (v) => ["Trailer", "Teaser"].includes(v.type) && v.site === "YouTube"
-                );
-                if (trailer?.key) {
-                    trailerUrl = `https://www.youtube.com/watch?v=${trailer.key}`;
-                }
-            }
-            if (trailerUrl) {
-                const embedUrl = ensureYoutubeEmbedUrl(trailerUrl);
-                await setupEmbedPlayer(embedUrl, episodeSlug, "Trailer");
-                return;
-            }
-            setErrorMessage("Không có link phát.");
+            const hasTrailer = await playFallbackTrailer(movieData, episodeSlug);
+            if (!hasTrailer) setErrorMessage("Không có link phát.");
             return;
         }
 
@@ -598,6 +679,7 @@ export const useVodPlayerManagement = ({
         switchTab,
         openEpisode,
         initializeFromUrl,
+        destroyAllPlayers,
     };
 };
 
@@ -722,11 +804,23 @@ export const useFetchSeasonEpisodes = (tmdbData, movie, detectedSeason, setImdbE
         const isSeries = ["series", "tvshows", "tv"].includes(movie?.type) || tmdbData?.number_of_episodes > 0;
         if (!tmdbId || !isSeries) return;
 
+        const isAvailableInTmdb = () => {
+            if (Array.isArray(tmdbData?.seasons) && tmdbData.seasons.length > 0) {
+                return tmdbData.seasons.some((s) => Number(s.season_number) === Number(detectedSeason));
+            }
+            if (tmdbData?.number_of_seasons) {
+                return Number(detectedSeason) <= tmdbData.number_of_seasons;
+            }
+            return true;
+        };
+
+        if (!isAvailableInTmdb()) return;
+
         vodService.fetchTMDBSeason(tmdbId, detectedSeason)
             .then((data) => {
                 if (data?.episodes) setImdbEpisodes(data.episodes);
             })
-            .catch((err) => console.error("Fetch TMDB season error:", err));
+            .catch((err) => console.warn("Fetch TMDB season error:", err));
     }, [tmdbData, movie, detectedSeason, setImdbEpisodes]);
 };
 

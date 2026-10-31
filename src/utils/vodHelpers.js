@@ -178,11 +178,6 @@ export function getMovieImage(imagePath, source, CONFIG = {}) {
         return imagePath;
     }
 
-    if (source === "source_c") {
-        const cdnC = CONFIG.APP_DOMAIN_SOURCE_C || import.meta.env.VITE_SOURCE_C_API;
-        return `${cdnC}/api/uploads/films/${imagePath}`;
-    }
-
     if (source === "source_o") {
         const cdnO = CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE || import.meta.env.VITE_SOURCE_O_CDN_IMAGE;
         return `${cdnO}/${imagePath}`;

@@ -9,6 +9,7 @@ const TeamBadgeCol = ({ badge, name, fallbackChar }) => (
             {badge ? (
                 <img
                     loading="lazy"
+                    decoding="async"
                     src={badge}
                     alt={name}
                     className="h-full w-full object-contain"

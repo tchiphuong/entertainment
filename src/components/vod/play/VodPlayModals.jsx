@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
     ChevronLeftIcon,
@@ -7,6 +7,7 @@ import {
     ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 import { Modal, Button, Input } from "../../ui";
+import { EmptyState } from "../../common";
 
 export const ImageModal = ({
     showImageModal,
@@ -154,24 +155,16 @@ export const ShareModal = ({
 
 export const NotFoundState = () => {
     const { t } = useTranslation();
+    const navigate = useNavigate();
+
     return (
-        <div className="flex min-h-[60vh] flex-col items-center justify-center space-y-6 px-4 text-center">
-            <div className="rounded-full bg-zinc-900 p-8 ring-1 ring-white/10">
-                <ExclamationTriangleIcon className="h-16 w-16 text-zinc-600 stroke-[1.5]" />
-            </div>
-            <div className="space-y-2">
-                <h2 className="text-2xl font-black tracking-tighter text-white">
-                    {t("vodPlay.contentNotFound") || "Không tìm thấy nội dung"}
-                </h2>
-                <p className="mx-auto max-w-md text-zinc-500">
-                    {t("vodPlay.contentNotFoundDesc") || "Dữ liệu phim không khả dụng hoặc đã bị gỡ bỏ. Vui lòng thử lại sau hoặc chọn phim khác."}
-                </p>
-            </div>
-            <Link to="/vod">
-                <Button variant="primary" size="md">
-                    {t("vodPlay.backToList") || "Quay lại danh sách"}
-                </Button>
-            </Link>
-        </div>
+        <EmptyState
+            icon={ExclamationTriangleIcon}
+            title={t("vodPlay.contentNotFound") || "Không tìm thấy nội dung"}
+            description={t("vodPlay.contentNotFoundDesc") || "Dữ liệu phim không khả dụng hoặc đã bị gỡ bỏ. Vui lòng thử lại sau hoặc chọn phim khác."}
+            actionLabel={t("vodPlay.backToList") || "Quay lại danh sách"}
+            onAction={() => navigate("/vod")}
+            className="min-h-[60vh]"
+        />
     );
 };

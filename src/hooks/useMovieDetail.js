@@ -7,7 +7,12 @@ import {
     getEpisodeKey,
     extractBestTrailerUrl,
     appendTrailerServerGroup,
+    extractSeasonNumber,
 } from "../utils/vodHelpers";
+import {
+    tryFindFallbackSeasonMovie,
+    cleanBaseSlug,
+} from "../utils/vodPlayHelpers";
 
 const getTypeKey = (serverName) => {
     if (!serverName) return null;
@@ -20,65 +25,80 @@ const getTypeKey = (serverName) => {
     return "vietsub";
 };
 
-// Helper xác định danh sách source cần truy vấn (ưu tiên K và C, tạm disabled O)
+// Helper xác định danh sách source cần truy vấn (ưu tiên source truyền vào hoặc Source K)
 const determineSources = (initialSource) => {
-    const priorityOrder = [SOURCES.SOURCE_K, SOURCES.SOURCE_C];
-
-    if (initialSource && initialSource !== SOURCES.SOURCE_TMDB && initialSource !== SOURCES.SOURCE_O) {
-        return [initialSource, ...priorityOrder.filter((s) => s !== initialSource)];
+    const availableSources = [SOURCES.SOURCE_K, SOURCES.SOURCE_O, SOURCES.SOURCE_R];
+    if (initialSource && availableSources.includes(initialSource)) {
+        return [initialSource, ...availableSources.filter((s) => s !== initialSource)];
     }
-    return priorityOrder;
+    return availableSources;
 };
 
-// Helper fetch dữ liệu nguồn
-const fetchSourcesData = async (slug, isTmdb, sources, tmdbId = null, mediaType = "movie") => {
+const fetchTmdbSourcesData = async ({ slug, tmdbId, mediaType, sources = [SOURCES.SOURCE_K, SOURCES.SOURCE_O] }) => {
     const results = [];
     const resultsBySource = {};
 
-    if (isTmdb && tmdbId) {
+    for (const src of sources) {
         try {
-            const kRes = await vodService.fetchSourceData(slug, SOURCES.SOURCE_K, tmdbId, mediaType);
-            results.push({ src: SOURCES.SOURCE_K, res: kRes });
-            resultsBySource[SOURCES.SOURCE_K] = kRes;
-            const realSlug = kRes?.movie?.slug;
-            if (realSlug) {
-                // Tích hợp SOURCE_C bằng realSlug từ KKPhim
-                const otherPromises = [SOURCES.SOURCE_C].map(async (src) => {
-                    try {
-                        const res = await vodService.fetchSourceData(realSlug, src);
-                        return { src, res };
-                    } catch {
-                        return { src, res: null };
-                    }
-                });
-                const otherResults = await Promise.all(otherPromises);
-                for (const item of otherResults) {
-                    results.push(item);
-                    resultsBySource[item.src] = item.res;
+            let res = await vodService.fetchSourceData(slug, src, tmdbId, mediaType);
+            if (!res?.movie && slug && src === SOURCES.SOURCE_K) {
+                const fallbackMovie = await tryFindFallbackSeasonMovie(slug);
+                if (fallbackMovie?.slug) {
+                    res = await vodService.fetchSourceData(fallbackMovie.slug, src, tmdbId, mediaType);
                 }
             }
-        } catch (err) {
-            console.warn("Error fetching TMDB detail from Source K:", err.message);
-        }
-    } else {
-        const fetchPromises = sources.map(async (src) => {
-            try {
-                const res = await vodService.fetchSourceData(slug, src);
-                return { src, res };
-            } catch (err) {
-                console.warn(`Error fetching from ${src}:`, err.message);
-                return { src, res: null };
+            if (res?.movie) {
+                results.push({ src, res });
+                resultsBySource[src] = res;
+                break;
             }
-        });
-
-        const fetchResults = await Promise.all(fetchPromises);
-        for (const item of fetchResults) {
-            results.push(item);
-            resultsBySource[item.src] = item.res;
+        } catch (err) {
+            console.warn(`Error fetching TMDB detail from ${src}:`, err.message);
         }
     }
 
     return { results, resultsBySource };
+};
+
+const fetchDirectSourcesData = async (slug, sources) => {
+    // Sắp xếp thứ tự nguồn đảm bảo Source K luôn đứng trước
+    const orderedSources = [
+        SOURCES.SOURCE_K,
+        ...sources.filter((s) => s !== SOURCES.SOURCE_K),
+    ];
+
+    const results = [];
+    const resultsBySource = {};
+
+    for (const src of orderedSources) {
+        try {
+            let res = await vodService.fetchSourceData(slug, src);
+            if (!res?.movie && src === SOURCES.SOURCE_K && slug) {
+                // Tự động tìm kiếm fallback nếu slug không tồn tại (ví dụ phi-vu-trieu-do -> phi-vu-trieu-do-phan-1)
+                const fallbackMovie = await tryFindFallbackSeasonMovie(slug);
+                if (fallbackMovie?.slug) {
+                    res = await vodService.fetchSourceData(fallbackMovie.slug, src);
+                }
+            }
+            if (res?.movie) {
+                results.push({ src, res });
+                resultsBySource[src] = res;
+            }
+        } catch (err) {
+            console.warn(`Error fetching from ${src}:`, err.message);
+        }
+    }
+
+    return { results, resultsBySource };
+};
+
+// Helper fetch dữ liệu nguồn
+const fetchSourcesData = async (slug, isTmdb, sources, tmdbId = null, mediaType = "movie") => {
+    const isValidSlug = slug && !/^\d+$/.test(String(slug).trim()) && !slug.startsWith("tmdb-");
+    if (isTmdb && tmdbId) {
+        return fetchTmdbSourcesData({ slug, tmdbId, mediaType, isValidSlug, sources });
+    }
+    return fetchDirectSourcesData(slug, sources);
 };
 
 const isSeriesType = (type) =>
@@ -98,7 +118,7 @@ const extractTmdbFromSourceResult = (res, initialMediaType) => {
 
 // Helper tìm thông tin TMDB tốt nhất từ các nguồn
 const findBestTmdbInfo = (resultsBySource, initialTmdbId = null, initialMediaType = null) => {
-    const tmdbPriority = [SOURCES.SOURCE_K, SOURCES.SOURCE_C];
+    const tmdbPriority = [SOURCES.SOURCE_K, SOURCES.SOURCE_O, SOURCES.SOURCE_R];
     let foundTmdbId = initialTmdbId;
     let foundTmdbType = initialMediaType || "movie";
     let bestTmdbInfo = null;
@@ -134,9 +154,9 @@ const mergeEpisodesIntoMap = (mappedData, episodes, src) => {
 
         const items = serverGroup.server_data || serverGroup.items || [];
         items.forEach((item) => {
-            const epName = item.name;
-            if (!mappedData[typeKey].episodesMap[epName]) {
-                mappedData[typeKey].episodesMap[epName] = {
+            const epKey = getEpisodeKey(item.slug, item.name) ?? item.name;
+            if (!mappedData[typeKey].episodesMap[epKey]) {
+                mappedData[typeKey].episodesMap[epKey] = {
                     ...item,
                     backups: [],
                 };
@@ -145,17 +165,17 @@ const mergeEpisodesIntoMap = (mappedData, episodes, src) => {
             const link_m3u8 = item.link_m3u8 || item.m3u8;
             const link_embed = item.link_embed || item.embed;
 
-            mappedData[typeKey].episodesMap[epName].backups.push({
+            mappedData[typeKey].episodesMap[epKey].backups.push({
                 source: src,
                 link_m3u8,
                 link_embed,
             });
 
-            if (!mappedData[typeKey].episodesMap[epName].link_m3u8) {
-                mappedData[typeKey].episodesMap[epName].link_m3u8 = link_m3u8;
+            if (!mappedData[typeKey].episodesMap[epKey].link_m3u8 && link_m3u8) {
+                mappedData[typeKey].episodesMap[epKey].link_m3u8 = link_m3u8;
             }
-            if (!mappedData[typeKey].episodesMap[epName].link_embed) {
-                mappedData[typeKey].episodesMap[epName].link_embed = link_embed;
+            if (!mappedData[typeKey].episodesMap[epKey].link_embed && link_embed) {
+                mappedData[typeKey].episodesMap[epKey].link_embed = link_embed;
             }
         });
     });
@@ -243,6 +263,109 @@ const resolveMovieTmdbId = async (initialTmdbId, initialTmdbType, movieData) => 
     return { tmdbId: null, tmdbType: initialTmdbType };
 };
 
+const resolveInitialMovieData = async ({ slug, initialSource, initialId, initialType }) => {
+    const { isTmdb, tmdbIdFromSlug, mediaType } = parseSlugTmdbInfo(slug, initialSource, initialId, initialType);
+    const sources = determineSources(initialSource);
+    const { results, resultsBySource } = await fetchSourcesData(slug, isTmdb, sources, tmdbIdFromSlug, mediaType);
+    const { foundTmdbId: rawTmdbId, foundTmdbType: rawTmdbType, bestTmdbInfo } = findBestTmdbInfo(
+        resultsBySource,
+        tmdbIdFromSlug,
+        mediaType,
+    );
+    const { firstMovieData, finalEpisodes } = processMovieAndEpisodes(results, bestTmdbInfo, rawTmdbId);
+    const { tmdbId: foundTmdbId, tmdbType: foundTmdbType } = await resolveMovieTmdbId(
+        rawTmdbId,
+        rawTmdbType,
+        firstMovieData,
+    );
+    if (firstMovieData && foundTmdbId) {
+        firstMovieData.tmdb_id = foundTmdbId;
+    }
+    return { firstMovieData, finalEpisodes, foundTmdbId, foundTmdbType };
+};
+
+const buildTmdbSeasonsList = (seasons, cleanSlug, baseSlug, foundTmdbId) => {
+    const isOriginalSeason1WithSuffix = Boolean(baseSlug && /-(?:phan|season|mua|ss|part)-1$/i.test(baseSlug));
+    return seasons
+        .filter((s) => s.season_number > 0)
+        .map((s) => {
+            const isFirst = s.season_number === 1;
+            const seasonSlug = isFirst && isOriginalSeason1WithSuffix ? baseSlug : `${cleanSlug}-phan-${s.season_number}`;
+            return {
+                season: s.season_number,
+                name: s.name || `Mùa ${s.season_number}`,
+                episodeCount: s.episode_count,
+                posterPath: s.poster_path,
+                slug: isFirst && !isOriginalSeason1WithSuffix ? cleanSlug : seasonSlug,
+                tmdbId: foundTmdbId,
+            };
+        });
+};
+
+const appendMissingHigherSeasons = (seasonsList, currentMovie, cleanSlug, foundTmdbId, defaultPoster) => {
+    const currentSeasonNum = extractSeasonNumber(currentMovie) || Number(currentMovie?.tmdb?.season) || 0;
+    if (currentSeasonNum <= 0) return;
+
+    const maxSeason = Math.max(...seasonsList.map((s) => s.season), 0);
+    if (currentSeasonNum <= maxSeason) return;
+
+    for (let sNum = maxSeason + 1; sNum <= currentSeasonNum; sNum++) {
+        const epCount = sNum === currentSeasonNum ? (currentMovie?.episodes?.[0]?.server_data?.length || 0) : 0;
+        seasonsList.push({
+            season: sNum,
+            name: `Mùa ${sNum}`,
+            episodeCount: epCount,
+            posterPath: defaultPoster,
+            slug: `${cleanSlug}-phan-${sNum}`,
+            tmdbId: foundTmdbId,
+        });
+    }
+};
+
+const applyTmdbSeasons = (tmdbDetails, baseSlug, foundTmdbId, setSeasons, currentMovie) => {
+    if (!tmdbDetails?.seasons?.length) return;
+
+    const cleanSlug = cleanBaseSlug(baseSlug);
+    const tmdbSeasonsList = buildTmdbSeasonsList(tmdbDetails.seasons, cleanSlug, baseSlug, foundTmdbId);
+    appendMissingHigherSeasons(tmdbSeasonsList, currentMovie, cleanSlug, foundTmdbId, tmdbDetails.poster_path);
+
+    if (tmdbSeasonsList.length > 1) {
+        setSeasons(tmdbSeasonsList);
+    }
+};
+
+const loadTmdbExtraDetails = async ({
+    foundTmdbId,
+    foundTmdbType,
+    lang,
+    firstMovieData,
+    slug,
+    stateSetters,
+}) => {
+    if (!foundTmdbId) return;
+    const [tmdb, related] = await Promise.all([
+        vodService.fetchTMDbData(foundTmdbId, foundTmdbType, lang),
+        vodService.fetchTMDBRelated(foundTmdbId, foundTmdbType, lang),
+    ]);
+
+    if (related?.items) {
+        stateSetters.setTmdbRelated(related.items);
+    }
+
+    if (tmdb?.details) {
+        const tmdbVids = tmdb.details.videos?.results || [];
+        applyTmdbDetailsToState(tmdb.details, firstMovieData, {
+            setTmdbData: stateSetters.setTmdbData,
+            setTmdbCredits: stateSetters.setTmdbCredits,
+            setTmdbImages: stateSetters.setTmdbImages,
+            setTmdbVideos: stateSetters.setTmdbVideos,
+            setMovie: stateSetters.setMovie,
+        });
+        stateSetters.setEpisodes((prev) => applyTrailerToEpisodes(prev, firstMovieData, tmdbVids));
+        applyTmdbSeasons(tmdb.details, firstMovieData?.slug || slug, foundTmdbId, stateSetters.setSeasons, firstMovieData);
+    }
+};
+
 export const useMovieDetail = (
     slug,
     initialSource = null,
@@ -260,6 +383,7 @@ export const useMovieDetail = (
     const [tmdbImages, setTmdbImages] = useState(null);
     const [tmdbVideos, setTmdbVideos] = useState([]);
     const [tmdbRelated, setTmdbRelated] = useState([]);
+    const [seasons, setSeasons] = useState([]);
 
     const isFetchingRef = useRef(false);
 
@@ -270,68 +394,35 @@ export const useMovieDetail = (
         setError(null);
 
         try {
-            const { isTmdb, tmdbIdFromSlug, mediaType } = parseSlugTmdbInfo(
+            const { firstMovieData, finalEpisodes, foundTmdbId, foundTmdbType } = await resolveInitialMovieData({
                 slug,
                 initialSource,
                 initialId,
                 initialType,
-            );
-            const sources = determineSources(initialSource);
-
-            const { results, resultsBySource } = await fetchSourcesData(
-                slug,
-                isTmdb,
-                sources,
-                tmdbIdFromSlug,
-                mediaType,
-            );
-            const { foundTmdbId: rawTmdbId, foundTmdbType: rawTmdbType, bestTmdbInfo } = findBestTmdbInfo(
-                resultsBySource,
-                tmdbIdFromSlug,
-                mediaType,
-            );
-            const { firstMovieData, finalEpisodes } = processMovieAndEpisodes(
-                results,
-                bestTmdbInfo,
-                rawTmdbId,
-            );
-
-            const { tmdbId: foundTmdbId, tmdbType: foundTmdbType } = await resolveMovieTmdbId(
-                rawTmdbId,
-                rawTmdbType,
-                firstMovieData,
-            );
-            if (firstMovieData && foundTmdbId) {
-                firstMovieData.tmdb_id = foundTmdbId;
-            }
+            });
 
             const episodesWithTrailer = applyTrailerToEpisodes(finalEpisodes, firstMovieData);
             setMovie(firstMovieData);
             setEpisodes(episodesWithTrailer);
 
-            if (foundTmdbId) {
-                const lang = i18n.language === "vi" ? "vi-VN" : "en-US";
-                const [tmdb, related] = await Promise.all([
-                    vodService.fetchTMDbData(foundTmdbId, foundTmdbType, lang),
-                    vodService.fetchTMDBRelated(foundTmdbId, foundTmdbType, lang),
-                ]);
-
-                if (related?.items) {
-                    setTmdbRelated(related.items);
-                }
-
-                if (tmdb?.details) {
-                    const tmdbVids = tmdb.details.videos?.results || [];
-                    applyTmdbDetailsToState(tmdb.details, firstMovieData, {
-                        setTmdbData,
-                        setTmdbCredits,
-                        setTmdbImages,
-                        setTmdbVideos,
-                        setMovie,
-                    });
-                    setEpisodes((prev) => applyTrailerToEpisodes(prev, firstMovieData, tmdbVids));
-                }
-            }
+            const lang = i18n.language === "vi" ? "vi-VN" : "en-US";
+            await loadTmdbExtraDetails({
+                foundTmdbId,
+                foundTmdbType,
+                lang,
+                firstMovieData,
+                slug,
+                stateSetters: {
+                    setTmdbRelated,
+                    setTmdbData,
+                    setTmdbCredits,
+                    setTmdbImages,
+                    setTmdbVideos,
+                    setMovie,
+                    setEpisodes,
+                    setSeasons,
+                },
+            });
         } catch (err) {
             console.error("useMovieDetail error:", err);
             setError(err.message);
@@ -348,6 +439,7 @@ export const useMovieDetail = (
     return {
         movie,
         episodes,
+        seasons,
         loading,
         error,
         tmdbData,

@@ -7,6 +7,7 @@ import LeagueSection from "../components/schedule/LeagueSection";
 import LeagueStandings from "../components/schedule/LeagueStandings";
 import MatchDetailModal from "../components/schedule/MatchDetailModal";
 import { scheduleService } from "../services/schedule/scheduleService";
+import { LazySection } from "../components/common";
 
 const ScheduleHeader = ({ activeTab, setActiveTab, totalMatches, t }) => {
     const isMatches = activeTab === "matches";
@@ -189,14 +190,24 @@ export default function Schedule() {
                         {/* Match Lists by League */}
                         {hasEvents ? (
                             <div className="space-y-10 pb-16">
-                                {Object.entries(groupedEvents).map(([league, leagueEvents]) => (
-                                    <LeagueSection
-                                        key={league}
-                                        league={league}
-                                        events={leagueEvents}
-                                        onSelectMatch={handleSelectMatch}
-                                    />
-                                ))}
+                                {Object.entries(groupedEvents).map(([league, leagueEvents], idx) => {
+                                    const section = (
+                                        <LeagueSection
+                                            key={league}
+                                            league={league}
+                                            events={leagueEvents}
+                                            onSelectMatch={handleSelectMatch}
+                                        />
+                                    );
+
+                                    if (idx < 2) return section;
+
+                                    return (
+                                        <LazySection key={league} rootMargin="250px" minHeight="180px">
+                                            {section}
+                                        </LazySection>
+                                    );
+                                })}
                             </div>
                         ) : (
                             !loading && (

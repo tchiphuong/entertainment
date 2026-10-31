@@ -104,6 +104,7 @@ const TopViewMovieCard = memo(
                         <div className="aspect-2/3 relative overflow-hidden rounded-lg border border-white/5 bg-zinc-900 shadow-2xl transition-all duration-300 group-hover:border-white/20">
                             <img
                                 loading="lazy"
+                                decoding="async"
                                 src={getImageUrl(movie, "poster")}
                                 alt={movie.name}
                                 className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"

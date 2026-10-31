@@ -22,15 +22,11 @@ const TMDB_API_KEYS = [
     .map((k) => k?.trim())
     .filter((k, idx, arr) => Boolean(k) && arr.indexOf(k) === idx);
 
-const FINAL_TMDB_KEYS = TMDB_API_KEYS.length > 0 ? TMDB_API_KEYS : [
-    "3356865d41894a2fa9bfa84b2b5f59bb",
-    "1865f43a0549ca50d341dd9ab8b29f49",
-    "304ca56b1b7b57ca7a47d9b59946be94",
-];
+const FINAL_TMDB_KEYS = TMDB_API_KEYS;
 
 const CONFIG = {
     TMDB_API_KEYS: FINAL_TMDB_KEYS,
-    TMDB_BASE_URL: import.meta.env.VITE_TMDB_BASE_URL || "https://api.themoviedb.org/3",
+    TMDB_BASE_URL: import.meta.env.VITE_TMDB_BASE_URL || "",
 };
 
 // Quản lý trạng thái cooldown của từng key nhằm tránh lỗi 429 rate limit

@@ -38,6 +38,7 @@ function ActorAvatar({ name, profilePath, className = "" }) {
         return (
             <img
                 loading="lazy"
+                decoding="async"
                 src={activeSrc}
                 alt={name || "Diễn viên"}
                 onError={() => setHasError(true)}

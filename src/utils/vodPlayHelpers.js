@@ -11,11 +11,11 @@ import {
     TMDB_IMAGE_SIZES,
 } from "../constants";
 import { getMediaType, extractSeasonNumber } from "./vodIdentifier";
+import { searchTMDBFirstMatch } from "../services/vod/tmdbService";
+import { vodService } from "../services/vod/vodService";
 
 const CONFIG = {
-    APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
     APP_DOMAIN_SOURCE_K_CDN_IMAGE: import.meta.env.VITE_SOURCE_K_CDN_IMAGE,
-    APP_DOMAIN_SOURCE_C: import.meta.env.VITE_SOURCE_C_API,
     APP_DOMAIN_SOURCE_O_CDN_IMAGE: import.meta.env.VITE_SOURCE_O_CDN_IMAGE,
 };
 
@@ -118,10 +118,69 @@ export const registerShakaNetworkFilter = (player) => {
     });
 };
 
+export const registerShakaUriResolver = (player, masterUrl) => {
+    const netEngine = player?.getNetworkingEngine?.();
+    if (!netEngine || typeof netEngine.registerRequestFilter !== "function" || !masterUrl) return;
+
+    netEngine.registerRequestFilter((type, request) => {
+        if (request.method === "HEAD") {
+            request.method = "GET";
+        }
+        const firstUri = request.uris?.[0];
+        const isRelative =
+            firstUri &&
+            typeof firstUri === "string" &&
+            !firstUri.startsWith("http") &&
+            !firstUri.startsWith("data:") &&
+            !firstUri.startsWith("blob:");
+
+        if (isRelative) {
+            try {
+                const base = masterUrl.substring(0, masterUrl.lastIndexOf("/") + 1);
+                request.uris[0] = new URL(firstUri, base).href;
+            } catch {
+                // bỏ qua lỗi phân tích URL
+            }
+        }
+    });
+};
+
 // ==========================================
 // 2. NETWORK INTERCEPTORS (JWPlayer + M3U8)
 // ==========================================
 let isInterceptorInitialized = false;
+
+const handleM3u8TextResponse = (text, url, response) => {
+    const hasAdKeywords = ["#EXT-X-DISCONTINUITY", "convertv7/", "/adjump/", "ads"].some((kw) => text.includes(kw));
+    if (!hasAdKeywords) return response;
+
+    const baseURL = url
+        .split("?")[0]
+        .substring(0, url.split("?")[0].lastIndexOf("/") + 1);
+    const cleanedText = cleanM3U8Content(text, baseURL);
+
+    if (cleanedText === text) return response;
+
+    const cleanHeaders = new Headers(response.headers);
+    cleanHeaders.delete("content-length");
+    cleanHeaders.delete("content-encoding");
+
+    return new Response(cleanedText, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: cleanHeaders,
+    });
+};
+
+const interceptM3u8Response = async (response, url) => {
+    if (!response.ok) return response;
+    try {
+        const text = await response.clone().text();
+        return handleM3u8TextResponse(text, url, response);
+    } catch {
+        return response;
+    }
+};
 
 export const initNetworkInterceptors = () => {
     if (isInterceptorInitialized || typeof window === "undefined") return;
@@ -143,25 +202,7 @@ export const initNetworkInterceptors = () => {
         const fetchPromise = originalFetch.apply(this, args);
 
         if (url?.includes(".m3u8")) {
-            return fetchPromise.then((response) => {
-                if (!response.ok) return response;
-
-                return response
-                    .clone()
-                    .text()
-                    .then((text) => {
-                        const baseURL = url
-                            .split("?")[0]
-                            .substring(0, url.split("?")[0].lastIndexOf("/") + 1);
-                        const cleanedText = cleanM3U8Content(text, baseURL);
-
-                        return new Response(cleanedText, {
-                            status: response.status,
-                            statusText: response.statusText,
-                            headers: response.headers,
-                        });
-                    });
-            });
+            return fetchPromise.then((response) => interceptM3u8Response(response, url));
         }
 
         return fetchPromise;
@@ -175,9 +216,6 @@ export function getMovieImage(imagePath, source) {
     if (!imagePath) return FALLBACK_IMAGE;
     if (["http://", "https://"].some((proto) => imagePath.startsWith(proto))) {
         return imagePath;
-    }
-    if (source === SOURCES.SOURCE_C) {
-        return `${CONFIG.APP_DOMAIN_SOURCE_C}/api/uploads/films/${imagePath}`;
     }
     if (source === SOURCES.SOURCE_O) {
         return `${CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE}/${imagePath}`;
@@ -246,6 +284,10 @@ export function extractServerType(serverName) {
 
 export function serverNameToSlug(serverName) {
     if (!serverName) return "";
+    const lower = serverName.toLowerCase();
+    if (lower.includes("lồng tiếng") || lower.includes("long tieng") || lower.includes("lt")) return "long-tieng";
+    if (lower.includes("thuyết minh") || lower.includes("thuyet minh") || lower.includes("tm")) return "thuyet-minh";
+    if (lower.includes("vietsub") || lower.includes("phụ đề") || lower.includes("phu de") || lower.includes("sub")) return "vietsub";
     return serverName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
@@ -320,7 +362,12 @@ export const formatRuntime = (runtime) => {
     return `${Math.round(runtime)} Phút`;
 };
 
-export const computeEpisodeListData = (activeEpisode, imdbEpisodes, movie, tmdbData) => {
+export const computeEpisodeListData = (
+    activeEpisode,
+    imdbEpisodes,
+    movie,
+    tmdbData,
+) => {
     const map = new Map();
     (activeEpisode?.server_data || []).forEach((s, i) => {
         if (!s) return;
@@ -328,9 +375,14 @@ export const computeEpisodeListData = (activeEpisode, imdbEpisodes, movie, tmdbD
         const k = /^\d+$/.test(String(raw)) ? String(raw) : s.slug || s.name || `idx-${i}`;
         if (!map.has(k)) {
             const epNum = Number.parseInt(k, 10);
-            const imdbEp = (!Number.isNaN(epNum) && epNum > 0)
+            let imdbEp = (!Number.isNaN(epNum) && epNum > 0)
                 ? (imdbEpisodes || []).find((e) => (e.episode_number || e.episodeNumber) === epNum)
                 : undefined;
+
+            if (!imdbEp && Array.isArray(imdbEpisodes) && imdbEpisodes[i]) {
+                imdbEp = imdbEpisodes[i];
+            }
+
             const thumb = resolveEpisodeThumb(imdbEp, tmdbData, movie);
             map.set(k, { ...s, key: k, imdbEp, thumb });
         }
@@ -654,6 +706,8 @@ export const findCurrentGroupAndIndex = (episodesList, currentKey, currentGroup)
     let index = findCurrentEpisodeInGroup(currentGroup, currentKey);
     if (index !== -1) return { group: currentGroup, index };
 
+    if (!Array.isArray(episodesList)) return { group: null, index: -1 };
+
     for (const ep of episodesList) {
         index = findCurrentEpisodeInGroup(ep, currentKey);
         if (index !== -1) return { group: ep, index };
@@ -662,6 +716,7 @@ export const findCurrentGroupAndIndex = (episodesList, currentKey, currentGroup)
 };
 
 export const getNextEpisodeData = (episodesList, currentKey, savedServerName, currentGroup) => {
+    if (!Array.isArray(episodesList)) return null;
     const { group, index } = findCurrentGroupAndIndex(episodesList, currentKey, currentGroup);
     if (index === -1 || !group) return null;
 
@@ -681,6 +736,7 @@ export const getNextEpisodeData = (episodesList, currentKey, savedServerName, cu
 };
 
 export const getPrevEpisodeData = (episodesList, currentKey, savedServerName, currentGroup) => {
+    if (!Array.isArray(episodesList)) return null;
     const { group, index } = findCurrentGroupAndIndex(episodesList, currentKey, currentGroup);
     if (index === -1 || !group) return null;
 
@@ -864,6 +920,9 @@ export const configureShakaUi = (player, uiContainer, video, shaka) => {
             "fullscreen",
         ],
         overflowMenuButtons: ["quality", "language", "captions", "playback_rate", "cast"],
+        documentPictureInPicture: {
+            enabled: false,
+        },
         addSeekBar: true,
     });
     const controls = typeof uiOverlay.getControls === "function" ? uiOverlay.getControls() : null;
@@ -1128,18 +1187,34 @@ export const setupVideoTracking = ({
     };
 };
 
+/**
+ * Bật/tắt Picture-in-Picture chuẩn gốc của trình duyệt (HTMLVideoElement Native PiP)
+ * Tuyệt đối không dùng PiP giả lập hoặc Document PiP của Shaka.
+ */
 export const togglePiP = async () => {
-    const video = document.getElementById("shaka-video") || document.getElementById("hls-video");
+    const video = document.getElementById("shaka-video") || document.getElementById("hls-video") || document.querySelector("video");
     if (!video) return;
 
     try {
+        // 1. Nếu đang bật PiP -> thoát PiP trình duyệt
         if (document.pictureInPictureElement) {
             await document.exitPictureInPicture();
-        } else if (document.pictureInPictureEnabled) {
+            return;
+        }
+
+        // 2. Kích hoạt Native Picture-in-Picture chuẩn W3C của trình duyệt
+        if (document.pictureInPictureEnabled && typeof video.requestPictureInPicture === "function") {
             await video.requestPictureInPicture();
+            return;
+        }
+
+        // 3. Fallback cho WebKit (Safari trên macOS/iOS)
+        if (video.webkitSupportsPresentationMode && typeof video.webkitSetPresentationMode === "function") {
+            const nextMode = video.webkitPresentationMode === "picture-in-picture" ? "inline" : "picture-in-picture";
+            video.webkitSetPresentationMode(nextMode);
         }
     } catch (error) {
-        console.error("PiP error:", error);
+        console.warn("Lỗi Picture-in-Picture trình duyệt:", error);
     }
 };
 
@@ -1172,3 +1247,55 @@ export const scrollHorizontalContainer = (containerRef, direction, ratio = 0.8) 
         });
     }
 };
+
+export const cleanBaseSlug = (slug) => {
+    if (!slug) return "";
+    return String(slug)
+        .replace(/-(?:phan|season|mua|ss|part)-\d+$/i, "")
+        .replace(/-(?:tap|ep)-\d+$/i, "")
+        .replace(/-\d+$/i, "")
+        .trim();
+};
+
+export const fetchRelatedSeasons = async ({ slug, tmdbId, lang = "vi-VN" }) => {
+    if (!tmdbId) return [];
+    try {
+        const tmdbRes = await vodService.fetchTMDbData(tmdbId, "tv", lang);
+        const seasons = tmdbRes?.details?.seasons;
+        if (!seasons || seasons.length === 0) return [];
+        const cleanSlug = cleanBaseSlug(slug);
+        return seasons
+            .filter((s) => s.season_number > 0)
+            .map((s) => ({
+                season: s.season_number,
+                name: s.name || `Mùa ${s.season_number}`,
+                episodeCount: s.episode_count,
+                posterPath: s.poster_path,
+                slug: s.season_number === 1 ? cleanSlug : `${cleanSlug}-phan-${s.season_number}`,
+                tmdbId,
+            }));
+    } catch (err) {
+        console.warn("fetchRelatedSeasons error:", err);
+        return [];
+    }
+};
+
+const findMovieViaTmdbSearch = async (keyword) => {
+    const tmdbMatch = await searchTMDBFirstMatch(keyword);
+    if (!tmdbMatch?.id) return null;
+    const endpoint = tmdbMatch.media_type === "tv" ? "tv" : "movie";
+    return await vodService.fetchSourceKTmdb(tmdbMatch.id, endpoint);
+};
+
+export const tryFindFallbackSeasonMovie = async (slug) => {
+    if (!slug) return null;
+    try {
+        const baseSlug = cleanBaseSlug(slug);
+        const keyword = (baseSlug || slug).replaceAll('-', " ");
+        return await findMovieViaTmdbSearch(keyword);
+    } catch (err) {
+        console.warn("tryFindFallbackSeasonMovie error:", err);
+        return null;
+    }
+};
+

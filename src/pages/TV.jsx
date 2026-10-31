@@ -39,6 +39,7 @@ const ChannelInfo = React.memo(
                             {selectedChannel.logo ? (
                                 <img
                                     loading="lazy"
+                                    decoding="async"
                                     src={selectedChannel.logo}
                                     alt={selectedChannel.name}
                                     onError={handleImageFallbackError}
@@ -1479,8 +1480,11 @@ export default function TV() {
                 "spacer", "overflow_menu", "fullscreen",
             ],
             overflowMenuButtons: [
-                "quality", "language", "captions", "playback_rate", "picture_in_picture",
+                "quality", "language", "captions", "playback_rate",
             ],
+            documentPictureInPicture: {
+                enabled: false,
+            },
             seekBarColors: {
                 base: "rgba(255,255,255,.1)",
                 buffered: "rgba(255,255,255,.2)",
@@ -2333,6 +2337,7 @@ export default function TV() {
                                                             : "opacity-80 group-hover:opacity-100")
                                                     }
                                                     loading="lazy"
+                                                    decoding="async"
                                                 />
                                             ) : (
                                                 <div className="flex h-full w-full items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950 p-2">

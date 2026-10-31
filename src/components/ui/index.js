@@ -15,6 +15,7 @@ export {
 export { InputGroup, default as InputGroupComponent } from "./InputGroup";
 export { default as LoadingSpinner } from "./LoadingSpinner";
 export { Modal, default as ModalComponent } from "./Modal";
+export { ListBox, Select, default as SelectComponent } from "./Select";
 export { Skeleton, default as SkeletonComponent } from "./Skeleton";
 export { Spinner, default as SpinnerComponent } from "./Spinner";
 export { Switch, SwitchGroup, default as SwitchComponent } from "./Switch";

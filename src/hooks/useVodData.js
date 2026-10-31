@@ -15,7 +15,6 @@ import { extractSeasonNumber, distinctMovies } from "../utils/vodHelpers";
 const CONFIG = {
     APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
     APP_DOMAIN_SOURCE_K_CDN_IMAGE: import.meta.env.VITE_SOURCE_K_CDN_IMAGE,
-    APP_DOMAIN_SOURCE_C: import.meta.env.VITE_SOURCE_C_API,
     APP_DOMAIN_SOURCE_O: import.meta.env.VITE_SOURCE_O_API,
     TMDB_API_KEY: import.meta.env.VITE_TMDB_API_KEY,
     TMDB_BASE_URL: import.meta.env.VITE_TMDB_BASE_URL,
@@ -84,13 +83,6 @@ const normalizeSourceTmdb = (m, item) => {
     m.content = item.overview || item.content || "";
 };
 
-const normalizeSourceC = (m, item) => {
-    m.poster_url = item.thumb_url;
-    m.thumb_url = item.poster_url;
-    m.episode_current = m.current_episode || m.episode_current;
-    m.lang = m.language || m.lang;
-};
-
 const normalizeSourceK = (m, item) => {
     m.poster_url = item.poster_url;
     m.thumb_url = item.thumb_url;
@@ -99,9 +91,6 @@ const normalizeSourceK = (m, item) => {
 
 const applySourceSpecificFields = (m, item, source) => {
     switch (source) {
-        case SOURCES.SOURCE_C:
-            normalizeSourceC(m, item);
-            break;
         case SOURCES.SOURCE_O:
             normalizeSourceO(m, item);
             break;
@@ -297,9 +286,6 @@ const buildCategoryUrl = (cat, tmdbLang, page, limit) => {
     let endpoint = cat.type || "";
     if (endpoint && !endpoint.startsWith("/")) endpoint = `/${endpoint}`;
 
-    if (cat.source === SOURCES.SOURCE_C) {
-        return buildUrlWithParams(CONFIG.APP_DOMAIN_SOURCE_C, `/api/films${endpoint}`, params);
-    }
     if (cat.source === SOURCES.SOURCE_R) {
         return buildUrlWithParams(CONFIG.APP_DOMAIN_SOURCE_R, `/${cat.type}`, params);
     }
