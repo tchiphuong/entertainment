@@ -17,23 +17,34 @@ const handleSyncRequest = (video, canControl, localChannel, tabId, activeUserUid
     });
 };
 
+const safelyReleaseRemoteFlag = (video, isRemoteApplyingRef, delayMs = 800) => {
+    isRemoteApplyingRef.current = true;
+    const handleSeekedOnce = () => {
+        video.removeEventListener("seeked", handleSeekedOnce);
+        setTimeout(() => {
+            isRemoteApplyingRef.current = false;
+        }, 200);
+    };
+    video.addEventListener("seeked", handleSeekedOnce);
+    setTimeout(() => {
+        video.removeEventListener("seeked", handleSeekedOnce);
+        isRemoteApplyingRef.current = false;
+    }, delayMs);
+};
+
 /**
  * Áp dụng sự kiện đồng bộ nhận được từ tab phát
  */
 const handleSyncEvent = (video, data, isRemoteApplyingRef) => {
-    isRemoteApplyingRef.current = true;
-    const elapsed = Math.max(0, (Date.now() - (data.timestamp || Date.now())) / 1000);
+    safelyReleaseRemoteFlag(video, isRemoteApplyingRef, 800);
+    const elapsed = Math.max(0, Math.min(3, (Date.now() - (data.timestamp || Date.now())) / 1000));
     const targetTime = Number(data.currentTime || 0) + (data.isPlaying ? elapsed : 0);
     const isPlaying = Boolean(data.isPlaying);
 
     applyPreciseVideoSync(video, targetTime, isPlaying, {
-        hardSeekThreshold: data.type === "TICK" ? 0.12 : 0.05,
-        rateAdjustThreshold: 0.02,
+        hardSeekThreshold: data.type === "TICK" ? 1.5 : 1.0,
+        rateAdjustThreshold: 0.08,
     });
-
-    setTimeout(() => {
-        isRemoteApplyingRef.current = false;
-    }, 120);
 };
 
 /**
@@ -61,6 +72,58 @@ const handleLocalChannelMessage = ({
     if (data.type === "SYNC_EVENT" || data.type === "TICK") {
         handleSyncEvent(video, data, isRemoteApplyingRef);
     }
+};
+
+const shouldBlockAccidentalReset = (currentTime, episodeData, roomPlayback) => {
+    if (episodeData) return false;
+    const currentSavedTime = Number(roomPlayback?.currentTime) || 0;
+    return currentTime < 1 && currentSavedTime > 5;
+};
+
+const notifyLocalBroadcastChannel = (localChannel, payload) => {
+    if (!localChannel) return;
+    try {
+        localChannel.postMessage(payload);
+    } catch {
+        // bỏ qua lỗi kênh đã đóng
+    }
+};
+
+const postLocalTick = (video, localChannel, tabId, activeUid) => {
+    if (!localChannel) return;
+    localChannel.postMessage({
+        type: "TICK",
+        isPlaying: true,
+        currentTime: video.currentTime,
+        timestamp: Date.now(),
+        senderTabId: tabId,
+        senderUid: activeUid,
+    });
+};
+
+const shouldSkipFirestoreTick = (video, room, lastFirestoreTickRef, now) => {
+    const hasMultipleParticipants = (room?.participantCount || 0) > 1;
+    if (!hasMultipleParticipants || now - lastFirestoreTickRef.current < 10000) {
+        return true;
+    }
+    // Áo giáp bảo vệ: Nếu video chưa nạp xong đang ở < 2s trong khi phòng đang xem > 5s, không ghi đè 0:00 lên phòng
+    const currentSavedTime = Number(room?.playback?.currentTime) || 0;
+    return video.currentTime < 2 && currentSavedTime > 5;
+};
+
+const syncPeriodicFirestorePlayback = ({ video, roomId, activeUser, tabId, room, lastFirestoreTickRef }) => {
+    const now = Date.now();
+    if (shouldSkipFirestoreTick(video, room, lastFirestoreTickRef, now)) {
+        return;
+    }
+
+    lastFirestoreTickRef.current = now;
+    updateWatchPartyPlayback(roomId, {
+        isPlaying: true,
+        currentTime: video.currentTime,
+        updatedBy: activeUser?.uid,
+        tabId,
+    }).catch(() => {});
 };
 
 /**
@@ -124,24 +187,17 @@ export const useWatchPartySync = ({
     // 2. Phát sóng cập nhật trạng thái Play/Pause/Seek
     const broadcastPlayback = useCallback((isPlaying, currentTime, episodeData = null) => {
         if (!roomId || !canControl || isRemoteApplyingRef.current) return;
+        if (shouldBlockAccidentalReset(currentTime, episodeData, room?.playback)) return;
 
-        // Phát sóng tức thì qua BroadcastChannel cho các tab cùng trình duyệt
-        if (localChannelRef.current) {
-            try {
-                localChannelRef.current.postMessage({
-                    type: "SYNC_EVENT",
-                    isPlaying,
-                    currentTime,
-                    timestamp: Date.now(),
-                    senderTabId: tabId,
-                    senderUid: activeUser?.uid,
-                });
-            } catch {
-                // bỏ qua lỗi kênh đã đóng
-            }
-        }
+        notifyLocalBroadcastChannel(localChannelRef.current, {
+            type: "SYNC_EVENT",
+            isPlaying,
+            currentTime,
+            timestamp: Date.now(),
+            senderTabId: tabId,
+            senderUid: activeUser?.uid,
+        });
 
-        // Phát sóng lên Firestore cho các máy khác qua mạng (hạn chế tối đa 350ms/lần)
         const now = Date.now();
         if (now - lastBroadcastTimeRef.current < 350) return;
         lastBroadcastTimeRef.current = now;
@@ -153,7 +209,7 @@ export const useWatchPartySync = ({
             updatedBy: activeUser?.uid,
             tabId,
         }).catch((err) => console.warn("Lỗi phát sóng trạng thái video:", err));
-    }, [roomId, canControl, tabId, activeEpisode, activeUser?.uid, isRemoteApplyingRef]);
+    }, [roomId, canControl, tabId, activeEpisode, activeUser?.uid, isRemoteApplyingRef, room?.playback]);
 
     // 3. Heartbeat phát sóng định kỳ của người điều khiển (Host)
     useEffect(() => {
@@ -164,32 +220,21 @@ export const useWatchPartySync = ({
             if (!video || video.paused) return;
 
             // Bắn tick qua BroadcastChannel mỗi giây để các tab cùng máy bám khít từng mili-giây
-            if (localChannelRef.current) {
-                localChannelRef.current.postMessage({
-                    type: "TICK",
-                    isPlaying: true,
-                    currentTime: video.currentTime,
-                    timestamp: Date.now(),
-                    senderTabId: tabId,
-                    senderUid: activeUser?.uid,
-                });
-            }
+            postLocalTick(video, localChannelRef.current, tabId, activeUser?.uid);
 
-            // Cứ mỗi 5 giây, cập nhật lên Firestore một lần để máy từ xa không bị trôi
-            const now = Date.now();
-            if (now - lastFirestoreTickRef.current >= 5000) {
-                lastFirestoreTickRef.current = now;
-                updateWatchPartyPlayback(roomId, {
-                    isPlaying: true,
-                    currentTime: video.currentTime,
-                    updatedBy: activeUser?.uid,
-                    tabId,
-                }).catch(() => {});
-            }
+            // Cứ mỗi 10 giây (và khi có từ 2 người cùng xem), cập nhật lên Firestore để máy từ xa không bị trôi
+            syncPeriodicFirestorePlayback({
+                video,
+                roomId,
+                activeUser,
+                tabId,
+                room,
+                lastFirestoreTickRef,
+            });
         }, 1000);
 
         return () => clearInterval(tickTimer);
-    }, [canControl, roomId, tabId, activeUser?.uid]);
+    }, [canControl, roomId, tabId, activeUser?.uid, room?.participantCount]);
 
     // 4. Lắng nghe cập nhật Firestore (áp dụng cho máy khác hoặc khi không có BroadcastChannel)
     useEffect(() => {
@@ -200,20 +245,14 @@ export const useWatchPartySync = ({
         const video = document.getElementById("shaka-video") || document.getElementById("hls-video") || document.querySelector("video");
         if (!video) return;
 
-        isRemoteApplyingRef.current = true;
+        safelyReleaseRemoteFlag(video, isRemoteApplyingRef, 1000);
         const targetTime = calculateSynchronizedTime(pb);
         const isTargetPlaying = Boolean(pb.isPlaying);
 
         applyPreciseVideoSync(video, targetTime, isTargetPlaying, {
-            hardSeekThreshold: 0.2,
-            rateAdjustThreshold: 0.03,
+            hardSeekThreshold: 1.5,
+            rateAdjustThreshold: 0.1,
         });
-
-        const timer = setTimeout(() => {
-            isRemoteApplyingRef.current = false;
-        }, 200);
-
-        return () => clearTimeout(timer);
     }, [room?.playback, tabId, activeUser?.uid, isRemoteApplyingRef]);
 
     // 5. Cơ chế tự động giám sát độ trôi (Drift Monitor) định kỳ cho người xem
@@ -222,14 +261,14 @@ export const useWatchPartySync = ({
 
         const driftCheckTimer = setInterval(() => {
             const video = document.getElementById("shaka-video") || document.getElementById("hls-video") || document.querySelector("video");
-            if (!video || isRemoteApplyingRef.current) return;
+            if (!video || isRemoteApplyingRef.current || video.paused) return;
 
             const expectedTime = calculateSynchronizedTime(room.playback);
             applyPreciseVideoSync(video, expectedTime, true, {
-                hardSeekThreshold: 0.25,
-                rateAdjustThreshold: 0.04,
+                hardSeekThreshold: 2.5,
+                rateAdjustThreshold: 0.15,
             });
-        }, 2000);
+        }, 4000);
 
         return () => clearInterval(driftCheckTimer);
     }, [canControl, room?.playback, isRemoteApplyingRef]);

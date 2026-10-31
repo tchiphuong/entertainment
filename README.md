@@ -97,12 +97,12 @@ npm install
 Tạo file `.env` với các biến môi trường:
 
 ```env
-VITE_SOURCE_K_API=<api-url>
-VITE_SOURCE_K_CDN_IMAGE=<cdn-url>
-VITE_SOURCE_C_API=<api-url>
-VITE_SOURCE_O_API=<api-url>
-VITE_SOURCE_O_FRONTEND=<frontend-url>
-VITE_SOURCE_O_CDN_IMAGE=<cdn-url>
+VITE_SOURCE_1_API=<api-url>
+VITE_SOURCE_1_CDN_IMAGE=<cdn-url>
+VITE_SOURCE_2_API=<api-url>
+VITE_SOURCE_2_FRONTEND=<frontend-url>
+VITE_SOURCE_2_CDN_IMAGE=<cdn-url>
+VITE_SOURCE_3_API=<api-url>
 VITE_TMDB_API_KEY=<tmdb-api-key>
 VITE_TMDB_BASE_URL=https://api.themoviedb.org/3
 

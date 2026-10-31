@@ -79,6 +79,29 @@ export const useWatchPartyMovieEpisodes = (movieSlug, currentEpisode) => {
         if (!movieSlug) return;
         let isMounted = true;
 
+        const isDirect = Boolean(
+            currentEpisode?.link_m3u8 && (
+                currentEpisode.link_m3u8.includes(".m3u8") ||
+                currentEpisode.link_m3u8.includes(".mpd") ||
+                String(movieSlug).startsWith("stream-")
+            )
+        );
+
+        if (isDirect) {
+            const singleEp = {
+                name: currentEpisode.name || "Trực tiếp",
+                slug: currentEpisode.slug || "live",
+                link_m3u8: currentEpisode.link_m3u8,
+            };
+            const mockServer = {
+                server_name: currentEpisode.server_name || (currentEpisode.link_m3u8.includes(".mpd") ? "DASH (MPD)" : "HLS (M3U8)"),
+                server_data: [singleEp],
+            };
+            setEpisodes([mockServer]);
+            setActiveEpisode(mockServer);
+            return;
+        }
+
         fetchSourceData(movieSlug, SOURCES.SOURCE_K)
             .then((res) => {
                 if (!isMounted) return;
@@ -167,6 +190,7 @@ const mountShakaUiPlayer = async ({
     playerDiv,
     movie,
     playUrl,
+    startTime = null,
     episodes,
     activeEpisode,
     onSelectServer,
@@ -196,7 +220,8 @@ const mountShakaUiPlayer = async ({
             onSelectServer,
         });
 
-        await player.load(playUrl);
+        // Nạp stream trực tiếp tại mốc thời gian phòng đang xem (chống reset 0:00 khi F5)
+        await player.load(playUrl, startTime > 0 ? startTime : null);
         return { video, player, uiOverlay };
     } catch (err) {
         console.warn("Lỗi tải Shaka Player trong phòng xem chung:", err);
@@ -205,7 +230,7 @@ const mountShakaUiPlayer = async ({
     }
 };
 
-const enableSeekBarForHost = (range, container, controlsContainer, video, onBroadcastPlaybackRef) => {
+const enableSeekBarForHost = (range, container, controlsContainer, video, onBroadcastPlaybackRef, isUserSeekingRef) => {
     try {
         Object.defineProperty(range, "disabled", {
             get: () => false,
@@ -231,17 +256,20 @@ const enableSeekBarForHost = (range, container, controlsContainer, video, onBroa
 
     if (!range._hasWatchPartySeekListener) {
         range._hasWatchPartySeekListener = true;
-        const handleSeekInput = (e) => {
+        const handleSeekChange = (e) => {
             const targetVal = Number(e.target.value);
             if (!Number.isNaN(targetVal) && video) {
+                if (isUserSeekingRef) isUserSeekingRef.current = true;
                 video.currentTime = targetVal;
                 if (onBroadcastPlaybackRef?.current) {
                     onBroadcastPlaybackRef.current(!video.paused, targetVal);
                 }
+                setTimeout(() => {
+                    if (isUserSeekingRef) isUserSeekingRef.current = false;
+                }, 800);
             }
         };
-        range.addEventListener("input", handleSeekInput);
-        range.addEventListener("change", handleSeekInput);
+        range.addEventListener("change", handleSeekChange);
     }
 };
 
@@ -267,7 +295,7 @@ const disableSeekBarForViewer = (range, container) => {
     }
 };
 
-const updateSeekBarPermission = (playerDiv, canControl, onBroadcastPlaybackRef) => {
+const updateSeekBarPermission = (playerDiv, canControl, onBroadcastPlaybackRef, isUserSeekingRef) => {
     if (!playerDiv) return;
     const range = playerDiv.querySelector(".shaka-seek-bar-container input") || playerDiv.querySelector(".shaka-range-element");
     const container = playerDiv.querySelector(".shaka-seek-bar-container");
@@ -277,7 +305,7 @@ const updateSeekBarPermission = (playerDiv, canControl, onBroadcastPlaybackRef) 
     if (!range) return;
 
     if (canControl) {
-        enableSeekBarForHost(range, container, controlsContainer, video, onBroadcastPlaybackRef);
+        enableSeekBarForHost(range, container, controlsContainer, video, onBroadcastPlaybackRef, isUserSeekingRef);
     } else {
         disableSeekBarForViewer(range, container);
     }
@@ -298,27 +326,34 @@ const attachVideoSyncListeners = ({
     setCountdownSeconds,
     COUNTDOWN_DURATION,
     setCurrentVideoTime,
+    isInitialSyncDoneRef,
+    isRemoteApplyingRef,
+    isUserSeekingRef,
 }) => {
     let introSkipped = false;
 
     const handleReady = () => {
-        updateSeekBarPermission(playerDiv, canControlRef.current, onBroadcastPlaybackRef);
+        updateSeekBarPermission(playerDiv, canControlRef.current, onBroadcastPlaybackRef, isUserSeekingRef);
     };
 
     const handlePlay = () => {
         handleReady();
+        if (!isInitialSyncDoneRef?.current || isRemoteApplyingRef?.current) return;
         if (canControlRef.current && onBroadcastPlaybackRef.current) {
             onBroadcastPlaybackRef.current(true, video.currentTime);
         }
     };
 
     const handlePause = () => {
+        if (!isInitialSyncDoneRef?.current || isRemoteApplyingRef?.current) return;
         if (canControlRef.current && onBroadcastPlaybackRef.current) {
             onBroadcastPlaybackRef.current(false, video.currentTime);
         }
     };
 
     const handleSeeked = () => {
+        // Chỉ phát sóng khi người dùng chủ động tua (isUserSeekingRef), tuyệt đối không phát sóng khi video tự seek do buffer hay remote sync
+        if (!isInitialSyncDoneRef?.current || isRemoteApplyingRef?.current || !isUserSeekingRef?.current) return;
         if (canControlRef.current && onBroadcastPlaybackRef.current) {
             onBroadcastPlaybackRef.current(!video.paused, video.currentTime);
         }
@@ -391,12 +426,38 @@ const useWatchPartyAudioButton = ({
 /**
  * Hook kế thừa đầy đủ mọi tính năng trình phát từ VodPlay cho WatchParty
  */
+const monitorInitialPlaybackPosition = (video, targetSync, isInitialSyncDoneRef) => {
+    if (targetSync > 0 && Math.abs(video.currentTime - targetSync) > 2) {
+        video.currentTime = targetSync;
+    }
+
+    const handleSyncVerified = () => {
+        if (targetSync <= 0 || Math.abs(video.currentTime - targetSync) <= 4) {
+            isInitialSyncDoneRef.current = true;
+            video.removeEventListener("timeupdate", handleSyncVerified);
+            video.removeEventListener("seeked", handleSyncVerified);
+        }
+    };
+    video.addEventListener("timeupdate", handleSyncVerified);
+    video.addEventListener("seeked", handleSyncVerified);
+
+    setTimeout(() => {
+        isInitialSyncDoneRef.current = true;
+    }, 3500);
+};
+
 export const useWatchPartyPlayer = ({
     room,
     canControl,
     onBroadcastPlayback,
     changeEpisode,
+    isRemoteApplyingRef,
 }) => {
+    const isInitialSyncDoneRef = useRef(false);
+    const internalRemoteRef = useRef(false);
+    const isUserSeekingRef = useRef(false);
+    const effectiveRemoteApplyingRef = isRemoteApplyingRef || internalRemoteRef;
+
     const [currentVideoTime, setCurrentVideoTime] = useState(0);
     const [hasInteracted, setHasInteracted] = useState(false);
     const [useEmbedFallback, setUseEmbedFallback] = useState(false);
@@ -464,10 +525,13 @@ export const useWatchPartyPlayer = ({
             await cleanupShakaInstances(shakaPlayerRef, shakaUiOverlayRef);
             if (isCancelled) return;
 
+            const initialSyncTime = calculateSynchronizedTime(room?.playback);
+
             const mounted = await mountShakaUiPlayer({
                 playerDiv,
                 movie: room?.movie,
                 playUrl: m3u8Url,
+                startTime: initialSyncTime,
                 episodes,
                 activeEpisode,
                 onSelectServer: handleSelectServerGroup,
@@ -489,15 +553,12 @@ export const useWatchPartyPlayer = ({
             shakaUiOverlayRef.current = uiOverlay;
             currentUrlRef.current = m3u8Url;
 
-            const initialSyncTime = calculateSynchronizedTime(room?.playback);
-            if (initialSyncTime > 0) {
-                video.currentTime = initialSyncTime;
-            }
+            monitorInitialPlaybackPosition(video, initialSyncTime, isInitialSyncDoneRef);
             if (room?.playback?.isPlaying) {
                 video.play().catch(() => {});
             }
 
-            updateSeekBarPermission(playerDiv, canControlRef.current, onBroadcastPlaybackRef);
+            updateSeekBarPermission(playerDiv, canControlRef.current, onBroadcastPlaybackRef, isUserSeekingRef);
 
             detachListeners = attachVideoSyncListeners({
                 playerDiv,
@@ -511,6 +572,9 @@ export const useWatchPartyPlayer = ({
                 setCountdownSeconds: settings.setCountdownSeconds,
                 COUNTDOWN_DURATION: settings.COUNTDOWN_DURATION,
                 setCurrentVideoTime,
+                isInitialSyncDoneRef,
+                isRemoteApplyingRef: effectiveRemoteApplyingRef,
+                isUserSeekingRef,
             });
         };
 
@@ -526,12 +590,12 @@ export const useWatchPartyPlayer = ({
     // Đồng bộ quyền kéo tua (Seek Bar) theo quyền hạn Trưởng phòng / Thành viên
     useEffect(() => {
         const playerDiv = playerDivNode || playerRef.current;
-        updateSeekBarPermission(playerDiv, canControl, onBroadcastPlaybackRef);
+        updateSeekBarPermission(playerDiv, canControl, onBroadcastPlaybackRef, isUserSeekingRef);
 
         const video = playerDiv?.querySelector("video");
         if (!video) return;
 
-        const handleReady = () => updateSeekBarPermission(playerDiv, canControlRef.current, onBroadcastPlaybackRef);
+        const handleReady = () => updateSeekBarPermission(playerDiv, canControlRef.current, onBroadcastPlaybackRef, isUserSeekingRef);
         video.addEventListener("loadedmetadata", handleReady);
         video.addEventListener("canplay", handleReady);
         video.addEventListener("playing", handleReady);
@@ -546,21 +610,29 @@ export const useWatchPartyPlayer = ({
     const handleSeekStep = (deltaSeconds) => {
         const video = document.getElementById("shaka-video") || document.querySelector("video");
         if (video && canControlRef.current) {
+            isUserSeekingRef.current = true;
             const nextTime = Math.max(0, Math.min(video.duration || Infinity, video.currentTime + deltaSeconds));
             video.currentTime = nextTime;
             if (onBroadcastPlaybackRef.current) {
                 onBroadcastPlaybackRef.current(!video.paused, nextTime);
             }
+            setTimeout(() => {
+                isUserSeekingRef.current = false;
+            }, 800);
         }
     };
 
     const handleSeekToTimestamp = (seconds) => {
         const video = document.getElementById("shaka-video") || document.querySelector("video");
         if (video && canControlRef.current) {
+            isUserSeekingRef.current = true;
             video.currentTime = seconds;
             if (onBroadcastPlaybackRef.current) {
                 onBroadcastPlaybackRef.current(!video.paused, seconds);
             }
+            setTimeout(() => {
+                isUserSeekingRef.current = false;
+            }, 800);
         }
     };
 

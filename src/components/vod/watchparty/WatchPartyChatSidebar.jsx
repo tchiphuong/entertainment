@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import {
     PaperAirplaneIcon,
     ChatBubbleLeftRightIcon,
-    ClockIcon,
     FaceSmileIcon,
     XMarkIcon,
     ChevronDownIcon,
@@ -13,7 +12,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { Button } from "../../ui";
 import { UserAvatar } from "../../common";
-import { formatVideoSeconds } from "../../../utils/watchPartyUtils";
+import { formatChatTimeGMT7 } from "../../../utils/watchPartyUtils";
 import {
     TIKTOK_QUICK_REACTIONS,
     renderMessageText,
@@ -115,10 +114,21 @@ const ReplyingBanner = ({ replyTo, onCancel }) => {
     );
 };
 
-const MessageItem = ({ msg, onSeekToTimestamp, onReply, t }) => {
+const MessageItem = ({ msg, onReply }) => {
+    if (msg.isSystem) {
+        return (
+            <div className="my-1.5 flex items-center justify-center">
+                <span className="rounded-full border border-zinc-800 bg-zinc-900/90 px-3 py-0.5 text-[10px] text-zinc-400 font-medium">
+                    {msg.text}
+                </span>
+            </div>
+        );
+    }
+
     const isGif = Boolean(extractGifStickerInfo(msg.text));
     const isEmojiOnly = isEmojiOnlyMessage(msg.text);
     const noBackground = isGif || isEmojiOnly;
+    const chatTime = formatChatTimeGMT7(msg.createdAt || msg.timestamp);
 
     return (
         <div className="group relative flex items-start gap-2.5">
@@ -130,20 +140,14 @@ const MessageItem = ({ msg, onSeekToTimestamp, onReply, t }) => {
             />
             <div className="flex-1 min-w-0">
                 <div className="flex items-baseline justify-between gap-2">
-                    <div className="flex items-baseline gap-2">
+                    <div className="flex items-baseline gap-1.5">
                         <span className="font-bold text-zinc-300">
                             {msg.senderName}
                         </span>
-                        {msg.videoTimestamp !== null && typeof msg.videoTimestamp === "number" && (
-                            <button
-                                type="button"
-                                onClick={() => onSeekToTimestamp?.(msg.videoTimestamp)}
-                                className="flex items-center gap-1 rounded bg-zinc-800 px-1.5 py-0.5 text-[10px] font-mono text-red-400 transition-colors hover:bg-zinc-700"
-                                title={t("watchParty.chat.jumpToTime")}
-                            >
-                                <ClockIcon className="h-3 w-3 stroke-2" />
-                                <span>{formatVideoSeconds(msg.videoTimestamp)}</span>
-                            </button>
+                        {chatTime && (
+                            <span className="text-[10px] font-mono text-zinc-500">
+                                {chatTime}
+                            </span>
                         )}
                     </div>
 
@@ -291,9 +295,6 @@ const ChatInputForm = ({
     handleSelectSticker,
     replyingTo,
     setReplyingTo,
-    attachTimestamp,
-    setAttachTimestamp,
-    currentVideoTime,
     inputText,
     setInputText,
     handleSend,
@@ -312,22 +313,6 @@ const ChatInputForm = ({
                 replyTo={replyingTo}
                 onCancel={() => setReplyingTo(null)}
             />
-
-            <div className="mb-2 flex items-center justify-between">
-                <button
-                    type="button"
-                    onClick={() => setAttachTimestamp(!attachTimestamp)}
-                    className={`flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-semibold transition-colors ${
-                        attachTimestamp
-                            ? "bg-red-600 text-white"
-                            : "bg-zinc-800 text-zinc-400 hover:text-white"
-                    }`}
-                    title={t("watchParty.chat.attachTimestamp", { defaultValue: "Đính kèm thời gian video" })}
-                >
-                    <ClockIcon className="h-3 w-3 stroke-2" />
-                    <span>{formatVideoSeconds(currentVideoTime)}</span>
-                </button>
-            </div>
 
             <div className="flex items-center gap-1.5">
                 <button
@@ -369,7 +354,6 @@ export const WatchPartyChatSidebar = ({
     messages = [],
     onSendMessage,
     onSeekToTimestamp,
-    currentVideoTime = 0,
     isMobileCollapsed = false,
     isMobileExpanded = false,
     onToggleMobileCollapse,
@@ -377,7 +361,6 @@ export const WatchPartyChatSidebar = ({
 }) => {
     const { t } = useTranslation();
     const [inputText, setInputText] = useState("");
-    const [attachTimestamp, setAttachTimestamp] = useState(false);
     const [isEmojiPickerOpen, setIsEmojiPickerOpen] = useState(false);
     const [replyingTo, setReplyingTo] = useState(null);
     const messagesEndRef = useRef(null);
@@ -390,16 +373,14 @@ export const WatchPartyChatSidebar = ({
         e?.preventDefault();
         if (!inputText.trim()) return;
 
-        const ts = attachTimestamp ? currentVideoTime : null;
-        onSendMessage(inputText, ts, replyingTo);
+        onSendMessage(inputText, null, replyingTo);
         setInputText("");
-        setAttachTimestamp(false);
         setIsEmojiPickerOpen(false);
         setReplyingTo(null);
     };
 
     const handleQuickReaction = (reactionCode) => {
-        onSendMessage(reactionCode, currentVideoTime);
+        onSendMessage(reactionCode);
     };
 
     const handleSelectEmoji = (emojiCode) => {
@@ -407,7 +388,7 @@ export const WatchPartyChatSidebar = ({
     };
 
     const handleSelectSticker = (gif) => {
-        onSendMessage(`[gif:${gif.url}|${gif.title}]`, currentVideoTime);
+        onSendMessage(`[gif:${gif.url}|${gif.title}]`);
         setIsEmojiPickerOpen(false);
     };
 
@@ -464,9 +445,6 @@ export const WatchPartyChatSidebar = ({
                 handleSelectSticker={handleSelectSticker}
                 replyingTo={replyingTo}
                 setReplyingTo={setReplyingTo}
-                attachTimestamp={attachTimestamp}
-                setAttachTimestamp={setAttachTimestamp}
-                currentVideoTime={currentVideoTime}
                 inputText={inputText}
                 setInputText={setInputText}
                 handleSend={handleSend}

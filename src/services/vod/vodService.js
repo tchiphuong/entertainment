@@ -3,10 +3,13 @@ import { vodCache } from "../../utils/vodCache";
 import { fetchTMDBRelated, fetchTMDBJson } from "./tmdbService";
 
 const CONFIG = {
-    APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
-    APP_DOMAIN_SOURCE_O: import.meta.env.VITE_SOURCE_O_API,
+    APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_1_API || import.meta.env.VITE_SOURCE_K_API,
+    APP_DOMAIN_SOURCE_O: import.meta.env.VITE_SOURCE_2_API || import.meta.env.VITE_SOURCE_O_API,
     API_ENDPOINT: import.meta.env.VITE_API_ENDPOINT,
 };
+
+const isSource1 = (source) => source === SOURCES.SOURCE_1 || source === SOURCES.SOURCE_K;
+const isSource2 = (source) => source === SOURCES.SOURCE_2 || source === SOURCES.SOURCE_O;
 
 // Logic cache đã được chuyển sang src/utils/vodCache.js
 const { get: getFromCache, set: saveToCache, clear: clearVodCache } = vodCache;
@@ -30,11 +33,11 @@ const normalizeMovieForSource = (item, source) => {
     const m = { ...item };
     m.source = source;
 
-    if (source === SOURCES.SOURCE_O) {
+    if (isSource2(source)) {
         m.name = m.name || m.origin_name;
         m.poster_url = fixSourceOImagePath(item.thumb_url);
         m.thumb_url = fixSourceOImagePath(item.poster_url || "");
-    } else if (source === SOURCES.SOURCE_K) {
+    } else if (isSource1(source)) {
         m.poster_url = item.poster_url;
         m.thumb_url = item.thumb_url;
     }
@@ -48,15 +51,15 @@ const normalizeMovieForSource = (item, source) => {
 
 // Tạo URL gọi API theo nguồn & TMDB ID
 const getSourceApiUrl = (slug, source, tmdbId, mediaType = "movie") => {
-    if (tmdbId && (source === SOURCES.SOURCE_K || source === SOURCES.SOURCE_O)) {
-        const domain = source === SOURCES.SOURCE_O ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
+    if (tmdbId && (isSource1(source) || isSource2(source))) {
+        const domain = isSource2(source) ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
         const typeEndpoint = mediaType === "tv" ? "tv" : "movie";
         return `${domain}/tmdb/${typeEndpoint}/${tmdbId}`;
     }
-    if (source === SOURCES.SOURCE_O) {
+    if (isSource2(source)) {
         return `${CONFIG.APP_DOMAIN_SOURCE_O}/v1/api/phim/${slug}`;
     }
-    if (source === SOURCES.SOURCE_K) {
+    if (isSource1(source)) {
         return `${CONFIG.APP_DOMAIN_SOURCE_K}/phim/${slug}`;
     }
     return `${CONFIG.API_ENDPOINT}/${slug}`;
@@ -70,8 +73,8 @@ const fetchSourceResponse = async (slug, source, tmdbId, mediaType = null) => {
     const url = getSourceApiUrl(slug, source, tmdbId, preferredType);
     let res = await fetch(url);
 
-    if (!res.ok && tmdbId && (source === SOURCES.SOURCE_K || source === SOURCES.SOURCE_O)) {
-        const domain = source === SOURCES.SOURCE_O ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
+    if (!res.ok && tmdbId && (isSource1(source) || isSource2(source))) {
+        const domain = isSource2(source) ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
         const altRes = await fetch(`${domain}/tmdb/${alternateType}/${tmdbId}`);
         if (altRes.ok) {
             res = altRes;
@@ -85,7 +88,7 @@ const parseSourceJson = (json, source) => {
     let movieData = null;
     let episodesData = [];
 
-    if (source === SOURCES.SOURCE_O && json.data?.item) {
+    if (isSource2(source) && json.data?.item) {
         movieData = normalizeMovieForSource(json.data.item, source);
         episodesData = json.data.item.episodes || [];
     } else if (json.movie) {
@@ -245,6 +248,9 @@ export const fetchSourceKTmdb = async (tmdbId, mediaType = "movie") => {
     }
 };
 
+export const searchSource1 = searchSourceK;
+export const fetchSource1Tmdb = fetchSourceKTmdb;
+
 export const vodService = {
     fetchSourceData,
     fetchTMDbData,
@@ -252,7 +258,9 @@ export const vodService = {
     fetchTMDBRelated,
     normalizeMovieForSource,
     searchSourceK,
+    searchSource1,
     fetchSourceKTmdb,
+    fetchSource1Tmdb,
     getFromCache,
     saveToCache,
     clearVodCache,

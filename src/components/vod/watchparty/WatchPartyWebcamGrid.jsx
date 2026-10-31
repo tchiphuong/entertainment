@@ -12,6 +12,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { UserAvatar } from "../../common";
 import { getOnlineParticipants } from "../../../utils/watchPartyUtils";
+import { VoiceVolumePopover } from "./VoiceVolumeControls";
 
 const IconMicOff = ({ className = "h-4 w-4" }) => (
     <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -33,7 +34,7 @@ const unlockAudioElement = (audioEl) => {
     window.addEventListener("keydown", handleUnlock, { once: true });
 };
 
-const RemotePeerAudio = ({ stream }) => {
+const RemotePeerAudio = ({ stream, volume = 100 }) => {
     const audioRef = useRef(null);
 
     useEffect(() => {
@@ -41,6 +42,7 @@ const RemotePeerAudio = ({ stream }) => {
         if (!audioEl || !stream) return;
 
         audioEl.srcObject = stream;
+        audioEl.volume = Math.max(0, Math.min(1, volume / 100));
         const playPromise = audioEl.play();
         if (playPromise) {
             playPromise.catch((err) => {
@@ -49,6 +51,12 @@ const RemotePeerAudio = ({ stream }) => {
             });
         }
     }, [stream]);
+
+    useEffect(() => {
+        if (audioRef.current) {
+            audioRef.current.volume = Math.max(0, Math.min(1, volume / 100));
+        }
+    }, [volume]);
 
     return <audio ref={audioRef} autoPlay playsInline />;
 };
@@ -184,17 +192,15 @@ const useAudioSpeaking = (stream, enabled = true) => {
     return isSpeaking;
 };
 
-const resolveParticipantBorderStyle = (isHandRaised, isSpeaking, micEnabled) => {
+const resolveParticipantBorderStyle = (isHandRaised, isSpeaking) => {
     if (isHandRaised) {
         return "border-amber-500 ring-2 ring-amber-500/80";
     }
     if (isSpeaking) {
-        return "border-emerald-400 ring-2 ring-emerald-400/90 shadow-[0_0_12px_rgba(52,211,153,0.5)] animate-pulse";
+        return "border-2 border-emerald-400 ring-2 ring-emerald-400/90 shadow-[0_0_14px_rgba(52,211,153,0.6)] animate-pulse";
     }
-    if (micEnabled) {
-        return "border-emerald-700/60 ring-1 ring-emerald-700/30";
-    }
-    return "border-zinc-800";
+    // Khi không nói chuyện: Hoàn toàn không có border chuẩn Google Meet
+    return "border-2 border-transparent";
 };
 
 const ParticipantVideoCard = ({
@@ -217,10 +223,10 @@ const ParticipantVideoCard = ({
         }
     }, [stream, hasVideo]);
 
-    const borderStyle = resolveParticipantBorderStyle(isHandRaised, isSpeaking, micEnabled);
+    const borderStyle = resolveParticipantBorderStyle(isHandRaised, isSpeaking);
 
     return (
-        <div className={`relative ${cardAspectClass} overflow-hidden rounded-xl border bg-zinc-900 transition-all ${borderStyle}`}>
+        <div className={`relative ${cardAspectClass} overflow-hidden rounded-xl bg-zinc-900 transition-all ${borderStyle}`}>
             <HandRaisedBadge isHandRaised={isHandRaised} />
 
             {hasVideo ? (
@@ -343,6 +349,12 @@ const ZoomDockControls = (props) => (
             onToggleCam={props.onToggleCam}
             t={props.t}
         />
+        <VoiceVolumePopover
+            micVolume={props.micVolume}
+            onMicVolumeChange={props.onMicVolumeChange}
+            speakerVolume={props.speakerVolume}
+            onSpeakerVolumeChange={props.onSpeakerVolumeChange}
+        />
         <ZoomActionButtons
             isHandRaised={props.isHandRaised}
             onToggleRaiseHand={props.onToggleRaiseHand}
@@ -372,6 +384,10 @@ export const WatchPartyWebcamGrid = ({
     isHost = false,
     hostId,
     onMuteAll,
+    micVolume = 100,
+    onMicVolumeChange,
+    speakerVolume = 100,
+    onSpeakerVolumeChange,
 }) => {
     const { t } = useTranslation();
     const [isMinimized, setIsMinimized] = useState(false);
@@ -395,7 +411,11 @@ export const WatchPartyWebcamGrid = ({
         <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-white shadow-xl">
             {/* Âm thanh nền */}
             {Array.from(remoteStreams.entries()).map(([peerId, stream], idx) => (
-                <RemotePeerAudio key={peerId || `remote_peer_${idx}`} stream={stream} />
+                <RemotePeerAudio
+                    key={peerId || `remote_peer_${idx}`}
+                    stream={stream}
+                    volume={speakerVolume}
+                />
             ))}
 
             {/* Header Zoom Dock Controls */}
@@ -420,6 +440,10 @@ export const WatchPartyWebcamGrid = ({
                     onToggleMinimize={() => setIsMinimized((prev) => !prev)}
                     isHost={isHost}
                     onMuteAll={onMuteAll}
+                    micVolume={micVolume}
+                    onMicVolumeChange={onMicVolumeChange}
+                    speakerVolume={speakerVolume}
+                    onSpeakerVolumeChange={onSpeakerVolumeChange}
                     t={t}
                 />
             </div>

@@ -10,6 +10,9 @@
 // 1. VOD SOURCES & SYSTEM CONFIG
 // ==========================================
 export const SOURCES = {
+    SOURCE_1: "source_1",
+    SOURCE_2: "source_2",
+    SOURCE_3: "source_3",
     SOURCE_K: "source_k",
     SOURCE_O: "source_o",
     SOURCE_R: "source_r",

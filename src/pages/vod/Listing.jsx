@@ -66,7 +66,7 @@ const extractAndSortItems = (data) => {
 };
 
 const getSourceKMetadata = async () => {
-    const domain = import.meta.env.VITE_SOURCE_K_API;
+    const domain = import.meta.env.VITE_SOURCE_1_API || import.meta.env.VITE_SOURCE_K_API;
     if (!domain) return { genres: [], countries: [] };
     const [gRes, cRes] = await Promise.all([
         fetch(`${domain}/the-loai`),
@@ -97,15 +97,15 @@ const getMergedMetadata = async () => {
 };
 
 const getSourceMetadataEndpoints = (sourceId) => {
-    if (sourceId === SOURCES.SOURCE_O) {
+    if (sourceId === SOURCES.SOURCE_2 || sourceId === SOURCES.SOURCE_O) {
         return {
-            domain: import.meta.env.VITE_SOURCE_O_API,
+            domain: import.meta.env.VITE_SOURCE_2_API || import.meta.env.VITE_SOURCE_O_API,
             genresPath: "/v1/api/the-loai",
             countriesPath: "/v1/api/quoc-gia",
         };
     }
     return {
-        domain: import.meta.env.VITE_SOURCE_K_API,
+        domain: import.meta.env.VITE_SOURCE_1_API || import.meta.env.VITE_SOURCE_K_API,
         genresPath: "/the-loai",
         countriesPath: "/quoc-gia",
     };

@@ -4,10 +4,10 @@ import { SOURCES, FALLBACK_IMAGE } from "../constants";
 export { FALLBACK_IMAGE };
 
 const CONFIG = {
-    APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_K_API,
-    APP_DOMAIN_SOURCE_K_CDN_IMAGE: import.meta.env.VITE_SOURCE_K_CDN_IMAGE,
-    APP_DOMAIN_SOURCE_O_FRONTEND: import.meta.env.VITE_SOURCE_O_FRONTEND,
-    APP_DOMAIN_SOURCE_O_CDN_IMAGE: import.meta.env.VITE_SOURCE_O_CDN_IMAGE,
+    APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_1_API || import.meta.env.VITE_SOURCE_K_API,
+    APP_DOMAIN_SOURCE_K_CDN_IMAGE: import.meta.env.VITE_SOURCE_1_CDN_IMAGE || import.meta.env.VITE_SOURCE_K_CDN_IMAGE,
+    APP_DOMAIN_SOURCE_O_FRONTEND: import.meta.env.VITE_SOURCE_2_FRONTEND || import.meta.env.VITE_SOURCE_O_FRONTEND,
+    APP_DOMAIN_SOURCE_O_CDN_IMAGE: import.meta.env.VITE_SOURCE_2_CDN_IMAGE || import.meta.env.VITE_SOURCE_O_CDN_IMAGE,
 };
 
 export const useImageFallback = () => {
@@ -30,9 +30,9 @@ export const useImageFallback = () => {
         }
 
         // Relative paths handle
-        if (source === SOURCES.SOURCE_O) {
+        if (source === SOURCES.SOURCE_2 || source === SOURCES.SOURCE_O) {
             return `${CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE}/${imagePath}`;
-        } else if (source === SOURCES.SOURCE_K) {
+        } else if (source === SOURCES.SOURCE_1 || source === SOURCES.SOURCE_K) {
             return `${CONFIG.APP_DOMAIN_SOURCE_K_CDN_IMAGE}/${imagePath}`;
         }
 

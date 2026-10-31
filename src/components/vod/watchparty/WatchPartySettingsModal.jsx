@@ -11,6 +11,7 @@ import {
     KeyIcon,
 } from "@heroicons/react/24/outline";
 import { Modal, Button, Switch } from "../../ui";
+import { VoiceVolumeSettingsBlock } from "./VoiceVolumeControls";
 
 export const WatchPartySettingsModal = ({
     isOpen,
@@ -18,6 +19,10 @@ export const WatchPartySettingsModal = ({
     settings = {},
     isHost,
     onSaveSettings,
+    micVolume = 100,
+    onMicVolumeChange,
+    speakerVolume = 100,
+    onSpeakerVolumeChange,
 }) => {
     const { t } = useTranslation();
     const controlMode = settings?.controlMode || "host_only";
@@ -65,6 +70,14 @@ export const WatchPartySettingsModal = ({
 
                     <Modal.Body>
                         <div className="space-y-4 text-xs text-zinc-300">
+                            {/* Cài đặt Âm lượng Voice Chat cá nhân */}
+                            <VoiceVolumeSettingsBlock
+                                micVolume={micVolume}
+                                onMicVolumeChange={onMicVolumeChange}
+                                speakerVolume={speakerVolume}
+                                onSpeakerVolumeChange={onSpeakerVolumeChange}
+                            />
+
                             {!isHost && (
                                 <div className="rounded-lg bg-zinc-900 p-3 text-[11px] text-zinc-400 border border-zinc-800">
                                     {t("watchParty.settings.subtitle")}

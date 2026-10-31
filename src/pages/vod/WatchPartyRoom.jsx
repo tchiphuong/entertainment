@@ -7,6 +7,7 @@ import "../../assets/styles/shaka-player.css";
 import { useAuth } from "../../contexts/AuthContext";
 import { useWatchParty } from "../../hooks/vod/useWatchParty";
 import { useWatchPartyPlayer } from "../../hooks/vod/useWatchPartyPlayer";
+import { leaveWatchPartyRoom } from "../../services/vod/watchPartyService";
 import { WatchPartyHeader } from "../../components/vod/watchparty/WatchPartyHeader";
 import { WatchPartyChatSidebar } from "../../components/vod/watchparty/WatchPartyChatSidebar";
 import { WatchPartyWebcamGrid } from "../../components/vod/watchparty/WatchPartyWebcamGrid";
@@ -18,6 +19,8 @@ import { WatchPartyNameModal } from "../../components/vod/watchparty/WatchPartyN
 import { WatchPartyEpisodeModal } from "../../components/vod/watchparty/WatchPartyEpisodeModal";
 import { WatchPartyMembersModal } from "../../components/vod/watchparty/WatchPartyMembersModal";
 import { WatchPartyMeetModal } from "../../components/vod/watchparty/WatchPartyMeetModal";
+import { WatchPartyChangeMovieModal } from "../../components/vod/watchparty/WatchPartyChangeMovieModal";
+import { WatchPartyNotificationToast } from "../../components/vod/watchparty/WatchPartyNotificationToast";
 import { VodPlayerContainer } from "../../components/vod/play/VodPlayerSection";
 import { EmptyState, BackgroundVoiceAudio } from "../../components/common";
 import { ROUTES } from "../../constants";
@@ -106,6 +109,10 @@ const RoomWebcamSection = ({
     isHost,
     hostId,
     onMuteAll,
+    micVolume,
+    updateMicVolume,
+    speakerVolume,
+    updateSpeakerVolume,
 }) => {
     if (allowWebcam) {
         return (
@@ -125,6 +132,10 @@ const RoomWebcamSection = ({
                     isHost={isHost}
                     hostId={hostId}
                     onMuteAll={onMuteAll}
+                    micVolume={micVolume}
+                    onMicVolumeChange={updateMicVolume}
+                    speakerVolume={speakerVolume}
+                    onSpeakerVolumeChange={updateSpeakerVolume}
                 />
             </div>
         );
@@ -134,7 +145,7 @@ const RoomWebcamSection = ({
     return (
         <>
             {streamEntries.map(([peerId, stream]) => (
-                <BackgroundVoiceAudio key={peerId} stream={stream} />
+                <BackgroundVoiceAudio key={peerId} stream={stream} volume={speakerVolume} />
             ))}
         </>
     );
@@ -173,6 +184,7 @@ const RoomContentView = ({
     onOpenNameModal,
     onOpenMembersModal,
     onOpenEpisodeModal,
+    onOpenChangeMovieModal,
     onNavigateLobby,
     isHandRaised,
     toggleRaiseHand,
@@ -180,6 +192,10 @@ const RoomContentView = ({
     onOpenMeetModal,
     isSyncing,
     syncPlaybackNow,
+    micVolume,
+    updateMicVolume,
+    speakerVolume,
+    updateSpeakerVolume,
 }) => {
     const { t } = useTranslation();
     const [isMobileChatCollapsed, setIsMobileChatCollapsed] = useState(false);
@@ -199,6 +215,7 @@ const RoomContentView = ({
                 onOpenQRModal={onOpenQRModal}
                 onLeaveRoom={onNavigateLobby}
                 onOpenMeetModal={onOpenMeetModal}
+                onOpenChangeMovieModal={onOpenChangeMovieModal}
             />
 
             <div className="flex flex-1 flex-col overflow-hidden lg:flex-row">
@@ -261,6 +278,10 @@ const RoomContentView = ({
                         isHost={isHost}
                         hostId={room?.hostId}
                         onMuteAll={muteAllRemoteParticipants}
+                        micVolume={micVolume}
+                        updateMicVolume={updateMicVolume}
+                        speakerVolume={speakerVolume}
+                        updateSpeakerVolume={updateSpeakerVolume}
                     />
                 </main>
 
@@ -275,7 +296,6 @@ const RoomContentView = ({
                             messages={messages}
                             onSendMessage={sendMessage}
                             onSeekToTimestamp={player.handleSeekToTimestamp}
-                            currentVideoTime={player.currentVideoTime}
                             isMobileCollapsed={isMobileChatCollapsed}
                             isMobileExpanded={isMobileChatExpanded}
                             onToggleMobileCollapse={() => {
@@ -302,6 +322,7 @@ export default function WatchPartyRoom() {
     const [isQROpen, setIsQROpen] = useState(false);
     const [isNameModalOpen, setIsNameModalOpen] = useState(false);
     const [isEpisodeModalOpen, setIsEpisodeModalOpen] = useState(false);
+    const [isChangeMovieModalOpen, setIsChangeMovieModalOpen] = useState(false);
     const [isMembersModalOpen, setIsMembersModalOpen] = useState(false);
     const [isMeetModalOpen, setIsMeetModalOpen] = useState(false);
     const [passwordModalError, setPasswordModalError] = useState("");
@@ -322,6 +343,8 @@ export default function WatchPartyRoom() {
         activeUser,
         updateDisplayName,
         changeEpisode,
+        changeMovie,
+        isRemoteApplyingRef,
         toggleParticipantControl,
         transferHost,
         error,
@@ -334,6 +357,7 @@ export default function WatchPartyRoom() {
         canControl: watchParty.canControl,
         onBroadcastPlayback: watchParty.broadcastPlayback,
         changeEpisode,
+        isRemoteApplyingRef,
     });
 
     const handleSubmitPassword = async (pass) => {
@@ -342,6 +366,20 @@ export default function WatchPartyRoom() {
             setPasswordModalError("Mật khẩu phòng không đúng. Vui lòng thử lại.");
         } else {
             setPasswordModalError("");
+        }
+    };
+
+    const handleLeaveRoom = async () => {
+        try {
+            if (activeUser?.uid && roomId) {
+                await watchParty.sendMessage(
+                    `${activeUser.displayName || "Một thành viên"} đã rời khỏi phòng xem`,
+                    { isSystem: true }
+                ).catch(() => {});
+                await leaveWatchPartyRoom(roomId, activeUser.uid);
+            }
+        } finally {
+            navigate(ROUTES.VOD.WATCH_PARTY);
         }
     };
 
@@ -385,8 +423,9 @@ export default function WatchPartyRoom() {
                 onOpenNameModal={() => setIsNameModalOpen(true)}
                 onOpenMembersModal={() => setIsMembersModalOpen(true)}
                 onOpenEpisodeModal={() => setIsEpisodeModalOpen(true)}
+                onOpenChangeMovieModal={() => setIsChangeMovieModalOpen(true)}
                 onOpenMeetModal={() => setIsMeetModalOpen(true)}
-                onNavigateLobby={() => navigate(ROUTES.VOD.WATCH_PARTY)}
+                onNavigateLobby={handleLeaveRoom}
             />
             <WatchPartySettingsModal
                 isOpen={isSettingsOpen}
@@ -394,6 +433,10 @@ export default function WatchPartyRoom() {
                 settings={room.settings}
                 isHost={isHost}
                 onSaveSettings={updateSettings}
+                micVolume={watchParty.micVolume}
+                onMicVolumeChange={watchParty.updateMicVolume}
+                speakerVolume={watchParty.speakerVolume}
+                onSpeakerVolumeChange={watchParty.updateSpeakerVolume}
             />
             <WatchPartyQRModal
                 isOpen={isQROpen}
@@ -413,6 +456,12 @@ export default function WatchPartyRoom() {
                 movie={room.movie}
                 currentEpisode={room.episode}
                 onSelectEpisode={changeEpisode}
+            />
+            <WatchPartyChangeMovieModal
+                isOpen={isChangeMovieModalOpen}
+                onOpenChange={setIsChangeMovieModalOpen}
+                currentMovie={room.movie}
+                onSelectMovie={changeMovie}
             />
             <WatchPartyMeetModal
                 isOpen={isMeetModalOpen}
@@ -434,6 +483,10 @@ export default function WatchPartyRoom() {
                 onKick={kickParticipant}
                 onBan={banParticipant}
                 onUnban={unbanParticipant}
+            />
+            <WatchPartyNotificationToast
+                participants={room.participants}
+                currentUserId={activeUser?.uid}
             />
         </>
     );

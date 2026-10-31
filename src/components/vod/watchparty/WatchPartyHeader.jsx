@@ -6,6 +6,7 @@ import {
     QrCodeIcon,
     PencilSquareIcon,
     VideoCameraIcon,
+    FilmIcon,
 } from "@heroicons/react/24/outline";
 import { Button } from "../../ui";
 import { UserAvatar, CopyButton } from "../../common";
@@ -104,6 +105,7 @@ export const WatchPartyHeader = ({
     onOpenQRModal,
     onLeaveRoom,
     onOpenMeetModal,
+    onOpenChangeMovieModal,
 }) => {
     const { t } = useTranslation();
     const participantCount = getOnlineParticipantCount(room?.participants);
@@ -146,7 +148,7 @@ export const WatchPartyHeader = ({
                     <span className="text-xs font-bold">{participantCount}</span>
                 </Button>
 
-                {/* Nút 3 chấm mở rộng (Cài đặt, Meet, Đổi tên, Điều hướng) */}
+                {/* Nút 3 chấm mở rộng (Cài đặt, Meet, Đổi tên, Đổi phim, Điều hướng) */}
                 <WatchPartyMobileMenu
                     room={room}
                     activeUser={activeUser}
@@ -154,6 +156,7 @@ export const WatchPartyHeader = ({
                     onOpenNameModal={onOpenNameModal}
                     onOpenSettings={onOpenSettings}
                     onOpenMeetModal={onOpenMeetModal}
+                    onOpenChangeMovieModal={onOpenChangeMovieModal}
                 />
 
                 {/* Nút Rời phòng */}
@@ -170,6 +173,19 @@ export const WatchPartyHeader = ({
 
             {/* Cụm bên phải trên Desktop lớn (>= xl): Dàn phẳng đầy đủ các nút */}
             <div className="hidden items-center gap-2 xl:flex">
+                {isHost && onOpenChangeMovieModal && (
+                    <Button
+                        onPress={onOpenChangeMovieModal}
+                        variant="secondary"
+                        size="sm"
+                        className="gap-1.5 border-zinc-800 bg-zinc-900 text-amber-400 hover:text-amber-300"
+                        title="Đổi phim khác cho cả phòng cùng xem"
+                    >
+                        <FilmIcon className="h-4 w-4 stroke-2" />
+                        <span>Đổi phim</span>
+                    </Button>
+                )}
+
                 <Button
                     onPress={onOpenQRModal}
                     variant="secondary"

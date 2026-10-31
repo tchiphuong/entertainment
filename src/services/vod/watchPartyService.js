@@ -24,6 +24,7 @@ import {
     isParticipantOnline,
     getOnlineParticipants,
     getOnlineParticipantCount,
+    sanitizeMovieInfo,
 } from "../../utils/watchPartyUtils";
 
 export {
@@ -276,6 +277,7 @@ export const leaveWatchPartyRoom = async (roomId, userId) => {
 
         const roomData = snap.data();
         const currentParticipants = { ...roomData.participants };
+        if (!currentParticipants[userId]) return;
         delete currentParticipants[userId];
 
         const remainingCount = Object.keys(currentParticipants).length;
@@ -362,10 +364,10 @@ export const updateWatchPartyPlayback = async (roomId, options = {}, maybeTime, 
 };
 
 /**
- * Cập nhật cấu hình phòng (Settings)
+ * Cập nhật cấu hình phòng (Settings) an toàn không ghi đè mất các thiết lập khác
  */
 export const updateWatchPartySettings = async (roomId, newSettings) => {
-    if (!roomId) return;
+    if (!roomId || !newSettings) return;
     const roomRef = doc(db, ROOMS_COLLECTION, roomId);
     const payload = { ...newSettings };
 
@@ -379,9 +381,13 @@ export const updateWatchPartySettings = async (roomId, newSettings) => {
     }
 
     const docUpdates = {
-        settings: payload,
         updatedAt: serverTimestamp(),
     };
+
+    // Dùng dot notation cập nhật từng thuộc tính trong settings để không ghi đè mất cài đặt khác
+    Object.entries(payload).forEach(([key, val]) => {
+        docUpdates[`settings.${key}`] = val;
+    });
 
     if (typeof payload.hasPassword === "boolean") {
         docUpdates.hasPassword = payload.hasPassword;
@@ -468,6 +474,36 @@ export const changeWatchPartyEpisode = async (roomId, newEpisode) => {
         });
     } catch (err) {
         console.warn("Lỗi đổi tập phim trong phòng:", err);
+        throw err;
+    }
+};
+
+/**
+ * Đổi phim khác cho cả phòng xem chung
+ */
+export const changeWatchPartyMovie = async (roomId, newMovie, newEpisode = null) => {
+    if (!roomId || !newMovie) return;
+    try {
+        const roomRef = doc(db, ROOMS_COLLECTION, roomId);
+        const moviePayload = sanitizeMovieInfo(newMovie);
+        const updates = {
+            movie: moviePayload,
+            playback: {
+                isPlaying: true,
+                currentTime: 0,
+                lastUpdated: Date.now(),
+                updatedBy: "host",
+            },
+            updatedAt: serverTimestamp(),
+        };
+
+        if (newEpisode) {
+            updates.episode = buildRoomEpisodeData(newEpisode);
+        }
+
+        await updateDoc(roomRef, updates);
+    } catch (err) {
+        console.warn("Lỗi đổi phim trong phòng xem chung:", err);
         throw err;
     }
 };
@@ -660,15 +696,16 @@ const resolveMessagePayload = (roomIdOrPayload, maybePayload) => {
     const text = (payload.text || "").trim();
     const videoTimestamp = extractTimestamp(payload);
     const replyTo = extractReplyTo(payload);
+    const isSystem = Boolean(payload.isSystem);
 
-    return { roomId, senderId, senderName, avatar, text, videoTimestamp, replyTo };
+    return { roomId, senderId, senderName, avatar, text, videoTimestamp, replyTo, isSystem };
 };
 
 /**
  * Gửi tin nhắn chat trong phòng (hỗ trợ trích dẫn replyTo chuẩn Zoom)
  */
 export const sendWatchPartyMessage = async (roomIdOrPayload, maybePayload) => {
-    const { roomId, senderId, senderName, avatar, text, videoTimestamp, replyTo } = resolveMessagePayload(roomIdOrPayload, maybePayload);
+    const { roomId, senderId, senderName, avatar, text, videoTimestamp, replyTo, isSystem } = resolveMessagePayload(roomIdOrPayload, maybePayload);
     if (!roomId || !text) return;
 
     const messagesRef = collection(db, ROOMS_COLLECTION, roomId, MESSAGES_SUB_COLLECTION);
@@ -678,7 +715,9 @@ export const sendWatchPartyMessage = async (roomIdOrPayload, maybePayload) => {
         avatar,
         text,
         videoTimestamp,
+        isSystem,
         createdAt: serverTimestamp(),
+        timestamp: Date.now(),
     };
     if (replyTo) {
         messageDoc.replyTo = replyTo;
@@ -796,7 +835,7 @@ export const subscribeWatchPartyRoom = (roomId, onUpdate, onError) => {
             if (docSnap.exists()) {
                 const data = docSnap.data();
                 if (isRoomExpired(data)) {
-                    deleteDoc(roomRef).catch(() => {});
+                    // Không thực hiện deleteDoc trong onSnapshot để tránh side-effect và tiết kiệm quota
                     onUpdate(null);
                     return;
                 }
@@ -841,24 +880,13 @@ const processRoomSnapshotDoc = (docSnap, activeRooms) => {
     const onlineParticipants = getOnlineParticipants(room.participants);
     const onlineCount = Object.keys(onlineParticipants).length;
 
-    // Chuẩn hóa danh sách thành viên và số lượng người xem theo thời gian thực
+    // Chuẩn hóa danh sách thành viên và số lượng người xem theo thời gian thực (chỉ tính toán trên UI, không write DB)
     room.participants = onlineParticipants;
     room.participantCount = onlineCount;
 
-    if (isRoomExpired(room)) {
-        deleteDoc(docSnap.ref).catch(() => {});
-        return;
-    }
-
-    // Chỉ hiển thị phòng nếu thực sự có người đang ở trong room
-    if (onlineCount > 0) {
+    // Chỉ hiển thị phòng nếu thực sự có người đang ở trong room và chưa hết hạn
+    if (onlineCount > 0 && !isRoomExpired(room)) {
         activeRooms.push(room);
-    } else if (data.participantCount !== 0 || !data.emptyAt) {
-        // Tự động dọn số lượng ảo trong DB nếu phòng đã không còn ai online
-        updateDoc(docSnap.ref, {
-            participantCount: 0,
-            emptyAt: data.emptyAt || Date.now(),
-        }).catch(() => {});
     }
 };
 
@@ -911,6 +939,7 @@ export const watchPartyService = {
     updateWatchPartyMediaState,
     updateWatchPartyParticipantName,
     changeWatchPartyEpisode,
+    changeWatchPartyMovie,
     updateParticipantControlPermission,
     transferWatchPartyHost,
     kickWatchPartyParticipant,

@@ -89,14 +89,29 @@ const MobileUserHeader = ({ activeUser, isHost, onOpenNameModal, onClose, t }) =
 
 const MobileActionList = ({
     room,
+    isHost,
     movieSlug,
     movieName,
     onOpenSettings,
     onOpenMeetModal,
+    onOpenChangeMovieModal,
     onClose,
     t,
 }) => (
     <div className="mt-1.5 space-y-1 max-h-80 overflow-y-auto">
+        {isHost && onOpenChangeMovieModal && (
+            <MobileMenuItem
+                icon={FilmIcon}
+                label={t("watchParty.changeMovie.title", { defaultValue: "Đổi phim khác" })}
+                subtitle={t("watchParty.changeMovie.subtitle", { defaultValue: "Tìm & đổi phim cho cả phòng" })}
+                onClick={() => {
+                    onClose();
+                    onOpenChangeMovieModal();
+                }}
+                isHighlight={true}
+            />
+        )}
+
         <MobileMenuItem
             icon={Cog6ToothIcon}
             label={t("watchParty.header.settings", { defaultValue: "Cài đặt phòng" })}
@@ -160,6 +175,7 @@ export const WatchPartyMobileMenu = ({
     onOpenNameModal,
     onOpenSettings,
     onOpenMeetModal,
+    onOpenChangeMovieModal,
 }) => {
     const { t } = useTranslation();
     const [isOpen, setIsOpen] = useState(false);
@@ -223,10 +239,12 @@ export const WatchPartyMobileMenu = ({
 
                     <MobileActionList
                         room={room}
+                        isHost={isHost}
                         movieSlug={movieSlug}
                         movieName={movieName}
                         onOpenSettings={onOpenSettings}
                         onOpenMeetModal={onOpenMeetModal}
+                        onOpenChangeMovieModal={onOpenChangeMovieModal}
                         onClose={() => setIsOpen(false)}
                         t={t}
                     />

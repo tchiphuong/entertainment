@@ -13,6 +13,7 @@ import {
     CameraIcon,
     LockClosedIcon,
     FilmIcon,
+    LinkIcon,
     ExclamationTriangleIcon,
     PencilSquareIcon,
 } from "@heroicons/react/24/outline";
@@ -126,10 +127,18 @@ const persistRoomSession = async (roomId, hostUid, password) => {
     } catch {}
 };
 
+const isFirestorePermissionError = (err) =>
+    err?.code === "permission-denied" || err?.message?.includes("insufficient permissions");
+
+const isFirestoreQuotaError = (err) =>
+    err?.code === "resource-exhausted" || err?.message?.includes("resource-exhausted") || err?.message?.includes("Quota exceeded");
+
 const getCreateRoomErrorMessage = (err) => {
-    const isPermissionError = err?.code === "permission-denied" || err?.message?.includes("insufficient permissions");
-    if (isPermissionError) {
-        return "Thiếu quyền truy cập Firestore (Missing or insufficient permissions). Vui lòng cập nhật Firestore Security Rules trên Firebase Console theo file firestore.rules.";
+    if (isFirestorePermissionError(err)) {
+        return "Không thể kết nối đến máy chủ phòng xem. Vui lòng thử lại sau.";
+    }
+    if (isFirestoreQuotaError(err)) {
+        return "Hệ thống phòng xem chung hiện đang quá tải. Vui lòng thử lại sau ít phút.";
     }
     return err?.message || "Không thể tạo phòng xem chung. Vui lòng thử lại.";
 };
@@ -144,7 +153,10 @@ export default function WatchPartyLobby() {
     const prefillEpisode = location.state?.activeEpisode;
 
     const [roomCodeInput, setRoomCodeInput] = useState("");
+    const [createMode, setCreateMode] = useState("movie");
     const [customSlugInput, setCustomSlugInput] = useState(prefillMovie?.slug || "");
+    const [streamUrlInput, setStreamUrlInput] = useState("");
+    const [streamTitleInput, setStreamTitleInput] = useState("");
     const [roomPasswordInput, setRoomPasswordInput] = useState("");
     const [isCreating, setIsCreating] = useState(false);
     const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -233,16 +245,18 @@ export default function WatchPartyLobby() {
             return;
         }
 
-        const slug = customSlugInput.trim();
-        if (!slug) return;
+        const isStream = createMode === "stream";
+        const targetValue = isStream ? streamUrlInput.trim() : customSlugInput.trim();
+        if (!targetValue) return;
 
         setIsCreating(true);
         setCreateError("");
         try {
             const { movie, episode } = await resolveMovieAndEpisodePayload(
-                slug,
-                prefillMovie,
-                prefillEpisode
+                targetValue,
+                isStream ? null : prefillMovie,
+                isStream ? null : prefillEpisode,
+                isStream ? streamTitleInput : ""
             );
 
             const password = roomPasswordInput.trim();
@@ -384,25 +398,99 @@ export default function WatchPartyLobby() {
                             <PrefillMovieBanner movie={prefillMovie} episode={prefillEpisode} t={t} />
                             <CreateRoomErrorAlert error={createError} t={t} />
 
-                            <form onSubmit={handleCreateCustomRoom} className="mt-6 space-y-4">
-                                <div>
-                                    <label htmlFor="custom-slug-input" className="block text-xs font-semibold text-zinc-300">
-                                        {t("watchParty.lobby.enterSlugOrName")}
-                                    </label>
-                                    <div className="relative mt-1.5 flex items-center">
-                                        <div className="pointer-events-none absolute left-3 text-zinc-500">
-                                            <FilmIcon className="h-4 w-4 stroke-2" />
+                            {/* Bộ chuyển đổi chế độ tạo phòng: Kho phim vs Dán link Stream */}
+                            <div className="mt-4 flex rounded-xl border border-zinc-800 bg-zinc-900/80 p-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setCreateMode("movie")}
+                                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-all ${
+                                        createMode === "movie"
+                                            ? "bg-zinc-800 text-white shadow-sm"
+                                            : "text-zinc-400 hover:text-zinc-200"
+                                    }`}
+                                >
+                                    <FilmIcon className="h-3.5 w-3.5 stroke-2" />
+                                    <span>Kho phim</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setCreateMode("stream")}
+                                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-all ${
+                                        createMode === "stream"
+                                            ? "bg-red-600 text-white shadow-sm"
+                                            : "text-zinc-400 hover:text-zinc-200"
+                                    }`}
+                                >
+                                    <LinkIcon className="h-3.5 w-3.5 stroke-2" />
+                                    <span>Dán link M3U8 / MPD</span>
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleCreateCustomRoom} className="mt-4 space-y-3.5">
+                                {createMode === "stream" ? (
+                                    <>
+                                        <div>
+                                            <div className="flex items-center justify-between">
+                                                <label htmlFor="stream-url-input" className="block text-xs font-semibold text-zinc-300">
+                                                    Đường dẫn luồng Stream (.m3u8 / .mpd) <span className="text-red-500">*</span>
+                                                </label>
+                                                <span className="text-[10px] text-zinc-500 font-medium">HLS & DASH</span>
+                                            </div>
+                                            <div className="relative mt-1.5 flex items-center">
+                                                <div className="pointer-events-none absolute left-3 text-zinc-500">
+                                                    <LinkIcon className="h-4 w-4 stroke-2" />
+                                                </div>
+                                                <input
+                                                    id="stream-url-input"
+                                                    type="url"
+                                                    value={streamUrlInput}
+                                                    onChange={(e) => setStreamUrlInput(e.target.value)}
+                                                    placeholder="https://example.com/playlist.m3u8 hoặc manifest.mpd"
+                                                    className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 pr-4 pl-9 text-xs text-white placeholder-zinc-500 focus:border-red-600 focus:outline-none"
+                                                    required
+                                                />
+                                            </div>
                                         </div>
-                                        <input
-                                            id="custom-slug-input"
-                                            type="text"
-                                            value={customSlugInput}
-                                            onChange={(e) => setCustomSlugInput(e.target.value)}
-                                            placeholder={t("watchParty.lobby.slugPlaceholder")}
-                                            className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 pr-4 pl-9 text-sm text-white placeholder-zinc-500 focus:border-red-600 focus:outline-none"
-                                        />
+
+                                        <div>
+                                            <label htmlFor="stream-title-input" className="block text-xs font-semibold text-zinc-300">
+                                                Tên phòng / Tên video (tùy chọn)
+                                            </label>
+                                            <div className="relative mt-1.5 flex items-center">
+                                                <div className="pointer-events-none absolute left-3 text-zinc-500">
+                                                    <FilmIcon className="h-4 w-4 stroke-2" />
+                                                </div>
+                                                <input
+                                                    id="stream-title-input"
+                                                    type="text"
+                                                    value={streamTitleInput}
+                                                    onChange={(e) => setStreamTitleInput(e.target.value)}
+                                                    placeholder="VD: Trực tiếp bóng đá, Video cá nhân..."
+                                                    className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 pr-4 pl-9 text-xs text-white placeholder-zinc-500 focus:border-red-600 focus:outline-none"
+                                                />
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div>
+                                        <label htmlFor="custom-slug-input" className="block text-xs font-semibold text-zinc-300">
+                                            {t("watchParty.lobby.enterSlugOrName")}
+                                        </label>
+                                        <div className="relative mt-1.5 flex items-center">
+                                            <div className="pointer-events-none absolute left-3 text-zinc-500">
+                                                <FilmIcon className="h-4 w-4 stroke-2" />
+                                            </div>
+                                            <input
+                                                id="custom-slug-input"
+                                                type="text"
+                                                value={customSlugInput}
+                                                onChange={(e) => setCustomSlugInput(e.target.value)}
+                                                placeholder={t("watchParty.lobby.slugPlaceholder")}
+                                                className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 pr-4 pl-9 text-xs text-white placeholder-zinc-500 focus:border-red-600 focus:outline-none"
+                                            />
+                                        </div>
                                     </div>
-                                </div>
+                                )}
 
                                 <div>
                                     <label htmlFor="room-password-setting" className="block text-xs font-semibold text-zinc-300">
@@ -418,7 +506,7 @@ export default function WatchPartyLobby() {
                                             value={roomPasswordInput}
                                             onChange={(e) => setRoomPasswordInput(e.target.value)}
                                             placeholder={t("watchParty.lobby.passwordPlaceholder")}
-                                            className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 pr-4 pl-9 text-sm text-white placeholder-zinc-500 focus:border-red-600 focus:outline-none"
+                                            className="w-full rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 pr-4 pl-9 text-xs text-white placeholder-zinc-500 focus:border-red-600 focus:outline-none"
                                         />
                                     </div>
                                 </div>
@@ -429,7 +517,10 @@ export default function WatchPartyLobby() {
                                         variant="primary"
                                         size="md"
                                         className="flex-1"
-                                        disabled={!customSlugInput.trim() || isCreating}
+                                        disabled={
+                                            (createMode === "stream" ? !streamUrlInput.trim() : !customSlugInput.trim()) ||
+                                            isCreating
+                                        }
                                     >
                                         <PlusIcon className="h-4 w-4 stroke-2" />
                                         <span>{isCreating ? t("watchParty.lobby.creating") : t("watchParty.lobby.createNow")}</span>

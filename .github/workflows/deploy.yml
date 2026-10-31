@@ -37,13 +37,19 @@ jobs:
                   VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
                   VITE_FIREBASE_MEASUREMENT_ID: ${{ secrets.VITE_FIREBASE_MEASUREMENT_ID }}
                   # VOD API Sources
-                  VITE_SOURCE_K_API: ${{ secrets.VITE_SOURCE_K_API }}
-                  VITE_SOURCE_K_CDN_IMAGE: ${{ secrets.VITE_SOURCE_K_CDN_IMAGE }}
+                  VITE_SOURCE_1_API: ${{ secrets.VITE_SOURCE_1_API || secrets.VITE_SOURCE_K_API }}
+                  VITE_SOURCE_1_CDN_IMAGE: ${{ secrets.VITE_SOURCE_1_CDN_IMAGE || secrets.VITE_SOURCE_K_CDN_IMAGE }}
+                  VITE_SOURCE_2_API: ${{ secrets.VITE_SOURCE_2_API || secrets.VITE_SOURCE_O_API }}
+                  VITE_SOURCE_2_FRONTEND: ${{ secrets.VITE_SOURCE_2_FRONTEND || secrets.VITE_SOURCE_O_FRONTEND }}
+                  VITE_SOURCE_2_CDN_IMAGE: ${{ secrets.VITE_SOURCE_2_CDN_IMAGE || secrets.VITE_SOURCE_O_CDN_IMAGE }}
+                  VITE_SOURCE_3_API: ${{ secrets.VITE_SOURCE_3_API || secrets.VITE_SOURCE_R_API }}
+                  VITE_SOURCE_K_API: ${{ secrets.VITE_SOURCE_1_API || secrets.VITE_SOURCE_K_API }}
+                  VITE_SOURCE_K_CDN_IMAGE: ${{ secrets.VITE_SOURCE_1_CDN_IMAGE || secrets.VITE_SOURCE_K_CDN_IMAGE }}
                   VITE_SOURCE_C_API: ${{ secrets.VITE_SOURCE_C_API }}
-                  VITE_SOURCE_O_API: ${{ secrets.VITE_SOURCE_O_API }}
-                  VITE_SOURCE_O_FRONTEND: ${{ secrets.VITE_SOURCE_O_FRONTEND }}
-                  VITE_SOURCE_O_CDN_IMAGE: ${{ secrets.VITE_SOURCE_O_CDN_IMAGE }}
-                  VITE_SOURCE_R_API: ${{ secrets.VITE_SOURCE_R_API }}
+                  VITE_SOURCE_O_API: ${{ secrets.VITE_SOURCE_2_API || secrets.VITE_SOURCE_O_API }}
+                  VITE_SOURCE_O_FRONTEND: ${{ secrets.VITE_SOURCE_2_FRONTEND || secrets.VITE_SOURCE_O_FRONTEND }}
+                  VITE_SOURCE_O_CDN_IMAGE: ${{ secrets.VITE_SOURCE_2_CDN_IMAGE || secrets.VITE_SOURCE_O_CDN_IMAGE }}
+                  VITE_SOURCE_R_API: ${{ secrets.VITE_SOURCE_3_API || secrets.VITE_SOURCE_R_API }}
                   # TMDB
                   VITE_TMDB_API_KEY: ${{ secrets.VITE_TMDB_API_KEY }}
                   VITE_TMDB_BASE_URL: ${{ secrets.VITE_TMDB_BASE_URL }}

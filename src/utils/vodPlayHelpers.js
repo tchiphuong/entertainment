@@ -15,8 +15,8 @@ import { searchTMDBFirstMatch } from "../services/vod/tmdbService";
 import { vodService } from "../services/vod/vodService";
 
 const CONFIG = {
-    APP_DOMAIN_SOURCE_K_CDN_IMAGE: import.meta.env.VITE_SOURCE_K_CDN_IMAGE,
-    APP_DOMAIN_SOURCE_O_CDN_IMAGE: import.meta.env.VITE_SOURCE_O_CDN_IMAGE,
+    APP_DOMAIN_SOURCE_K_CDN_IMAGE: import.meta.env.VITE_SOURCE_1_CDN_IMAGE || import.meta.env.VITE_SOURCE_K_CDN_IMAGE,
+    APP_DOMAIN_SOURCE_O_CDN_IMAGE: import.meta.env.VITE_SOURCE_2_CDN_IMAGE || import.meta.env.VITE_SOURCE_O_CDN_IMAGE,
 };
 
 // ==========================================

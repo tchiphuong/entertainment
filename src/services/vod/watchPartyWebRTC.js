@@ -30,16 +30,19 @@ const RTC_CONFIG = {
  * Trình quản lý kết nối P2P WebRTC Voice Mesh chuẩn Perfect Negotiation
  */
 export class WatchPartyWebRTC {
-    constructor({ roomId, currentUserId, onRemoteStreamChange, onConnectionStateChange }) {
+    constructor({ roomId, currentUserId, onRemoteStreamChange, onConnectionStateChange, onPeerDisconnected }) {
         this.roomId = roomId;
         this.currentUserId = currentUserId;
         this.onRemoteStreamChange = onRemoteStreamChange;
         this.onConnectionStateChange = onConnectionStateChange;
+        this.onPeerDisconnected = onPeerDisconnected;
 
         this.peers = new Map(); // targetPeerId -> RTCPeerConnection
         this.remoteStreams = new Map(); // targetPeerId -> MediaStream
         this.candidateQueues = new Map(); // targetPeerId -> [candidates]
         this.makingOffer = new Map(); // targetPeerId -> boolean
+        this.pendingCandidates = new Map(); // targetPeerId -> [candidate] gom batch
+        this.candidateBatchTimers = new Map(); // targetPeerId -> timerId
         this.localStream = null;
         this.unsubscribeSignals = null;
         this.isDestroyed = false;
@@ -161,15 +164,9 @@ export class WatchPartyWebRTC {
             });
         }
 
-        // Lắng nghe ICE candidate
+        // Lắng nghe ICE candidate và gom nhóm theo batch (tiết kiệm quota Firestore)
         pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                this.sendSignal({
-                    to: peerId,
-                    type: "candidate",
-                    payload: JSON.stringify(event.candidate),
-                });
-            }
+            this.queueIceCandidate(peerId, event.candidate);
         };
 
         // Lắng nghe stream âm thanh/video từ xa (Remote Stream)
@@ -188,18 +185,72 @@ export class WatchPartyWebRTC {
             await this.initiateOffer(peerId, pc);
         };
 
-        // Trạng thái kết nối
+        // Trạng thái kết nối P2P
         pc.onconnectionstatechange = () => {
-            if (pc.connectionState === "failed" || pc.connectionState === "closed") {
-                this.closePeerConnection(peerId);
+            const state = pc.connectionState;
+            if (state === "disconnected" || state === "failed" || state === "closed") {
+                this.onPeerDisconnected?.(peerId);
+                if (state !== "disconnected") {
+                    this.closePeerConnection(peerId);
+                }
             }
-            if (this.onConnectionStateChange) {
-                this.onConnectionStateChange(peerId, pc.connectionState);
+            this.onConnectionStateChange?.(peerId, state);
+        };
+
+        pc.oniceconnectionstatechange = () => {
+            const iceState = pc.iceConnectionState;
+            if (iceState === "disconnected" || iceState === "failed" || iceState === "closed") {
+                this.onPeerDisconnected?.(peerId);
             }
         };
 
         this.peers.set(peerId, pc);
         return pc;
+    }
+
+    /**
+     * Gom nhóm các ICE Candidates phát sinh dồn dập để gửi theo batch lên Firestore (tiết kiệm quota)
+     */
+    queueIceCandidate(peerId, candidate) {
+        if (!peerId || this.isDestroyed) return;
+
+        if (candidate) {
+            const list = this.pendingCandidates.get(peerId) || [];
+            list.push(candidate);
+            this.pendingCandidates.set(peerId, list);
+
+            if (!this.candidateBatchTimers.has(peerId)) {
+                const timer = setTimeout(() => {
+                    this.flushCandidateBatch(peerId);
+                }, 250);
+                this.candidateBatchTimers.set(peerId, timer);
+            }
+        } else {
+            // candidate === null tức là WebRTC ICE Gathering đã hoàn tất, flush ngay
+            this.flushCandidateBatch(peerId);
+        }
+    }
+
+    /**
+     * Gửi toàn bộ candidate đang chờ trong hàng đợi theo batch 1 document duy nhất
+     */
+    flushCandidateBatch(peerId) {
+        const timer = this.candidateBatchTimers.get(peerId);
+        if (timer) {
+            clearTimeout(timer);
+            this.candidateBatchTimers.delete(peerId);
+        }
+
+        const candidates = this.pendingCandidates.get(peerId);
+        if (!candidates || candidates.length === 0) return;
+
+        this.pendingCandidates.delete(peerId);
+
+        this.sendSignal({
+            to: peerId,
+            type: "candidates_batch",
+            payload: JSON.stringify(candidates),
+        });
     }
 
     /**
@@ -244,6 +295,8 @@ export class WatchPartyWebRTC {
                 await this.handleOfferSignal(from, data, pc);
             } else if (type === "answer") {
                 await this.handleAnswerSignal(from, data, pc);
+            } else if (type === "candidates_batch") {
+                await this.handleCandidatesBatchSignal(from, data, pc);
             } else if (type === "candidate") {
                 await this.handleCandidateSignal(from, data, pc);
             }
@@ -262,24 +315,41 @@ export class WatchPartyWebRTC {
             return;
         }
 
-        await pc.setRemoteDescription(new SessionDescription(data));
-        await this.drainCandidateQueue(from, pc);
+        try {
+            if (isOfferCollision) {
+                // W3C Perfect Negotiation: peer polite rollback state để tránh InvalidStateError
+                await Promise.all([
+                    pc.setLocalDescription({ type: "rollback" }),
+                    pc.setRemoteDescription(new SessionDescription(data)),
+                ]);
+            } else {
+                await pc.setRemoteDescription(new SessionDescription(data));
+            }
 
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
+            await this.drainCandidateQueue(from, pc);
 
-        await this.sendSignal({
-            to: from,
-            type: "answer",
-            payload: JSON.stringify(answer),
-        });
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            await this.sendSignal({
+                to: from,
+                type: "answer",
+                payload: JSON.stringify(answer),
+            });
+        } catch (err) {
+            console.warn(`[WebRTC] Lỗi xử lý offer từ ${from}:`, err);
+        }
     }
 
     async handleAnswerSignal(from, data, pc) {
         if (!SessionDescription) return;
-        if (pc.signalingState === "have-local-offer") {
-            await pc.setRemoteDescription(new SessionDescription(data));
-            await this.drainCandidateQueue(from, pc);
+        try {
+            if (pc.signalingState === "have-local-offer") {
+                await pc.setRemoteDescription(new SessionDescription(data));
+                await this.drainCandidateQueue(from, pc);
+            }
+        } catch (err) {
+            console.warn(`[WebRTC] Lỗi xử lý answer từ ${from}:`, err);
         }
     }
 
@@ -292,6 +362,16 @@ export class WatchPartyWebRTC {
             const queue = this.candidateQueues.get(from) || [];
             queue.push(data);
             this.candidateQueues.set(from, queue);
+        }
+    }
+
+    /**
+     * Xử lý tín hiệu gom nhóm nhiều ICE Candidates cùng lúc
+     */
+    async handleCandidatesBatchSignal(from, candidatesList, pc) {
+        if (!Array.isArray(candidatesList) || candidatesList.length === 0) return;
+        for (const candidateData of candidatesList) {
+            await this.handleCandidateSignal(from, candidateData, pc);
         }
     }
 
@@ -336,6 +416,13 @@ export class WatchPartyWebRTC {
      * Đóng kết nối của một peer
      */
     closePeerConnection(peerId) {
+        const timer = this.candidateBatchTimers.get(peerId);
+        if (timer) {
+            clearTimeout(timer);
+            this.candidateBatchTimers.delete(peerId);
+        }
+        this.pendingCandidates.delete(peerId);
+
         const pc = this.peers.get(peerId);
         if (pc) {
             pc.close();
@@ -361,6 +448,11 @@ export class WatchPartyWebRTC {
             this.unsubscribeSignals();
             this.unsubscribeSignals = null;
         }
+
+        this.candidateBatchTimers.forEach((timer) => clearTimeout(timer));
+        this.candidateBatchTimers.clear();
+        this.pendingCandidates.clear();
+
         this.peers.forEach((pc) => pc.close());
         this.peers.clear();
         this.candidateQueues.clear();

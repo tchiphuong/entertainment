@@ -170,26 +170,55 @@ export const formatVideoSeconds = (sec) => {
 };
 
 /**
- * Tính toán mốc thời gian phát chuẩn xác đến từng mili-giây
- * Nếu video đang phát (isPlaying = true), cộng thêm thời gian trôi qua kể từ mốc lastUpdated
+ * Format thời gian hiển thị tin nhắn chat theo múi giờ GMT+7 (Việt Nam: HH:mm)
  */
-export const calculateSynchronizedTime = (playback, now = Date.now()) => {
+export const formatChatTimeGMT7 = (timestamp) => {
+    if (!timestamp) return "";
+    let date = null;
+    if (typeof timestamp === "number") {
+        date = new Date(timestamp);
+    } else if (timestamp?.toDate && typeof timestamp.toDate === "function") {
+        date = timestamp.toDate();
+    } else {
+        date = new Date(timestamp);
+    }
+
+    if (Number.isNaN(date.getTime())) return "";
+
+    return new Intl.DateTimeFormat("vi-VN", {
+        timeZone: "Asia/Ho_Chi_Minh",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+    }).format(date);
+};
+
+/**
+ * Tính toán mốc thời gian phát chuẩn xác đến từng mili-giây
+ * Chống trôi thời gian và chặn lỗi lệch đồng hồ hệ thống vượt quá độ dài phim
+ */
+export const calculateSynchronizedTime = (playback, now = Date.now(), maxDuration = Infinity) => {
     if (!playback) return 0;
     const currentTime = Number(playback.currentTime) || 0;
     const isPlaying = Boolean(playback.isPlaying);
     const lastUpdated = Number(playback.lastUpdated) || 0;
 
+    const safeMax = maxDuration > 2 ? maxDuration - 2 : maxDuration;
     if (!isPlaying || !lastUpdated) {
-        return Math.max(0, currentTime);
+        return Math.max(0, Math.min(safeMax, currentTime));
     }
 
-    const elapsedSeconds = Math.max(0, (now - lastUpdated) / 1000);
-    return Math.max(0, currentTime + elapsedSeconds);
+    const rawDiff = (now - lastUpdated) / 1000;
+    // Chặn độ lệch âm hoặc lệch bất thường > 6s (nhịp heartbeat 5s) để chống lệch đồng hồ hoặc lag mạng làm video tự tua dồn dập đến hết phim
+    const safeElapsed = rawDiff > 0 && rawDiff <= 6 ? rawDiff : 0;
+    const computedTime = currentTime + safeElapsed;
+
+    return Math.max(0, Math.min(safeMax, computedTime));
 };
 
 const adjustVideoTimeAndRate = (video, targetTime, isTargetPlaying, diff, options) => {
-    const hardSeek = options.hardSeekThreshold ?? 0.2;
-    const rateAdjust = options.rateAdjustThreshold ?? 0.04;
+    const hardSeek = options.hardSeekThreshold ?? 1.5;
+    const rateAdjust = options.rateAdjustThreshold ?? 0.1;
 
     if (diff > hardSeek) {
         video.currentTime = targetTime;
@@ -198,7 +227,7 @@ const adjustVideoTimeAndRate = (video, targetTime, isTargetPlaying, diff, option
     }
 
     if (diff > rateAdjust && isTargetPlaying && !video.paused) {
-        video.playbackRate = targetTime > video.currentTime ? 1.06 : 0.94;
+        video.playbackRate = targetTime > video.currentTime ? 1.05 : 0.95;
         return;
     }
 
@@ -219,8 +248,11 @@ const syncVideoPlayState = (video, isTargetPlaying) => {
 export const applyPreciseVideoSync = (video, targetTime, isTargetPlaying, options = {}) => {
     if (!video || typeof targetTime !== "number" || Number.isNaN(targetTime)) return;
 
-    const diff = Math.abs(video.currentTime - targetTime);
-    adjustVideoTimeAndRate(video, targetTime, isTargetPlaying, diff, options);
+    const maxDur = video.duration && !Number.isNaN(video.duration) ? video.duration : Infinity;
+    const safeTargetTime = Math.max(0, Math.min(maxDur, targetTime));
+
+    const diff = Math.abs(video.currentTime - safeTargetTime);
+    adjustVideoTimeAndRate(video, safeTargetTime, isTargetPlaying, diff, options);
     syncVideoPlayState(video, isTargetPlaying);
 };
 
@@ -236,7 +268,7 @@ export const unlockAudioElement = (audioEl) => {
     window.addEventListener("keydown", handleUnlock, { once: true });
 };
 
-const sanitizeMovieInfo = (movie) => {
+export const sanitizeMovieInfo = (movie) => {
     if (!movie) {
         return { slug: "", name: "", origin_name: "", thumb_url: "", poster_url: "" };
     }
@@ -328,18 +360,58 @@ const applySourceDataToPayload = (payload, sourceData) => {
     }
 };
 
+export const isDirectStreamUrl = (url) => {
+    if (!url || typeof url !== "string") return false;
+    const clean = url.trim().toLowerCase();
+    const isHttp = clean.startsWith("http://") || clean.startsWith("https://");
+    if (!isHttp) return false;
+    return clean.includes(".m3u8") || clean.includes(".mpd") || clean.includes("/m3u8") || clean.includes("/mpd");
+};
+
+export const createCustomStreamPayload = (streamUrl, customTitle = "") => {
+    const cleanUrl = streamUrl.trim();
+    const isMpd = cleanUrl.toLowerCase().includes(".mpd");
+    const streamType = isMpd ? "DASH (MPD)" : "HLS (M3U8)";
+    const title = customTitle?.trim() || (isMpd ? "Luồng trực tiếp DASH (.mpd)" : "Luồng trực tiếp HLS (.m3u8)");
+
+    return {
+        movie: {
+            slug: `stream-${Date.now()}`,
+            name: title,
+            origin_name: streamType,
+            thumb_url: "",
+            poster_url: "",
+            isCustomStream: true,
+        },
+        episode: {
+            name: "Trực tiếp",
+            slug: "live-stream",
+            server_name: streamType,
+            link_m3u8: cleanUrl,
+            link_embed: "",
+        },
+    };
+};
+
 /**
  * Xử lý và chuẩn bị dữ liệu phim và tập phim để tạo phòng xem chung mới
  */
-export const resolveMovieAndEpisodePayload = async (rawSlug, prefillMovie, prefillEpisode) => {
-    const slug = extractCleanMovieSlug(rawSlug) || String(rawSlug || "").trim();
+export const resolveMovieAndEpisodePayload = async (rawSlug, prefillMovie, prefillEpisode, customTitle = "") => {
+    const input = String(rawSlug || "").trim();
+
+    // Tự động nhận diện link stream m3u8 hoặc mpd dán trực tiếp
+    if (isDirectStreamUrl(input)) {
+        return createCustomStreamPayload(input, customTitle);
+    }
+
+    const slug = extractCleanMovieSlug(input) || input;
 
     if (prefillMovie && prefillMovie.slug === slug && prefillEpisode) {
         return buildPrefillPayload(prefillMovie, prefillEpisode);
     }
 
     const payload = {
-        movie: { slug, name: prefillMovie?.name || `Phim ${rawSlug}`, thumb_url: "" },
+        movie: { slug, name: prefillMovie?.name || `Phim ${input}`, thumb_url: "" },
         episode: { name: "Tập 1", slug: "tap-1", server_name: "Vietsub", link_m3u8: "" },
     };
 

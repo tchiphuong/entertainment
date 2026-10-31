@@ -178,12 +178,12 @@ export function getMovieImage(imagePath, source, CONFIG = {}) {
         return imagePath;
     }
 
-    if (source === "source_o") {
-        const cdnO = CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE || import.meta.env.VITE_SOURCE_O_CDN_IMAGE;
+    if (source === "source_2" || source === "source_o") {
+        const cdnO = CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE || import.meta.env.VITE_SOURCE_2_CDN_IMAGE || import.meta.env.VITE_SOURCE_O_CDN_IMAGE;
         return `${cdnO}/${imagePath}`;
     }
 
-    const cdnK = CONFIG.APP_DOMAIN_SOURCE_K_CDN_IMAGE || import.meta.env.VITE_SOURCE_K_CDN_IMAGE;
+    const cdnK = CONFIG.APP_DOMAIN_SOURCE_K_CDN_IMAGE || import.meta.env.VITE_SOURCE_1_CDN_IMAGE || import.meta.env.VITE_SOURCE_K_CDN_IMAGE;
     return `${cdnK}/${imagePath}`;
 }
 

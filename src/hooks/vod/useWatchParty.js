@@ -10,6 +10,7 @@ import {
     updateWatchPartyMediaState,
     updateWatchPartyParticipantName,
     changeWatchPartyEpisode,
+    changeWatchPartyMovie,
     updateParticipantControlPermission,
     transferWatchPartyHost,
     kickWatchPartyParticipant,
@@ -19,7 +20,6 @@ import {
     updateWatchPartyRaiseHand,
     muteAllParticipants,
     updateWatchPartyMeetUrl,
-    cleanStaleRoomParticipants,
     hashWatchPartyPassword,
     verifyWatchPartyPassword,
 } from "../../services/vod/watchPartyService";
@@ -35,7 +35,6 @@ const handleRoomSnapshot = (roomData, isMounted, roomId, currentUid, setters) =>
         return;
     }
     setters.setRoom(roomData);
-    cleanStaleRoomParticipants(roomId, roomData.participants);
 
     if (!currentUid) return;
 
@@ -61,6 +60,13 @@ const resolveJoinError = (err) => {
     const code = err?.code || "";
     const msg = err?.message || "";
 
+    if (code === "resource-exhausted" || msg.includes("resource-exhausted") || msg.includes("Quota exceeded")) {
+        return {
+            isPassErr: false,
+            isBanned: false,
+            msg: "Hệ thống phòng xem chung hiện đang quá tải. Vui lòng thử lại sau ít phút.",
+        };
+    }
     if (code === "INCORRECT_PASSWORD" || msg === "INCORRECT_PASSWORD") {
         return { isPassErr: true, isBanned: false, msg: "Phòng này yêu cầu mật khẩu hoặc mật khẩu đã nhập không chính xác." };
     }
@@ -68,7 +74,7 @@ const resolveJoinError = (err) => {
         return { isPassErr: false, isBanned: true, msg: "Bạn đã bị Trưởng phòng chặn khỏi phòng xem này." };
     }
     if (code === "permission-denied" || msg.includes("insufficient permissions")) {
-        return { isPassErr: false, isBanned: false, msg: "Thiếu quyền truy cập Firestore (Missing or insufficient permissions). Vui lòng cập nhật Firestore Security Rules." };
+        return { isPassErr: false, isBanned: false, msg: "Không thể kết nối đến máy chủ phòng xem. Vui lòng thử lại sau." };
     }
     return { isPassErr: false, isBanned: false, msg: msg || "Không thể kết nối vào phòng." };
 };
@@ -192,6 +198,112 @@ const useWatchPartyModeration = ({ roomId, isHost, activeUserUid, sendMessage })
     };
 };
 
+const removePeerFromStreams = (peerId) => (prev) => {
+    if (!prev.has(peerId)) return prev;
+    const next = new Map(prev);
+    next.delete(peerId);
+    return next;
+};
+
+const schedulePeerRemoval = (peerId, roomId, timersRef, setRemoteStreams) => {
+    if (!peerId || !roomId || timersRef.current.has(peerId)) return;
+
+    const timer = setTimeout(async () => {
+        timersRef.current.delete(peerId);
+        await leaveWatchPartyRoom(roomId, peerId);
+        setRemoteStreams(removePeerFromStreams(peerId));
+    }, 1000);
+
+    timersRef.current.set(peerId, timer);
+};
+
+const cancelPeerRemoval = (peerId, timersRef) => {
+    const timer = timersRef.current.get(peerId);
+    if (timer) {
+        clearTimeout(timer);
+        timersRef.current.delete(peerId);
+    }
+};
+
+const getStoredAudioVolume = (key, defaultValue = 100) => {
+    try {
+        const val = localStorage.getItem(key);
+        if (val !== null && !Number.isNaN(Number(val))) {
+            return Math.max(0, Math.min(100, Number(val)));
+        }
+    } catch {}
+    return defaultValue;
+};
+
+const createProcessedAudioTrack = (stream, currentVolume) => {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) {
+        return { track: stream.getAudioTracks()[0], ctx: null, gain: null };
+    }
+
+    try {
+        const ctx = new AudioCtx();
+        if (ctx.state === "suspended") {
+            ctx.resume().catch(() => {});
+        }
+
+        const src = ctx.createMediaStreamSource(stream);
+        const gain = ctx.createGain();
+        const dest = ctx.createMediaStreamDestination();
+
+        gain.gain.setValueAtTime(Math.max(0, currentVolume / 100), ctx.currentTime);
+        src.connect(gain);
+        gain.connect(dest);
+
+        return {
+            track: dest.stream.getAudioTracks()[0],
+            ctx,
+            gain,
+        };
+    } catch (err) {
+        console.warn("[Voice] Không thể tạo AudioContext Gain cho Micro:", err);
+        return { track: stream.getAudioTracks()[0], ctx: null, gain: null };
+    }
+};
+
+const resolveSenderIdentity = (isSystem, activeUser) => {
+    if (isSystem) {
+        return { senderId: "system", senderName: "Hệ thống", avatar: "" };
+    }
+    return {
+        senderId: activeUser?.uid || "",
+        senderName: activeUser?.displayName || "Bạn xem chung",
+        avatar: activeUser?.photoURL || "",
+    };
+};
+
+const resolveMessageMeta = (isOptions, maybeParam, maybeReply) => {
+    if (isOptions) {
+        return {
+            videoTimestamp: maybeParam.videoTimestamp ?? null,
+            replyTo: maybeParam.replyTo || null,
+        };
+    }
+    return {
+        videoTimestamp: maybeParam,
+        replyTo: maybeReply || null,
+    };
+};
+
+const parseSendMessageParams = (activeUser, text, maybeParam, maybeReply) => {
+    const isOptions = Boolean(maybeParam && typeof maybeParam === "object");
+    const isSystem = Boolean(isOptions && maybeParam.isSystem);
+    const identity = resolveSenderIdentity(isSystem, activeUser);
+    const meta = resolveMessageMeta(isOptions, maybeParam, maybeReply);
+
+    return {
+        ...identity,
+        ...meta,
+        text,
+        isSystem,
+    };
+};
+
 /**
  * Custom hook quản lý toàn bộ logic thời gian thực của phòng xem chung (Watch Party)
  */
@@ -218,6 +330,48 @@ export const useWatchParty = ({
     const [localStream, setLocalStream] = useState(null);
     const [remoteStreams, setRemoteStreams] = useState(new Map());
     const [mediaError, setMediaError] = useState(null);
+
+    // Âm lượng Micro & Loa thoại Voice Chat
+    const [micVolume, setMicVolume] = useState(() => getStoredAudioVolume("wp_mic_volume", 100));
+    const [speakerVolume, setSpeakerVolume] = useState(() => getStoredAudioVolume("wp_speaker_volume", 100));
+    const micAudioCtxRef = useRef(null);
+    const micGainNodeRef = useRef(null);
+    const rawAudioStreamRef = useRef(null);
+
+    const updateMicVolume = useCallback((newVol) => {
+        const clamped = Math.max(0, Math.min(100, Number(newVol) || 0));
+        setMicVolume(clamped);
+        try {
+            localStorage.setItem("wp_mic_volume", String(clamped));
+        } catch {}
+
+        if (micGainNodeRef.current && micAudioCtxRef.current) {
+            micGainNodeRef.current.gain.setValueAtTime(
+                clamped / 100,
+                micAudioCtxRef.current.currentTime
+            );
+        }
+    }, []);
+
+    const updateSpeakerVolume = useCallback((newVol) => {
+        const clamped = Math.max(0, Math.min(100, Number(newVol) || 0));
+        setSpeakerVolume(clamped);
+        try {
+            localStorage.setItem("wp_speaker_volume", String(clamped));
+        } catch {}
+    }, []);
+
+    const cleanupMicProcessing = useCallback(() => {
+        if (micAudioCtxRef.current && micAudioCtxRef.current.state !== "closed") {
+            micAudioCtxRef.current.close().catch(() => {});
+        }
+        micAudioCtxRef.current = null;
+        micGainNodeRef.current = null;
+        if (rawAudioStreamRef.current) {
+            rawAudioStreamRef.current.getTracks().forEach((t) => t.stop());
+            rawAudioStreamRef.current = null;
+        }
+    }, []);
 
     // Flags tránh loop giữa local event và remote update
     const isRemoteApplyingRef = useRef(false);
@@ -288,7 +442,8 @@ export const useWatchParty = ({
             },
             (err) => {
                 if (!isMounted) return;
-                setError(err.message || "Lỗi đồng bộ phòng.");
+                const { msg } = resolveJoinError(err);
+                setError(msg);
             }
         );
 
@@ -298,29 +453,31 @@ export const useWatchParty = ({
             setMessages(msgList);
         });
 
-        // Thiết lập heartbeat định kỳ mỗi 15s để duy trì trạng thái online
+        // Thiết lập heartbeat định kỳ mỗi 45s để duy trì trạng thái online (tiết kiệm quota Firestore)
         heartbeatTimerRef.current = setInterval(() => {
             heartbeatParticipant(roomId, activeUserRef.current?.uid);
-        }, 15000);
+        }, 45000);
 
-        // Xử lý khi tắt tab hoặc rời trang: Tự động rời phòng và kích hoạt xoá nếu phòng trống
-        const handleBeforeUnload = () => {
-            if (activeUserRef.current?.uid) {
+        // Xử lý khi tắt tab hoặc rời trang: Tự động rời phòng và dọn dẹp tức thì
+        const handlePageExit = () => {
+            if (activeUserRef.current?.uid && roomId) {
                 leaveWatchPartyRoom(roomId, activeUserRef.current.uid);
             }
         };
-        window.addEventListener("beforeunload", handleBeforeUnload);
+        window.addEventListener("beforeunload", handlePageExit);
+        window.addEventListener("pagehide", handlePageExit);
 
         return () => {
             isMounted = false;
-            window.removeEventListener("beforeunload", handleBeforeUnload);
+            window.removeEventListener("beforeunload", handlePageExit);
+            window.removeEventListener("pagehide", handlePageExit);
             if (heartbeatTimerRef.current) {
                 clearInterval(heartbeatTimerRef.current);
             }
             unsubscribeRoom();
             unsubscribeMessages();
             // Rời phòng khi unmount component
-            if (activeUserRef.current?.uid) {
+            if (activeUserRef.current?.uid && roomId) {
                 leaveWatchPartyRoom(roomId, activeUserRef.current.uid);
             }
         };
@@ -364,6 +521,7 @@ export const useWatchParty = ({
                 });
                 rtcManagerRef.current?.updateLocalStream(localStream);
             }
+            cleanupMicProcessing();
             setIsMicOn(false);
             updateWatchPartyMediaState(roomId, activeUser.uid, { micEnabled: false });
         } else {
@@ -377,12 +535,24 @@ export const useWatchParty = ({
                     const audioStream = await navigator.mediaDevices.getUserMedia({
                         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
                     });
-                    let streamToUse = audioStream;
+                    rawAudioStreamRef.current = audioStream;
+
+                    const { track: processedTrack, ctx, gain } = createProcessedAudioTrack(audioStream, micVolume);
+                    micAudioCtxRef.current = ctx;
+                    micGainNodeRef.current = gain;
+
+                    const audioTrack = processedTrack || audioStream.getAudioTracks()[0];
+                    let streamToUse;
+                    const StreamClass = window.MediaStream;
                     if (localStream) {
-                        audioStream.getAudioTracks().forEach((t) => localStream.addTrack(t));
+                        localStream.addTrack(audioTrack);
                         streamToUse = localStream;
+                    } else if (StreamClass) {
+                        const newStream = new StreamClass([audioTrack]);
+                        setLocalStream(newStream);
+                        streamToUse = newStream;
                     } else {
-                        setLocalStream(audioStream);
+                        streamToUse = audioStream;
                     }
                     rtcManagerRef.current?.updateLocalStream(streamToUse);
                 }
@@ -393,7 +563,7 @@ export const useWatchParty = ({
                 setMediaError("Không thể mở micro. Vui lòng cấp quyền trong trình duyệt.");
             }
         }
-    }, [isMicOn, localStream, roomId, activeUser.uid]);
+    }, [isMicOn, localStream, roomId, activeUser.uid, micVolume, cleanupMicProcessing]);
 
     const localStreamRef = useRef(null);
     localStreamRef.current = localStream;
@@ -401,11 +571,14 @@ export const useWatchParty = ({
     // Dọn dẹp media streams chỉ khi unmount rời khỏi phòng xem chung
     useEffect(() => {
         return () => {
+            cleanupMicProcessing();
             if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach((t) => t.stop());
             }
         };
-    }, []);
+    }, [cleanupMicProcessing]);
+
+    const peerDisconnectTimersRef = useRef(new Map());
 
     // 4. Quản lý kết nối thoại thời gian thực WebRTC P2P Voice Mesh
     useEffect(() => {
@@ -417,12 +590,22 @@ export const useWatchParty = ({
             onRemoteStreamChange: (streamsMap) => {
                 setRemoteStreams(new Map(streamsMap));
             },
+            onPeerDisconnected: (peerId) => {
+                schedulePeerRemoval(peerId, roomId, peerDisconnectTimersRef, setRemoteStreams);
+            },
+            onConnectionStateChange: (peerId, state) => {
+                if (state === "connected") {
+                    cancelPeerRemoval(peerId, peerDisconnectTimersRef);
+                }
+            },
         });
 
         rtc.init();
         rtcManagerRef.current = rtc;
 
         return () => {
+            peerDisconnectTimersRef.current.forEach((t) => clearTimeout(t));
+            peerDisconnectTimersRef.current.clear();
             rtc.destroy();
             rtcManagerRef.current = null;
         };
@@ -443,17 +626,11 @@ export const useWatchParty = ({
     }, [localStream]);
 
     // 5. Gửi tin nhắn chat (hỗ trợ trích dẫn replyTo chuẩn Zoom)
-    const sendMessage = useCallback(async (text, videoTimestamp = null, replyTo = null) => {
+    const sendMessage = useCallback(async (text, maybeTimestampOrOptions = null, maybeReplyTo = null) => {
         if (!roomId || !text?.trim()) return;
         try {
-            await sendWatchPartyMessage(roomId, {
-                senderId: activeUser.uid,
-                senderName: activeUser.displayName || "Bạn xem chung",
-                avatar: activeUser.photoURL || "",
-                text,
-                videoTimestamp,
-                replyTo,
-            });
+            const payload = parseSendMessageParams(activeUser, text, maybeTimestampOrOptions, maybeReplyTo);
+            await sendWatchPartyMessage(roomId, payload);
         } catch (err) {
             console.warn("Lỗi gửi tin nhắn:", err);
         }
@@ -507,7 +684,45 @@ export const useWatchParty = ({
         await changeWatchPartyEpisode(roomId, newEpisode);
     }, [roomId, canControl]);
 
-    // 10. Giơ tay phát biểu (Raise Hand) chuẩn Zoom
+    // 10. Đổi phim khác trong phòng (Trưởng phòng hoặc người có quyền)
+    const changeMovie = useCallback(async (newMovie, newEpisode = null) => {
+        if (!roomId || !canControl || !newMovie) return;
+        await changeWatchPartyMovie(roomId, newMovie, newEpisode);
+    }, [roomId, canControl]);
+
+    // 11. Theo dõi thành viên tham gia hoặc rời phòng để gửi thông báo hệ thống
+    const prevParticipantsRef = useRef(null);
+    useEffect(() => {
+        if (!room?.participants || !roomId) return;
+        const currentParticipants = room.participants;
+
+        if (prevParticipantsRef.current === null) {
+            prevParticipantsRef.current = currentParticipants;
+            return;
+        }
+
+        const prev = prevParticipantsRef.current;
+        prevParticipantsRef.current = currentParticipants;
+
+        // Chỉ Host gửi tin nhắn thông báo vào phòng để tránh trùng lặp
+        if (!isHost) return;
+
+        Object.keys(currentParticipants).forEach((uid) => {
+            if (!prev[uid] && uid !== activeUser.uid) {
+                const name = currentParticipants[uid]?.name || "Một thành viên";
+                sendMessage(`${name} đã vào phòng xem`, { isSystem: true }).catch(() => {});
+            }
+        });
+
+        Object.keys(prev).forEach((uid) => {
+            if (!currentParticipants[uid] && uid !== activeUser.uid) {
+                const name = prev[uid]?.name || "Một thành viên";
+                sendMessage(`${name} đã rời khỏi phòng xem`, { isSystem: true }).catch(() => {});
+            }
+        });
+    }, [room?.participants, isHost, roomId, activeUser?.uid, sendMessage]);
+
+    // 12. Giơ tay phát biểu (Raise Hand) chuẩn Zoom
     const isHandRaised = Boolean(room?.participants?.[activeUser.uid]?.isHandRaised);
     const toggleRaiseHand = useCallback(async () => {
         if (!roomId || !activeUser?.uid) return;
@@ -560,6 +775,8 @@ export const useWatchParty = ({
         canControl,
         broadcastPlayback,
         changeEpisode,
+        changeMovie,
+        isRemoteApplyingRef,
         toggleParticipantControl,
         transferHost,
         // Sync Feature
@@ -573,6 +790,11 @@ export const useWatchParty = ({
         mediaError,
         toggleCamera,
         toggleMic,
+        // Điều chỉnh Âm lượng Voice Chat
+        micVolume,
+        updateMicVolume,
+        speakerVolume,
+        updateSpeakerVolume,
         // Zoom & Meet Features
         isHandRaised,
         toggleRaiseHand,
