@@ -3,13 +3,15 @@
  * Sử dụng định dạng vector SVG sắc nét, tối ưu cho mọi màn hình
  */
 
-const TWEMOJI_BASE_URL = import.meta.env.VITE_TWEMOJI_CDN_URL;
+import { MEDIA_CONFIG } from "../../../constants";
+
+const TWEMOJI_BASE_URL = import.meta.env.VITE_TWEMOJI_CDN_URL || MEDIA_CONFIG.DEFAULT_TWEMOJI_CDN;
 
 /**
  * Lấy URL ảnh SVG mã nguồn mở Twemoji từ mã hex Unicode
  */
 export const getTwemojiUrl = (hex) => {
-    if (!hex || !TWEMOJI_BASE_URL) return "";
+    if (!hex) return "";
     const cleanHex = hex.toLowerCase().replace(/-fe0f/g, "");
     return `${TWEMOJI_BASE_URL}/${cleanHex}.svg`;
 };

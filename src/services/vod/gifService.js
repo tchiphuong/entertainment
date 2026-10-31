@@ -3,8 +3,10 @@
  * Tuân thủ quy tắc bảo mật Endpoint: không hardcode URL, đọc qua biến môi trường
  */
 
-const GIPHY_BASE_URL = import.meta.env.VITE_GIPHY_API_BASE_URL;
-const GIPHY_KEY = import.meta.env.VITE_GIPHY_API_KEY;
+import { MEDIA_CONFIG } from "../../constants";
+
+const GIPHY_BASE_URL = import.meta.env.VITE_GIPHY_API_BASE_URL || MEDIA_CONFIG.DEFAULT_GIPHY_API_BASE_URL;
+const GIPHY_KEY = import.meta.env.VITE_GIPHY_API_KEY || MEDIA_CONFIG.DEFAULT_GIPHY_API_KEY;
 
 // Danh mục chủ đề Sticker GIF phản ứng xem phim
 export const GIF_CATEGORIES = [

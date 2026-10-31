@@ -462,3 +462,13 @@ export const getVodPlayPath = (slug) => `/vod/play/${slug || ""}`;
 export const getVodCategoryPath = (category) => `/vod/category/${category || ""}`;
 export const getVodCountryPath = (country) => `/vod/country/${country || ""}`;
 export const getVodActorPath = (actor) => `/vod/actor/${actor || ""}`;
+
+
+// ==========================================
+// 9. MEDIA & CDN CONFIG
+// ==========================================
+export const MEDIA_CONFIG = {
+    DEFAULT_TWEMOJI_CDN: "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg",
+    DEFAULT_GIPHY_API_BASE_URL: "https://api.giphy.com/v1",
+    DEFAULT_GIPHY_API_KEY: "sXpGFDGZs0Dv1mmNFvYaGUvYwKX0PWIh",
+};

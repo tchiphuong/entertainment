@@ -64,6 +64,11 @@ jobs:
                   # Players
                   VITE_JWPLAYER_LIBRARY: ${{ secrets.VITE_JWPLAYER_LIBRARY }}
                   VITE_HLSJS_CDN: ${{ secrets.VITE_HLSJS_CDN }}
+                  # Giphy & Animated Stickers API
+                  VITE_GIPHY_API_BASE_URL: ${{ secrets.VITE_GIPHY_API_BASE_URL || 'https://api.giphy.com/v1' }}
+                  VITE_GIPHY_API_KEY: ${{ secrets.VITE_GIPHY_API_KEY || 'sXpGFDGZs0Dv1mmNFvYaGUvYwKX0PWIh' }}
+                  # Open Source Twemoji CDN
+                  VITE_TWEMOJI_CDN_URL: ${{ secrets.VITE_TWEMOJI_CDN_URL || 'https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg' }}
 
             - name: Upload artifact
               uses: actions/upload-pages-artifact@v3
