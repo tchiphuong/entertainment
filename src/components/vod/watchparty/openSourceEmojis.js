@@ -55,7 +55,7 @@ export const OPEN_SOURCE_EMOJIS = [
     { hex: "1f44d", code: ":thumbsup:", label: "Thích / Like", category: "gestures" },
     { hex: "1f44e", code: ":thumbsdown:", label: "Không thích / Dislike", category: "gestures" },
     { hex: "1f44f", code: ":clap:", label: "Vỗ tay tán thưởng", category: "gestures" },
-    { hex: "1fac6", code: ":heart_hands:", label: "Bàn tay hình trái tim", category: "gestures" },
+    { hex: "1f44c", code: ":ok_hand:", label: "Dấu tay OK chuẩn chỉ", category: "gestures" },
     { hex: "1faf0", code: ":finger_heart:", label: "Bắn tim ngón tay", category: "gestures" },
     { hex: "1f64f", code: ":pray:", label: "Cầu nguyện / Cảm ơn", category: "gestures" },
     { hex: "1f44a", code: ":fist:", label: "Cụng tay quyết tâm", category: "gestures" },
