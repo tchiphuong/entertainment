@@ -63,7 +63,15 @@ const HandRaisedBadge = ({ isHandRaised }) => {
     );
 };
 
-const ParticipantOverlayLabel = ({ name, micEnabled, isLocal, isHost }) => (
+const SpeakingAudioWaves = () => (
+    <span className="flex items-center gap-0.5" title="Đang nói chuyện">
+        <span className="h-1.5 w-0.5 rounded-full bg-emerald-400 animate-pulse" />
+        <span className="h-2.5 w-0.5 rounded-full bg-emerald-300 animate-pulse" />
+        <span className="h-1.5 w-0.5 rounded-full bg-emerald-400 animate-pulse" />
+    </span>
+);
+
+const ParticipantOverlayLabel = ({ name, micEnabled, isLocal, isHost, isSpeaking }) => (
     <div className="absolute bottom-1 left-1 z-10 flex items-center gap-1 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-semibold text-white">
         <span className="max-w-[70px] truncate">{isLocal ? "Bạn" : name}</span>
         {isHost && (
@@ -72,12 +80,122 @@ const ParticipantOverlayLabel = ({ name, micEnabled, isLocal, isHost }) => (
             </span>
         )}
         {micEnabled ? (
-            <MicrophoneIcon className="h-2.5 w-2.5 text-emerald-400 stroke-2" />
+            isSpeaking ? (
+                <SpeakingAudioWaves />
+            ) : (
+                <MicrophoneIcon className="h-2.5 w-2.5 text-emerald-400 stroke-2" />
+            )
         ) : (
             <IconMicOff className="h-2.5 w-2.5 text-red-400 stroke-2" />
         )}
     </div>
 );
+
+const isVoiceActive = (analyser, buffer) => {
+    analyser.getByteFrequencyData(buffer);
+    let sum = 0;
+    for (let i = 0; i < buffer.length; i++) {
+        sum += buffer[i];
+    }
+    const average = sum / buffer.length;
+    return average > 8 || buffer.some((val) => val > 35);
+};
+
+const setupAudioAnalyser = (stream) => {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+
+    const audioContext = new AudioContextClass();
+    if (audioContext.state === "suspended") {
+        audioContext.resume().catch(() => {});
+    }
+
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.4;
+
+    const sourceNode = audioContext.createMediaStreamSource(stream);
+    sourceNode.connect(analyser);
+
+    return { audioContext, analyser, sourceNode };
+};
+
+const useAudioSpeaking = (stream, enabled = true) => {
+    const [isSpeaking, setIsSpeaking] = useState(false);
+
+    useEffect(() => {
+        if (!enabled || !stream) {
+            setIsSpeaking(false);
+            return;
+        }
+
+        const audioTracks = stream.getAudioTracks();
+        if (audioTracks.length === 0) {
+            setIsSpeaking(false);
+            return;
+        }
+
+        let audioResources = null;
+        let animFrameId = null;
+        let isCancelled = false;
+
+        try {
+            audioResources = setupAudioAnalyser(stream);
+            if (!audioResources) return;
+
+            const { analyser } = audioResources;
+            const buffer = new Uint8Array(analyser.frequencyBinCount);
+            let silenceCounter = 0;
+
+            const checkAudioLevel = () => {
+                if (isCancelled) return;
+
+                if (isVoiceActive(analyser, buffer)) {
+                    silenceCounter = 0;
+                    setIsSpeaking(true);
+                } else {
+                    silenceCounter++;
+                    if (silenceCounter > 12) {
+                        setIsSpeaking(false);
+                    }
+                }
+
+                animFrameId = requestAnimationFrame(checkAudioLevel);
+            };
+
+            animFrameId = requestAnimationFrame(checkAudioLevel);
+        } catch (err) {
+            console.warn("[Voice] Không thể phân tích giọng nói:", err);
+            setIsSpeaking(false);
+        }
+
+        return () => {
+            isCancelled = true;
+            if (animFrameId) cancelAnimationFrame(animFrameId);
+            if (audioResources) {
+                audioResources.sourceNode?.disconnect();
+                if (audioResources.audioContext?.state !== "closed") {
+                    audioResources.audioContext?.close().catch(() => {});
+                }
+            }
+        };
+    }, [stream, enabled]);
+
+    return isSpeaking;
+};
+
+const resolveParticipantBorderStyle = (isHandRaised, isSpeaking, micEnabled) => {
+    if (isHandRaised) {
+        return "border-amber-500 ring-2 ring-amber-500/80";
+    }
+    if (isSpeaking) {
+        return "border-emerald-400 ring-2 ring-emerald-400/90 shadow-[0_0_12px_rgba(52,211,153,0.5)] animate-pulse";
+    }
+    if (micEnabled) {
+        return "border-emerald-700/60 ring-1 ring-emerald-700/30";
+    }
+    return "border-zinc-800";
+};
 
 const ParticipantVideoCard = ({
     name,
@@ -91,6 +209,7 @@ const ParticipantVideoCard = ({
     cardAspectClass = "aspect-video",
 }) => {
     const videoRef = useRef(null);
+    const isSpeaking = useAudioSpeaking(stream, micEnabled);
 
     useEffect(() => {
         if (videoRef.current && stream && hasVideo) {
@@ -98,11 +217,7 @@ const ParticipantVideoCard = ({
         }
     }, [stream, hasVideo]);
 
-    const borderStyle = isHandRaised
-        ? "border-amber-500 ring-2 ring-amber-500/80"
-        : micEnabled
-        ? "border-emerald-500 ring-2 ring-emerald-500/60"
-        : "border-zinc-800";
+    const borderStyle = resolveParticipantBorderStyle(isHandRaised, isSpeaking, micEnabled);
 
     return (
         <div className={`relative ${cardAspectClass} overflow-hidden rounded-xl border bg-zinc-900 transition-all ${borderStyle}`}>
@@ -130,6 +245,7 @@ const ParticipantVideoCard = ({
                 micEnabled={micEnabled}
                 isLocal={isLocal}
                 isHost={isHost}
+                isSpeaking={isSpeaking}
             />
         </div>
     );
