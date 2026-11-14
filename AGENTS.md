@@ -38,6 +38,7 @@ Khi thực hiện các tác vụ chuyên biệt, Agent phải đọc file `SKILL
 - [`heroui-migration`](.agents/skills/heroui-migration/SKILL.md): Hướng dẫn chuyển đổi và nâng cấp từ HeroUI v2 lên HeroUI v3.
 - [`heroui-native`](.agents/skills/heroui-native/SKILL.md): Hướng dẫn sử dụng HeroUI Native cho ứng dụng di động.
 - [`ui-ux-pro-max`](.agents/skills/ui-ux-pro-max/SKILL.md): Hướng dẫn thiết kế UX/UI toàn diện, bố cục thẩm mỹ, trải nghiệm người dùng cao cấp.
+- [`ui-ux`](.agents/skills/ui-ux/SKILL.md): Gu UI/UX cho app — dashboard, danh sách, bảng, form, modal, cài đặt, thiết kế chuẩn chỉ theo quy trình designer (brief, wireframe, tối ưu trải nghiệm người dùng).
 - [`ui-styling`](.agents/skills/ui-styling/SKILL.md): Thiết lập styling chuẩn, tối ưu theme dark/light, utility classes.
 - [`design-system`](.agents/skills/design-system/SKILL.md): Hệ thống Design Tokens, tỷ lệ spacing, typography scales.
 - [`brand`](.agents/skills/brand/SKILL.md): Quản lý bản sắc thương hiệu, định hướng nội dung và hình ảnh.

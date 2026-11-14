@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import Select from "react-select";
+import { Button, Chip } from "@heroui/react";
+import { ChevronUpIcon } from "@heroicons/react/24/outline";
 import LoadingSpinner from "../components/LoadingSpinner";
 import { LazySection } from "../components/common";
 
@@ -424,7 +426,7 @@ export default function Home() {
                         : "pointer-events-none opacity-0"
                 }`}
             >
-                ↑
+                <ChevronUpIcon className="h-5 w-5 stroke-2" />
             </Button>
         </div>
     );
