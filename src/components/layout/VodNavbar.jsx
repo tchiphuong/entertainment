@@ -3,9 +3,6 @@ import { Link, useNavigate, useSearchParams, useLocation } from "react-router-do
 import { useTranslation } from "react-i18next";
 import { useDebounce } from "../../hooks/useDebounce";
 import { useAuth } from "../../contexts/AuthContext";
-import { auth, googleProvider } from "../../services/firebase";
-import { signInWithPopup, signOut } from "firebase/auth";
-import { vodCache } from "../../utils/vodCache";
 import { ROUTES } from "../../constants";
 
 // Icon SVG tái sử dụng
@@ -288,9 +285,12 @@ const BottomSheetUserCard = ({ currentUser, getUserInitial, t, setIsMenuOpen, ha
             </p>
             <button
                 type="button"
-                onClick={() => {
-                    setIsMenuOpen(false);
-                    handleLogin();
+                onClick={async () => {
+                    try {
+                        await handleLogin();
+                    } finally {
+                        setIsMenuOpen(false);
+                    }
                 }}
                 className="mt-3 flex w-full cursor-pointer items-center justify-center gap-2.5 rounded-xl bg-red-600 py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-red-600/20 transition-all hover:bg-red-500 active:scale-95"
             >
@@ -604,7 +604,7 @@ export default function VodNavbar() {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
     const location = useLocation();
-    const { currentUser } = useAuth();
+    const { currentUser, login, logout } = useAuth();
     const [searchParams] = useSearchParams();
 
     // State quản lý
@@ -690,8 +690,7 @@ export default function VodNavbar() {
     // Auth handlers
     const handleLogin = async () => {
         try {
-            await signInWithPopup(auth, googleProvider);
-            vodCache.clear();
+            await login();
         } catch (error) {
             console.error("Login failed:", error);
         }
@@ -699,7 +698,7 @@ export default function VodNavbar() {
 
     const handleLogout = async () => {
         try {
-            await signOut(auth);
+            await logout();
             setShowDropdown(false);
         } catch (error) {
             console.error("Logout failed:", error);

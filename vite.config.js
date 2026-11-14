@@ -13,7 +13,8 @@ const copyIndexTo404 = () => ({
 });
 
 export default defineConfig(({ mode }) => {
-    const isPagesMode = mode === "pages";
+    // Nhận diện mode 'pages' hoặc môi trường Cloudflare Pages tự động qua biến tiêu chuẩn CF_PAGES
+    const isPagesMode = mode === "pages" || process.env.CF_PAGES === "1";
     return {
         // Mode 'pages' phục vụ triển khai root domain, mặc định là subpath GitHub Pages
         base: isPagesMode ? "/" : "/entertainment/",
