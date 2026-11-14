@@ -6,23 +6,25 @@
     <meta name="referrer" content="no-referrer" />
     <title>Redirecting...</title>
     <script>
-        // SPA redirect for GitHub Pages
-        var pathSegmentsToKeep = 1; // /entertainment/
+        // Chỉ áp dụng SPA redirect hack cho GitHub Pages (khi pathname chứa /entertainment/)
         var l = window.location;
+        if (l.pathname.indexOf('/entertainment') === 0) {
+            var pathSegmentsToKeep = 1; // /entertainment/
+            var pathArray = l.pathname.split('/').slice(1);
+            var path = pathArray.slice(pathSegmentsToKeep).join('/');
+            var query = l.search.slice(1);
 
-        // Get the path after /entertainment/
-        var pathArray = l.pathname.split('/').slice(1);
-        var path = pathArray.slice(pathSegmentsToKeep).join('/');
-        var query = l.search.slice(1);
-
-        // Redirect to index.html with path info
-        l.replace(
-            l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
-            l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') +
-            '/?/' + path +
-            (query ? '&' + query : '') +
-            l.hash
-        );
+            l.replace(
+                l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+                l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') +
+                '/?/' + path +
+                (query ? '&' + query : '') +
+                l.hash
+            );
+        } else {
+            // Trên môi trường root domain độc lập, chuyển hướng an toàn về root
+            l.replace(l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') + '/');
+        }
     </script>
 </head>
 <body></body>

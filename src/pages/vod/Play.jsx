@@ -240,7 +240,8 @@ export default function VodPlay() {
             const currentServerSlug = serverNameToSlug(group.server_name);
             const epNum = server.name || server.slug || "1";
             const targetUrl = `/vod/play/${targetSlug}?episode=${encodeURIComponent(epNum)}&server=${currentServerSlug}`;
-            window.history.replaceState(null, "", `/entertainment${targetUrl}`);
+            const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+            window.history.replaceState(null, "", `${basePath}${targetUrl}`);
 
             if (targetMovie) {
                 setMovie((prev) => ({

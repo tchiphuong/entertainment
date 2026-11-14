@@ -16,9 +16,12 @@ import "./i18n";
 const container = document.getElementById("root");
 const root = createRoot(container);
 
+// Tự động nhận diện basename theo base path của Vite
+const appBasename = import.meta.env.BASE_URL === "/" ? "/" : import.meta.env.BASE_URL.replace(/\/$/, "");
+
 root.render(
     <BrowserRouter
-        basename="/entertainment"
+        basename={appBasename}
         future={{
             v7_startTransition: true,
             v7_relativeSplatPath: true,
