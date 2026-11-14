@@ -2,8 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ mode }) => ({
-    // Đặt base để build đúng đường dẫn khi deploy lên GitHub Pages
-    base: "/entertainment/",
+    // Base path cho Cloudflare Pages (vodprime.pages.dev)
+    base: "/",
     plugins: [react()],
     server: {
         host: true,
