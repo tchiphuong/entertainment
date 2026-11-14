@@ -1,14 +1,12 @@
 import { useTranslation } from "react-i18next";
-import { auth, googleProvider } from "../services/firebase";
-import { signInWithPopup } from "firebase/auth";
-import { vodCache } from "../utils/vodCache";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function Login() {
     const { t } = useTranslation();
+    const { login } = useAuth();
     const handleGoogleLogin = async () => {
         try {
-            await signInWithPopup(auth, googleProvider);
-            vodCache.clear();
+            await login();
         } catch (error) {
             console.error("Lỗi khi đăng nhập bằng Google:", error);
         }
