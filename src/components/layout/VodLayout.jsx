@@ -1,10 +1,14 @@
 import VodNavbar from "./VodNavbar";
+import Footer from "./Footer";
 
 export default function VodLayout({ children }) {
     return (
-        <div className="min-h-screen bg-zinc-950 font-sans text-white selection:bg-red-600 selection:text-white">
-            <VodNavbar />
-            <main className="pb-[calc(4.5rem+env(safe-area-inset-bottom,0rem))] md:pb-0">{children}</main>
+        <div className="flex min-h-screen flex-col justify-between bg-zinc-950 font-sans text-white selection:bg-red-600 selection:text-white">
+            <div className="flex-1">
+                <VodNavbar />
+                <main className="pb-[calc(4.5rem+env(safe-area-inset-bottom,0rem))] md:pb-0">{children}</main>
+            </div>
+            <Footer />
 
             <style
                 dangerouslySetInnerHTML={{

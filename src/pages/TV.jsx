@@ -13,8 +13,15 @@ import {
     handleImageFallbackError,
 } from "../services/tv/tvService";
 import { Button } from "../components/ui";
+import Footer from "../components/layout/Footer";
 
 const PROXY_WORKER_URL = import.meta.env.VITE_PROXY_WORKER_URL || "";
+
+const handleTabLogoError = (e) => {
+    if (e?.currentTarget) {
+        e.currentTarget.style.display = "none";
+    }
+};
 
 
 // Component hiển thị thông tin kênh đang chọn - Memoized
@@ -763,13 +770,22 @@ const buildProxyPayload = (request, originalUri, source) => {
     const headersToSend = filterRequestHeaders(request.headers);
     const bodyPayload = extractRequestBodyString(request.body);
     const fallback = extractUrlOriginFallback(originalUri);
+    const ref = source.referrer || source.referer || fallback.referer;
+    if (ref) {
+        headersToSend["Referer"] = ref;
+    }
+    const ua = source.userAgent;
+    if (ua) {
+        headersToSend["User-Agent"] = ua;
+    }
 
     return {
         url: originalUri,
         method: request.method || "GET",
         headers: headersToSend,
         body: bodyPayload,
-        referer: source.referrer || fallback.referer,
+        referer: ref,
+        userAgent: ua,
         origin: source.origin || fallback.origin,
     };
 };
@@ -781,12 +797,13 @@ export const setupShakaNetworkingFilters = (player, source, useProxy, PROXY_WORK
     if (!networkingEngine) return;
 
     const originalUriMap = new Map();
+    const hasReferrer = Boolean(source?.referrer || source?.referer);
 
     networkingEngine.registerRequestFilter((type, request) => {
         const originalUri = request.uris[0] || "";
         if (PROXY_WORKER_URL && originalUri.startsWith(PROXY_WORKER_URL)) return;
 
-        const shouldProxy = useProxy && originalUri && !originalUri.startsWith("data:");
+        const shouldProxy = (useProxy || hasReferrer) && originalUri && !originalUri.startsWith("data:");
         if (shouldProxy) {
             const payload = buildProxyPayload(request, originalUri, source);
             proxyReqSeq += 1;
@@ -830,6 +847,13 @@ export const setupShakaVideoVolume = (video) => {
     });
 };
 
+export const isAbortOrInterruptedError = (error) => {
+    if (!error) return false;
+    const code = error.code;
+    const name = error.name;
+    return code === 7000 || code === 7002 || name === "AbortError";
+};
+
 export const handleDrmErrorRetry = ({ error, source, clearKeyMode, useProxy, sessionId, sourceIndex, showToast, scheduleRetry, setupShakaPlayer }) => {
     const isDrmError = error?.code === 6008 || (error instanceof SyntaxError && String(error.message || "").includes("hex"));
     if (isDrmError && source.licenseType === "clearkey" && Array.isArray(source.clearKeys) && source.clearKeys.length > 0) {
@@ -854,20 +878,43 @@ export const handleCorsErrorRetry = ({ error, useProxy, source, clearKeyMode, se
     return false;
 };
 
-export const handleNextSourceFallback = ({ sources, sourceIndex, selectedChannel, error, sessionId, showToast, scheduleRetry, setupPlayerWithSource }) => {
-    const nextIndex = sourceIndex + 1;
-    if (nextIndex < sources.length) {
-        showToast(`Nguồn ${sourceIndex + 1} lỗi, đang thử nguồn ${nextIndex + 1}...`, { type: "warn", duration: 2000 });
-        scheduleRetry(() => setupPlayerWithSource(nextIndex, sessionId), 500);
-    } else {
+export const findNextUntriedSourceIndex = (sources, sourceIndex, triedSourcesRef) => {
+    const total = sources.length;
+    let nextIndex = (sourceIndex + 1) % total;
+    const startIdx = nextIndex;
+    if (!triedSourcesRef?.current) return nextIndex;
+
+    while (triedSourcesRef.current.has(nextIndex)) {
+        nextIndex = (nextIndex + 1) % total;
+        if (nextIndex === startIdx) return -1;
+    }
+    return nextIndex;
+};
+
+export const handleNextSourceFallback = ({ sources, sourceIndex, selectedChannel, error, sessionId, showToast, scheduleRetry, setupPlayerWithSource, triedSourcesRef }) => {
+    if (!sources || sources.length <= 1) {
         showToast(`Không thể phát kênh ${selectedChannel?.name || "TV"}. Mã lỗi Shaka: ${error?.code || "unknown"}.`, { type: "error", duration: 8000 });
+        return;
+    }
+
+    if (triedSourcesRef?.current) {
+        triedSourcesRef.current.add(sourceIndex);
+    }
+
+    const nextIndex = findNextUntriedSourceIndex(sources, sourceIndex, triedSourcesRef);
+    if (nextIndex >= 0) {
+        showToast(`Nguồn ${sourceIndex + 1} lỗi, đang thử nguồn ${nextIndex + 1}/${sources.length}...`, { type: "warn", duration: 2000 });
+        scheduleRetry(() => setupPlayerWithSource(nextIndex, sessionId), 400);
+    } else {
+        showToast(`Không thể phát kênh ${selectedChannel?.name || "TV"}. Đã thử tất cả ${sources.length} nguồn nhưng đều lỗi.`, { type: "error", duration: 8000 });
     }
 };
 
-export const handleShakaError = ({ error, source, sourceIndex, sources, clearKeyMode, useProxy, sessionId, selectedChannel, showToast, scheduleRetry, setupShakaPlayer, setupPlayerWithSource }) => {
+export const handleShakaError = ({ error, source, sourceIndex, sources, clearKeyMode, useProxy, sessionId, selectedChannel, showToast, scheduleRetry, setupShakaPlayer, setupPlayerWithSource, triedSourcesRef }) => {
+    if (isAbortOrInterruptedError(error)) return;
     if (handleDrmErrorRetry({ error, source, clearKeyMode, useProxy, sessionId, sourceIndex, showToast, scheduleRetry, setupShakaPlayer })) return;
     if (handleCorsErrorRetry({ error, useProxy, source, clearKeyMode, sessionId, sourceIndex, showToast, scheduleRetry, setupShakaPlayer })) return;
-    handleNextSourceFallback({ sources, sourceIndex, selectedChannel, error, sessionId, showToast, scheduleRetry, setupPlayerWithSource });
+    handleNextSourceFallback({ sources, sourceIndex, selectedChannel, error, sessionId, showToast, scheduleRetry, setupPlayerWithSource, triedSourcesRef });
 };
 
 export const saveWorkingSourceCache = (selectedChannel, sourceIndex, clearKeyMode, useProxy, workingSourceCacheRef) => {
@@ -888,23 +935,55 @@ export const normalizeTvSource = (rawSource) => ({
     ...rawSource,
     file: rawSource.file || "",
     label: rawSource.label || "Default",
-    referrer: rawSource.referrer ?? null,
+    referrer: rawSource.referrer || rawSource.referer || null,
     userAgent: rawSource.userAgent ?? null,
     licenseType: rawSource.licenseType ?? null,
     licenseKey: rawSource.licenseKey ?? null,
     clearKeys: Array.isArray(rawSource.clearKeys) ? rawSource.clearKeys : null,
 });
 
-export const resolveCachedSourceSettings = (selectedChannel, sourceIndex, workingSourceCache) => {
+export const resolveCachedSourceSettings = (selectedChannel, sourceIndex, workingSourceCache, source) => {
     const chCacheKey = getChannelParamId(selectedChannel) || selectedChannel.id;
     const cachedSource = workingSourceCache?.get(chCacheKey);
     let startMode = "hex";
-    let startUseProxy = false;
+    const hasReferrer = Boolean(source?.referrer || source?.referer);
+    let startUseProxy = hasReferrer;
     if (cachedSource && cachedSource.sourceIndex === sourceIndex) {
         startMode = cachedSource.clearKeyMode || "hex";
-        startUseProxy = cachedSource.useProxy || false;
+        startUseProxy = hasReferrer || (cachedSource.useProxy ?? false);
     }
     return { startMode, startUseProxy };
+};
+
+export const resolveChannelSourcesAndStartIndex = (selectedChannel, workingSourceCache) => {
+    if (selectedChannel?.configSources?.length > 0) {
+        const filteredSources = sortChannelSources(selectedChannel.configSources);
+        if (filteredSources.length === 0) {
+            throw new Error("Tất cả nguồn đều là FLV (Flash Video) - không được hỗ trợ");
+        }
+        const chCacheKey = getChannelParamId(selectedChannel) || selectedChannel.id;
+        const cachedSource = workingSourceCache?.get(chCacheKey);
+        const startIndex =
+            cachedSource?.sourceIndex < filteredSources.length
+                ? cachedSource.sourceIndex
+                : 0;
+        return { sources: filteredSources, startIndex };
+    }
+
+    return {
+        sources: [
+            {
+                file: selectedChannel?.url || "",
+                label: "Default",
+                referrer: null,
+                userAgent: null,
+                licenseType: null,
+                licenseKey: null,
+                clearKeys: null,
+            },
+        ],
+        startIndex: 0,
+    };
 };
 
 export const resolveEpgInfoForChannel = (channelId, epgChannels) => {
@@ -1359,8 +1438,31 @@ export default function TV() {
 
     // Hàm destroy tất cả player instances của Shaka
     const destroyAllPlayers = async () => {
-        // Dừng hẳn video cũ trước khi destroy player để tránh âm thanh/stream còn chạy nền
+        // 1. Destroy Shaka Player trước để detach khỏi video element êm đẹp
+        const playerToDestroy = shakaPlayerRef.current;
+        shakaPlayerRef.current = null;
+        if (playerToDestroy) {
+            try {
+                await playerToDestroy.destroy();
+            } catch (e) {
+                console.warn("Error destroying Shaka Player:", e);
+            }
+        }
+
+        // 2. Destroy Shaka UI Overlay
+        const overlayToDestroy = shakaUiOverlayRef.current;
+        shakaUiOverlayRef.current = null;
+        if (overlayToDestroy) {
+            try {
+                overlayToDestroy.destroy();
+            } catch (e) {
+                console.warn("Error destroying Shaka UI Overlay:", e);
+            }
+        }
+
+        // 3. Dừng và dọn dẹp video element
         const activeVideo = activeVideoElementRef.current;
+        activeVideoElementRef.current = null;
         if (activeVideo) {
             try {
                 activeVideo.pause();
@@ -1368,28 +1470,6 @@ export default function TV() {
                 activeVideo.load();
             } catch (e) {
                 console.warn("Error hard-stopping active video:", e);
-            } finally {
-                activeVideoElementRef.current = null;
-            }
-        }
-
-        // Destroy Shaka UI Overlay
-        if (shakaUiOverlayRef.current) {
-            try {
-                shakaUiOverlayRef.current.destroy();
-                shakaUiOverlayRef.current = null;
-            } catch (e) {
-                console.warn("Error destroying Shaka UI Overlay:", e);
-            }
-        }
-
-        // Destroy Shaka Player
-        if (shakaPlayerRef.current) {
-            try {
-                await shakaPlayerRef.current.destroy();
-                shakaPlayerRef.current = null;
-            } catch (e) {
-                console.warn("Error destroying Shaka Player:", e);
             }
         }
     };
@@ -1432,12 +1512,16 @@ export default function TV() {
         clearSourceTimeout();
         setCurrentSourceIdx(sourceIndex);
 
+        const hasReferrer = Boolean(source?.referrer || source?.referer);
+        const effectiveUseProxy = Boolean(useProxy || hasReferrer);
+
         console.log(`[Shaka Setup] Source ${sourceIndex}:`, {
             file: source.file,
             licenseType: source.licenseType,
             clearKeys: source.clearKeys,
             clearKeyMode,
-            useProxy,
+            useProxy: effectiveUseProxy,
+            hasReferrer,
         });
 
         const sources = currentSourcesRef.current;
@@ -1495,20 +1579,39 @@ export default function TV() {
         });
 
         configureShakaDrm(player, source, clearKeyMode);
-        setupShakaNetworkingFilters(player, source, useProxy, PROXY_WORKER_URL);
+        setupShakaNetworkingFilters(player, source, effectiveUseProxy, PROXY_WORKER_URL);
+
+        let hasHandledError = false;
+
+        const onPlayerError = (error, context = "event") => {
+            if (hasHandledError) return;
+            if (sessionId !== playSessionRef.current) return;
+            if (isAbortOrInterruptedError(error)) return;
+
+            hasHandledError = true;
+            clearSourceTimeout();
+            console.error(`Shaka Player ${context} error (source ${sourceIndex + 1}):`, error);
+
+            handleShakaError({
+                error,
+                source,
+                sourceIndex,
+                sources,
+                clearKeyMode,
+                useProxy: effectiveUseProxy,
+                sessionId,
+                selectedChannel,
+                showToast,
+                scheduleRetry,
+                setupShakaPlayer,
+                setupPlayerWithSource,
+                triedSourcesRef,
+            });
+        };
 
         // Error handler cho Shaka
         player.addEventListener("error", (event) => {
-            if (sessionId !== playSessionRef.current) return;
-            clearSourceTimeout();
-            const error = event.detail;
-            console.error(`Shaka Player error (source ${sourceIndex + 1}):`, error);
-
-            handleShakaError({
-                error, source, sourceIndex, sources, clearKeyMode, useProxy,
-                sessionId, selectedChannel, showToast, scheduleRetry,
-                setupShakaPlayer, setupPlayerWithSource
-            });
+            onPlayerError(event.detail, "event");
         });
 
         try {
@@ -1524,16 +1627,9 @@ export default function TV() {
                 );
             }
 
-            saveWorkingSourceCache(selectedChannel, sourceIndex, clearKeyMode, useProxy, workingSourceCacheRef);
+            saveWorkingSourceCache(selectedChannel, sourceIndex, clearKeyMode, effectiveUseProxy, workingSourceCacheRef);
         } catch (error) {
-            clearSourceTimeout();
-            console.error(`Shaka Player load error (source ${sourceIndex + 1}):`, error);
-
-            handleShakaError({
-                error, source, sourceIndex, sources, clearKeyMode, useProxy,
-                sessionId, selectedChannel, showToast, scheduleRetry,
-                setupShakaPlayer, setupPlayerWithSource
-            });
+            onPlayerError(error, "load");
         }
     };
 
@@ -1575,8 +1671,8 @@ export default function TV() {
         if (!playerDiv) return;
 
         if (!shaka.Player.isBrowserSupported()) {
-            const nextIndex = sourceIndex + 1;
-            if (nextIndex < sources.length) {
+            const nextIndex = findNextUntriedSourceIndex(sources, sourceIndex, triedSourcesRef);
+            if (nextIndex >= 0) {
                 showToast(
                     `Nguồn ${sourceIndex + 1} không hỗ trợ, đang thử nguồn ${nextIndex + 1}...`,
                     { type: "warn", duration: 2000 },
@@ -1595,7 +1691,7 @@ export default function TV() {
         }
 
         const { startMode, startUseProxy } = resolveCachedSourceSettings(
-            selectedChannel, sourceIndex, workingSourceCacheRef.current
+            selectedChannel, sourceIndex, workingSourceCacheRef.current, source
         );
 
         shaka.polyfill.installAll();
@@ -1610,6 +1706,8 @@ export default function TV() {
 
     // --- LOAD CHANNEL KHI selectedChannel THAY ĐỔI ---
     useEffect(() => {
+        let isCurrentEffect = true;
+
         const loadChannel = async () => {
             if (!selectedChannel) return;
 
@@ -1631,41 +1729,23 @@ export default function TV() {
                 await destroyAllPlayers();
                 clearPendingRetries();
 
-                if (selectedChannel?.configSources?.length > 0) {
-                    const filteredSources = sortChannelSources(selectedChannel.configSources);
+                if (!isCurrentEffect || sessionId !== playSessionRef.current) return;
 
-                    if (filteredSources.length === 0) {
-                        throw new Error("Tất cả nguồn đều là FLV (Flash Video) - không được hỗ trợ");
-                    }
+                const { sources, startIndex } = resolveChannelSourcesAndStartIndex(
+                    selectedChannel,
+                    workingSourceCacheRef.current,
+                );
 
-                    currentSourcesRef.current = filteredSources;
-                    const chCacheKey = getChannelParamId(selectedChannel) || selectedChannel.id;
-                    const cachedSource = workingSourceCacheRef.current.get(chCacheKey);
-                    const startIndex =
-                        cachedSource?.sourceIndex < filteredSources.length
-                            ? cachedSource.sourceIndex
-                            : 0;
+                if (!isCurrentEffect || sessionId !== playSessionRef.current) return;
 
-                    if (startIndex > 0) {
-                        console.log(`[Cache] Bắt đầu từ source ${startIndex + 1} (đã cache từ lần phát trước)`);
-                    }
-
-                    await setupPlayerWithSource(startIndex, sessionId);
-                } else {
-                    currentSourcesRef.current = [
-                        {
-                            file: selectedChannel.url,
-                            label: "Default",
-                            referrer: null,
-                            userAgent: null,
-                            licenseType: null,
-                            licenseKey: null,
-                            clearKeys: null,
-                        },
-                    ];
-                    await setupPlayerWithSource(0, sessionId);
+                currentSourcesRef.current = sources;
+                if (startIndex > 0) {
+                    console.log(`[Cache] Bắt đầu từ source ${startIndex + 1} (đã cache từ lần phát trước)`);
                 }
+
+                await setupPlayerWithSource(startIndex, sessionId);
             } catch (error) {
+                if (!isCurrentEffect || sessionId !== playSessionRef.current) return;
                 console.error("Failed to setup Shaka Player:", error);
                 showToast(
                     `Lỗi tải kênh: ${error.message || "Không rõ nguyên nhân"}`,
@@ -1677,6 +1757,7 @@ export default function TV() {
         loadChannel();
 
         return () => {
+            isCurrentEffect = false;
             clearPendingRetries();
             clearSourceTimeout();
             destroyAllPlayers().catch((_e) => {
@@ -2043,23 +2124,26 @@ export default function TV() {
     }, [selectedChannel, activeGroupChannels, groups, activeGroupId]);
 
     const handleManualSelectSource = useCallback(
-        (idx) => {
+        async (idx) => {
             if (!selectedChannel?.configSources?.[idx]) return;
 
-            // Reset trackings để bắt đầu lại từ nguồn này
+            playSessionRef.current += 1;
+            const sessionId = playSessionRef.current;
+            clearPendingRetries();
+            clearSourceTimeout();
+
             errorCountRef.current = 0;
-            triedSourcesRef.current.clear();
-
-            const playerDiv = document.getElementById("tv-player");
-            if (playerDiv) playerDiv.innerHTML = "";
-
+            triedSourcesRef.current = new Set([idx]);
+            currentSourceIndexRef.current = idx;
             setCurrentSourceIdx(idx);
-            setupShakaPlayer(selectedChannel.configSources[idx], idx);
+
+            await destroyAllPlayers();
+            if (sessionId !== playSessionRef.current) return;
+
+            await setupPlayerWithSource(idx, sessionId);
         },
-        [selectedChannel, setupShakaPlayer],
+        [selectedChannel, setupPlayerWithSource, clearPendingRetries, clearSourceTimeout],
     );
-
-
 
     const handleSelectChannel = useCallback((channel) => {
         // Lưu vị trí cuộn hiện tại
@@ -2072,7 +2156,7 @@ export default function TV() {
         const playerDiv = document.getElementById("tv-player");
         if (playerDiv) playerDiv.innerHTML = "";
 
-        setSelectedChannel(channel);
+        setSelectedChannel((prev) => (prev?.id === channel.id ? { ...channel } : channel));
 
         // Đảm bảo không nhảy lên đầu sau khi state update
         requestAnimationFrame(() => {
@@ -2080,7 +2164,7 @@ export default function TV() {
                 window.scrollTo(0, scrollPosRef.current);
             }
         });
-    }, []);
+    }, [recordPlay]);
 
     if (loading) {
         return (
@@ -2221,7 +2305,7 @@ export default function TV() {
                                     >
                                         {group.id === "favorites" && (
                                             <svg
-                                                className="h-4 w-4"
+                                                className="h-4 w-4 shrink-0"
                                                 fill="currentColor"
                                                 viewBox="0 0 24 24"
                                             >
@@ -2230,14 +2314,25 @@ export default function TV() {
                                         )}
                                         {group.id === "most_watched" && (
                                             <svg
-                                                className="h-4 w-4"
+                                                className="h-4 w-4 shrink-0"
                                                 fill="currentColor"
                                                 viewBox="0 0 24 24"
                                             >
                                                 <path d="M13.5.67s.74 2.65.74 4.8c0 2.06-1.35 3.73-3.41 3.73-2.07 0-3.63-1.67-3.63-3.73l.03-.36C5.21 7.51 4 10.62 4 14c0 4.42 3.58 8 8 8s8-3.58 8-8c0-3.12-1.12-6.57-2.61-8.52-1.38-1.81-3.89-4.81-3.89-4.81zM12 19c-2.76 0-5-2.24-5-5 0-1.47.64-2.82 1.67-3.74.39-.35.9-.62 1.4-.79.43-.14.65-.58.55-1.01-.13-.53-.22-1.07-.22-1.64 0 1.25.79 2.21 2.07 2.21 1.26 0 2.1-.96 2.1-2.21 0-.32-.04-.62-.12-.9.23.27.46.56.66.86.83 1.23 1.39 2.48 1.39 3.51 0 2.76-2.24 5-5 5z" />
                                             </svg>
                                         )}
-                                        {group.name}
+                                        {group.logo &&
+                                            group.id !== "favorites" &&
+                                            group.id !== "most_watched" && (
+                                                <img
+                                                    src={group.logo}
+                                                    alt=""
+                                                    className="h-4 w-4 shrink-0 rounded-full object-contain p-0.5 bg-zinc-950/40"
+                                                    onError={handleTabLogoError}
+                                                    loading="lazy"
+                                                />
+                                            )}
+                                        <span>{group.name}</span>
                                     </button>
                                 );
                             })}
@@ -2362,6 +2457,10 @@ export default function TV() {
                             );
                         })}
                     </div>
+                </div>
+
+                <div className="mt-8">
+                    <Footer />
                 </div>
 
                 {showScrollTopButton && (

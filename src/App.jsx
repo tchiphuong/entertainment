@@ -5,7 +5,6 @@ import { ROUTES } from "./constants";
 import Spinner from "./components/ui/Spinner";
 
 // Lazy loading các trang chính nhằm giảm tải dung lượng bundle ban đầu
-const Home = lazy(() => import("./pages/Home"));
 const TvPage = lazy(() => import("./pages/TV"));
 const Schedule = lazy(() => import("./pages/Schedule"));
 
@@ -36,7 +35,7 @@ export default function App() {
         <VodProvider>
             <Suspense fallback={<RouteFallback />}>
                 <Routes>
-                    <Route path={ROUTES.HOME} element={<Home />} />
+                    <Route path={ROUTES.HOME} element={<Schedule />} />
 
                     {/* Mở trực tiếp trang xem phim từ các link cũ hoặc alias */}
                     <Route path="/vods/play/:slug" element={<Play />} />

@@ -8,6 +8,7 @@ import LeagueStandings from "../components/schedule/LeagueStandings";
 import MatchDetailModal from "../components/schedule/MatchDetailModal";
 import { scheduleService } from "../services/schedule/scheduleService";
 import { LazySection } from "../components/common";
+import Footer from "../components/layout/Footer";
 
 const ScheduleHeader = ({ activeTab, setActiveTab, totalMatches, t }) => {
     const isMatches = activeTab === "matches";
@@ -244,6 +245,8 @@ export default function Schedule() {
                 loadingDetails={loadingDetails}
                 hlsChannels={hlsChannels}
             />
+
+            <Footer />
         </div>
     );
 }

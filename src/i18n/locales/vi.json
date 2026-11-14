@@ -54,7 +54,12 @@
         "liveTv": "TV Trực Tuyến",
         "privacy": "Bảo mật",
         "schedule": "Lịch chiếu",
-        "terms": "Điều khoản"
+        "terms": "Điều khoản",
+        "disclaimerTitle": "Tuyên Bố Miễn Trừ Trách Nhiệm",
+        "disclaimerShort": "Toàn bộ nội dung và luồng dữ liệu trên hệ thống được tổng hợp tự động từ các nguồn chia sẻ công khai trên Internet. Trang web không lưu trữ bất kỳ tệp đa phương tiện nào trên máy chủ và không chịu trách nhiệm pháp lý đối với nội dung của bên thứ ba. Mọi yêu cầu liên quan đến bản quyền (DMCA), xin vui lòng liên hệ để được hỗ trợ xử lý và gỡ bỏ kịp thời.",
+        "disclaimerFull": "Trang web hoạt động như một công cụ tổng hợp và lập chỉ mục thông tin giải trí phi thương mại. Toàn bộ nội dung, hình ảnh, liên kết và luồng phát trực tuyến hiển thị tại đây đều được thu thập tự động từ các nguồn chia sẻ công khai trên mạng Internet. Chúng tôi hoàn toàn không sở hữu, không lưu trữ tệp đa phương tiện trên máy chủ và không kiểm soát nội dung từ bên thứ ba.\n\nChúng tôi tôn trọng quyền sở hữu trí tuệ của các tác giả và đơn vị truyền thông. Nếu quý chủ sở hữu bản quyền hoặc đại diện hợp pháp cho rằng có nội dung gây ảnh hưởng đến quyền lợi của mình, vui lòng gửi thông báo kèm thông tin xác thực qua kênh liên hệ của chúng tôi. Chúng tôi cam kết sẽ tiếp nhận, xác minh và gỡ bỏ liên kết vi phạm trong thời gian sớm nhất. Xin chân thành cảm ơn sự thông cảm và hợp tác của quý vị.",
+        "viewFullDisclaimer": "Xem chi tiết DMCA",
+        "copyright": "© 2026 Entertainment Hub. Bản quyền thuộc về các đơn vị sản xuất tương ứng."
     },
     "home": {
         "title": "Entertainment Hub • Cổng Giải Trí & Xem Phim Trực Tuyến"

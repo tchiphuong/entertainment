@@ -54,7 +54,12 @@
         "liveTv": "Live TV",
         "privacy": "Privacy",
         "schedule": "Schedule",
-        "terms": "Terms"
+        "terms": "Terms",
+        "disclaimerTitle": "Disclaimer & DMCA Notice",
+        "disclaimerShort": "All content and streaming data on this website are aggregated automatically from publicly available sources on the Internet. We do not host any media files on our servers and assume no legal liability for third-party content. For copyright-related inquiries (DMCA), please contact us for timely processing and removal.",
+        "disclaimerFull": "This website operates as a non-commercial entertainment index and information aggregator. All media content, links, and streaming data displayed are automatically crawled from public sources across the Internet. We do not own, store, or manage any video files on our servers.\n\nWe respect the intellectual property rights of content owners. If you are a copyright holder or authorized representative and believe your rights have been infringed, please reach out via our contact channels with proper verification. We will promptly review, disable, or remove any infringing links. Thank you for your understanding and cooperation.",
+        "viewFullDisclaimer": "View DMCA Policy",
+        "copyright": "© 2026 Entertainment Hub. All rights belong to their respective creators."
     },
     "home": {
         "title": "Entertainment Hub • Movies, TV & Sports Streaming"
