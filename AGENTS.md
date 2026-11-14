@@ -25,7 +25,7 @@ Mọi thay đổi mã nguồn trong dự án bắt buộc phải tuân theo 7 b�
 | **Độ phức tạp mã nguồn (SonarQube)** | [`code-complexity-standard.md`](.agents/rules/code-complexity-standard.md) | Cyclomatic Complexity $\le$ 15, Cognitive Complexity $\le$ 15 (`eslint-plugin-sonarjs`). Tách hàm con, dùng Early Return (`guard clauses`), đơn giản hóa điều kiện. Luôn chạy `npm run lint` sau khi code. |
 | **Cấu trúc Component** | [`frontend-component-structure.md`](.agents/rules/frontend-component-structure.md) | Component nhỏ gọn, đơn nhiệm, dễ tái sử dụng. Tách biệt rõ ràng giữa UI view và business logic / state phức tạp. |
 | **Quản lý State & Dữ liệu** | [`frontend-state-management-rule.md`](.agents/rules/frontend-state-management-rule.md) | Quản lý state tinh gọn, tránh dư thừa. **Nghiêm cấm fallback sai ngữ nghĩa dữ liệu** (không lấy name/slug thay cho ID, không trộn provider ID sang tmdb_id, không giả định default làm sai lệch trạng thái thực tế). |
-| **An toàn nguồn dữ liệu & Từ ngữ** | [`safe-source-standards.md`](.agents/rules/safe-source-standards.md) | Không chứa từ ngữ nhạy cảm về bản quyền/pháp lý trong code, comment, commit. Dùng ngôn ngữ kỹ thuật trung tính. Quản lý nguồn an toàn. **Tuyệt đối không commit file `.env` hay thông tin nhạy cảm (ẩn danh hóa 100% bằng `source_1`, `source_2`...)**. |
+| **An toàn nguồn dữ liệu & Từ ngữ** | [`safe-source-standards.md`](.agents/rules/safe-source-standards.md) | Không chứa từ ngữ nhạy cảm về bản quyền/pháp lý trong code, comment, commit. Dùng ngôn ngữ kỹ thuật trung tính. Quản lý nguồn an toàn. **Tuyệt đối không commit file `.env`, thông tin nhạy cảm (ẩn danh hóa 100% bằng `source_1`, `source_2`...) hay tên miền triển khai riêng tư (dùng mode kỹ thuật pages/production)**. |
 
 ---
 
