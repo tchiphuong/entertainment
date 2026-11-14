@@ -12,12 +12,35 @@ export {
     
 };
 
+const extractReferrer = (src) => {
+    const headers = src.headers;
+    if (headers) {
+        const ref = headers.referrer || headers.referer || headers.Referer || headers.referer;
+        if (ref) return ref;
+    }
+    return src.referrer || src.referer || null;
+};
+
+const extractUserAgent = (src) => {
+    const headers = src.headers;
+    if (headers) {
+        const ua = headers.userAgent || headers["User-Agent"] || headers["user-agent"];
+        if (ua) return ua;
+    }
+    return src.userAgent || src.ua || null;
+};
+
+const resolveSourceType = (src) => {
+    if (src.type) return src.type;
+    return src.url?.includes(".mpd") ? "dash" : "hls";
+};
+
 const parseSourceConfig = (src) => ({
     file: src.url,
-    type: src.type || (src.url.includes(".mpd") ? "dash" : "hls"),
+    type: resolveSourceType(src),
     label: src.label || src.quality || "Default",
-    userAgent: src.headers?.userAgent || src.ua || null,
-    referrer: src.headers?.referrer || src.referer || null,
+    userAgent: extractUserAgent(src),
+    referrer: extractReferrer(src),
     licenseType: src.drm?.licenseType || null,
     clearKeys: src.drm?.keys || null,
 });
@@ -110,7 +133,7 @@ const parseClearKeys = (licenseKey) => {
 };
 
 const parseExtVlcOpt = (optLine, opts) => {
-    const refMatch = optLine.match(/http-referrer=(.+)$/i);
+    const refMatch = optLine.match(/http-referr?er=(.+)$/i);
     if (refMatch) opts.referrer = refMatch[1].trim();
     const uaMatch = optLine.match(/http-user-agent=(.+)$/i);
     if (uaMatch) opts.userAgent = uaMatch[1].trim();
@@ -226,6 +249,7 @@ const parseM3uExtinfLine = (line, allLines, index) => {
     const logoMatch = line.match(/tvg-logo="([^"]+)"/i);
     const tvgIdMatch = line.match(/tvg-id="([^"]+)"/i);
     const groupMatch = line.match(/group-title="([^"]+)"/i);
+    const groupLogoMatch = line.match(/group-logo="([^"]+)"/i);
 
     const opts = parseM3uBlockOptions(allLines, index);
     const url = findNextStreamUrl(allLines, index);
@@ -241,6 +265,7 @@ const parseM3uExtinfLine = (line, allLines, index) => {
             logo: logoMatch ? logoMatch[1] : null,
             tvgId: tvgIdMatch ? tvgIdMatch[1] : null,
             groupName: groupMatch ? groupMatch[1] : "Khác",
+            groupLogo: groupLogoMatch ? groupLogoMatch[1] : null,
             url,
         },
         source: {
@@ -257,7 +282,7 @@ const parseM3uExtinfLine = (line, allLines, index) => {
 };
 
 const parseM3uLines = (allLines) => {
-    const state = { channelsByTvgId: {}, channelsByBaseName: {}, groups: {} };
+    const state = { channelsByTvgId: {}, channelsByBaseName: {}, groups: {}, groupLogos: {} };
 
     for (let i = 0; i < allLines.length; i++) {
         const line = allLines[i];
@@ -266,12 +291,16 @@ const parseM3uLines = (allLines) => {
         const parsed = parseM3uExtinfLine(line, allLines, i);
         if (parsed) {
             registerM3uChannel(state, parsed.chData, parsed.source);
+            if (parsed.chData.groupLogo && !state.groupLogos[parsed.chData.groupName]) {
+                state.groupLogos[parsed.chData.groupName] = parsed.chData.groupLogo;
+            }
         }
     }
 
     return Object.keys(state.groups).map((groupName, idx) => ({
         id: `m3u-g-${idx}`,
         name: groupName,
+        logo: toProxyImageUrl(state.groupLogos[groupName]),
         channels: state.groups[groupName],
     }));
 };
