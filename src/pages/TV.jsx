@@ -15,7 +15,7 @@ import {
 import { Button } from "../components/ui";
 import Footer from "../components/layout/Footer";
 
-const PROXY_WORKER_URL = import.meta.env.VITE_PROXY_WORKER_URL || "";
+const PROXY_WORKER_URL = import.meta.env.VITE_PROXY_WORKER_URL || "/api/proxy";
 
 const handleTabLogoError = (e) => {
     if (e?.currentTarget) {
@@ -801,7 +801,7 @@ export const setupShakaNetworkingFilters = (player, source, useProxy, PROXY_WORK
 
     networkingEngine.registerRequestFilter((type, request) => {
         const originalUri = request.uris[0] || "";
-        if (PROXY_WORKER_URL && originalUri.startsWith(PROXY_WORKER_URL)) return;
+        if (PROXY_WORKER_URL && (originalUri.startsWith(PROXY_WORKER_URL) || originalUri.includes("/api/proxy"))) return;
 
         const shouldProxy = (useProxy || hasReferrer) && originalUri && !originalUri.startsWith("data:");
         if (shouldProxy) {
@@ -824,7 +824,7 @@ export const setupShakaNetworkingFilters = (player, source, useProxy, PROXY_WORK
     networkingEngine.registerResponseFilter((type, response) => {
         if (response.uri?.includes("proxyReqId=")) {
             try {
-                const urlObj = new URL(response.uri);
+                const urlObj = new URL(response.uri, window.location.href);
                 const reqId = urlObj.searchParams.get("proxyReqId");
                 if (reqId && originalUriMap.has(reqId)) {
                     response.uri = originalUriMap.get(reqId);
@@ -1018,12 +1018,22 @@ const QUALITY_ORDER = {
 
 const getSourceQuality = (label) => QUALITY_ORDER[label?.trim()] || 0;
 
+export const isAppleWebKitDevice = () => {
+    if (typeof navigator === "undefined") return false;
+    const ua = navigator.userAgent || "";
+    return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+};
+
 export const sortChannelSources = (sources) => {
+    const isApple = isAppleWebKitDevice();
     return [...sources]
         .filter((sourceConfig) => !sourceConfig.file?.toLowerCase().includes(".flv"))
         .sort((a, b) => {
             const aIsDash = a.file?.toLowerCase().includes(".mpd");
             const bIsDash = b.file?.toLowerCase().includes(".mpd");
+            if (isApple && aIsDash !== bIsDash) {
+                return aIsDash ? 1 : -1;
+            }
             const aHasKeys = a.licenseType === "clearkey" && Array.isArray(a.clearKeys) && a.clearKeys.length > 0;
             const bHasKeys = b.licenseType === "clearkey" && Array.isArray(b.clearKeys) && b.clearKeys.length > 0;
 
