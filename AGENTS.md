@@ -67,3 +67,7 @@ Khi thực hiện các tác vụ chuyên biệt, Agent phải đọc file `SKILL
      npm run lint
      ```
    - Đảm bảo mã nguồn đạt 0 lỗi (errors) và 0 cảnh báo (warnings) trước khi báo cáo hoàn tất.
+5. **Quy chuẩn Triển khai (Deploy Standard)**:
+   - Khi người dùng yêu cầu "deploy" hoặc "triển khai", mặc định hiểu là quy trình đóng gói `npm run build:pages` và phát hành lên Cloudflare Pages Production (`--project-name=vodprime --branch=production-pages`).
+   - Luôn chạy `npm run lint` đạt 0 lỗi trước khi build.
+   - Đồng bộ song song cả 2 nhánh `master` và `production-pages` sau khi triển khai, tuân thủ nghiêm ngặt quy tắc không commit lộ tên miền thực tế.
