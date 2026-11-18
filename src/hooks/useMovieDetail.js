@@ -25,23 +25,23 @@ const getTypeKey = (serverName) => {
     return "vietsub";
 };
 
-// Helper xác định danh sách source cần truy vấn (ưu tiên source truyền vào hoặc Source K)
+// Helper xác định danh sách source cần truy vấn (ưu tiên source truyền vào hoặc Nguồn 1)
 const determineSources = (initialSource) => {
-    const availableSources = [SOURCES.SOURCE_K, SOURCES.SOURCE_O, SOURCES.SOURCE_R];
+    const availableSources = [SOURCES.SOURCE_1, SOURCES.SOURCE_2, SOURCES.SOURCE_3];
     if (initialSource && availableSources.includes(initialSource)) {
         return [initialSource, ...availableSources.filter((s) => s !== initialSource)];
     }
     return availableSources;
 };
 
-const fetchTmdbSourcesData = async ({ slug, tmdbId, mediaType, sources = [SOURCES.SOURCE_K, SOURCES.SOURCE_O] }) => {
+const fetchTmdbSourcesData = async ({ slug, tmdbId, mediaType, sources = [SOURCES.SOURCE_1, SOURCES.SOURCE_2] }) => {
     const results = [];
     const resultsBySource = {};
 
     for (const src of sources) {
         try {
             let res = await vodService.fetchSourceData(slug, src, tmdbId, mediaType);
-            if (!res?.movie && slug && src === SOURCES.SOURCE_K) {
+            if (!res?.movie && slug && src === SOURCES.SOURCE_1) {
                 const fallbackMovie = await tryFindFallbackSeasonMovie(slug);
                 if (fallbackMovie?.slug) {
                     res = await vodService.fetchSourceData(fallbackMovie.slug, src, tmdbId, mediaType);
@@ -61,10 +61,10 @@ const fetchTmdbSourcesData = async ({ slug, tmdbId, mediaType, sources = [SOURCE
 };
 
 const fetchDirectSourcesData = async (slug, sources) => {
-    // Sắp xếp thứ tự nguồn đảm bảo Source K luôn đứng trước
+    // Sắp xếp thứ tự nguồn đảm bảo Nguồn 1 luôn đứng trước
     const orderedSources = [
-        SOURCES.SOURCE_K,
-        ...sources.filter((s) => s !== SOURCES.SOURCE_K),
+        SOURCES.SOURCE_1,
+        ...sources.filter((s) => s !== SOURCES.SOURCE_1),
     ];
 
     const results = [];
@@ -73,7 +73,7 @@ const fetchDirectSourcesData = async (slug, sources) => {
     for (const src of orderedSources) {
         try {
             let res = await vodService.fetchSourceData(slug, src);
-            if (!res?.movie && src === SOURCES.SOURCE_K && slug) {
+            if (!res?.movie && src === SOURCES.SOURCE_1 && slug) {
                 // Tự động tìm kiếm fallback nếu slug không tồn tại (ví dụ phi-vu-trieu-do -> phi-vu-trieu-do-phan-1)
                 const fallbackMovie = await tryFindFallbackSeasonMovie(slug);
                 if (fallbackMovie?.slug) {
@@ -118,7 +118,7 @@ const extractTmdbFromSourceResult = (res, initialMediaType) => {
 
 // Helper tìm thông tin TMDB tốt nhất từ các nguồn
 const findBestTmdbInfo = (resultsBySource, initialTmdbId = null, initialMediaType = null) => {
-    const tmdbPriority = [SOURCES.SOURCE_K, SOURCES.SOURCE_O, SOURCES.SOURCE_R];
+    const tmdbPriority = [SOURCES.SOURCE_1, SOURCES.SOURCE_2, SOURCES.SOURCE_3];
     let foundTmdbId = initialTmdbId;
     let foundTmdbType = initialMediaType || "movie";
     let bestTmdbInfo = null;

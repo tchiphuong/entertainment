@@ -369,6 +369,14 @@ export function getMoviePlaySlug(movie) {
     return fallbackId ? String(fallbackId).trim() : "";
 }
 
+import {
+    DEFAULT_SOURCE,
+    toPublicSourceParam,
+    fromPublicSourceParam,
+} from "../constants/index.js";
+
+export { toPublicSourceParam, fromPublicSourceParam };
+
 /**
  * Lấy URL phát phim chuẩn hóa (/vod/play/{slug}?source=...&id=...&type=...&season=...):
  * - Đảm bảo không show chữ tmdb lên URL
@@ -377,12 +385,12 @@ export function getMoviePlaySlug(movie) {
  * @param {string} fallbackSource
  * @returns {string}
  */
-export function getMoviePlayUrl(movie, fallbackSource = "source_k") {
+export function getMoviePlayUrl(movie, fallbackSource = DEFAULT_SOURCE) {
     if (!movie) return "#";
     const playSlug = getMoviePlaySlug(movie);
     if (!playSlug) return "#";
 
-    const source = movie.source || fallbackSource;
+    const publicSource = toPublicSourceParam(movie.source || fallbackSource);
     const episodeParam = movie.current_episode?.key
         ? `&episode=${movie.current_episode.key}`
         : "";
@@ -397,5 +405,5 @@ export function getMoviePlayUrl(movie, fallbackSource = "source_k") {
         metaParams = `&id=${tmdbId}${metaParams}`;
     }
 
-    return `/vod/play/${playSlug}?source=${source}${metaParams}${episodeParam}${serverParam}`;
+    return `/vod/play/${playSlug}?source=${publicSource}${metaParams}${episodeParam}${serverParam}`;
 }

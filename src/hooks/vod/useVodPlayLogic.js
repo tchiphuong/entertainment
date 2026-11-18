@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
-import { SOURCES } from "../../constants";
+import { fromPublicSourceParam } from "../../utils/vodIdentifier";
 import { useMovieDetail } from "../useMovieDetail";
 import { vodService } from "../../services/vod/vodService";
 import {
@@ -74,7 +74,7 @@ export const useVodPlayRouteParams = () => {
 
     const episodeParam = searchParams.get("episode");
     const serverParam = searchParams.get("server");
-    const sourceParam = searchParams.get("source") || SOURCES.SOURCE_K;
+    const sourceParam = fromPublicSourceParam(searchParams.get("source"));
     return {
         slug,
         idParam,

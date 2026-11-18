@@ -362,7 +362,7 @@ const fetchSeasonEpisodesData = async (seasonItem, tmdbId, tmdbData) => {
 
         const fetchPromises = [
             seasonItem?.slug
-                ? vodService.fetchSourceData(seasonItem.slug, SOURCES.SOURCE_K)
+                ? vodService.fetchSourceData(seasonItem.slug, SOURCES.SOURCE_1)
                 : Promise.resolve(null),
             canFetchTmdb
                 ? vodService.fetchTMDBSeason(tmdbId, seasonItem.season)

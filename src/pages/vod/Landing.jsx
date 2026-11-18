@@ -86,7 +86,7 @@ const HeroSlideActionButtons = ({ movie, isFav, navigate, toggleFavorite, t }) =
             variant="primary"
             size="lg"
             onPress={() =>
-                navigate(getMoviePlayUrl(movie, "source_k"), {
+                navigate(getMoviePlayUrl(movie, SOURCES.SOURCE_1), {
                     state: {
                         backgrounds: {
                             poster_url: movie.poster_url || movie.poster || movie.poster_path,
@@ -133,7 +133,7 @@ const HeroSlideActionButtons = ({ movie, isFav, navigate, toggleFavorite, t }) =
             variant="secondary"
             size="lg"
             onPress={() =>
-                navigate(getMoviePlayUrl(movie, "source_k"), {
+                navigate(getMoviePlayUrl(movie, SOURCES.SOURCE_1), {
                     state: {
                         backgrounds: {
                             poster_url: movie.poster_url || movie.poster || movie.poster_path,
@@ -281,9 +281,9 @@ export default function VodLanding() {
                         item.poster || item.poster_url || item.thumb_url || "";
                     const server = String(item.server || "").toLowerCase();
 
-                    let itemSource = SOURCES.SOURCE_K;
-                    if (server.includes(SOURCES.SOURCE_O))
-                        itemSource = SOURCES.SOURCE_O;
+                    let itemSource = SOURCES.SOURCE_1;
+                    if (server.includes(SOURCES.SOURCE_2))
+                        itemSource = SOURCES.SOURCE_2;
 
                     return {
                         ...item,

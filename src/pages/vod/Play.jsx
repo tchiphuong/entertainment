@@ -19,6 +19,7 @@ import {
     serverNameToSlug,
 } from "../../utils/vodPlayHelpers";
 import { extractSeasonNumber } from "../../utils/vodHelpers";
+import { toPublicSourceParam } from "../../utils/vodIdentifier";
 import {
     VodPlayerContainer,
 } from "../../components/vod/play/VodPlayerSection";
@@ -139,10 +140,21 @@ export default function VodPlay() {
     useEffect(() => {
         const currentId = searchParams.get("id");
         const targetId = movie?.tmdb_id || movie?.tmdb?.id;
-        if (!currentId && targetId) {
+        const currentSource = searchParams.get("source");
+        const publicSource = toPublicSourceParam(currentSource || movie?.source);
+
+        const shouldUpdateId = !currentId && Boolean(targetId);
+        const shouldUpdateSource = Boolean(currentSource && currentSource !== publicSource);
+
+        if (shouldUpdateId || shouldUpdateSource) {
             setSearchParams((prev) => {
                 const next = new URLSearchParams(prev);
-                next.set("id", String(targetId));
+                if (shouldUpdateId) {
+                    next.set("id", String(targetId));
+                }
+                if (shouldUpdateSource) {
+                    next.set("source", publicSource);
+                }
                 if (!next.has("type") && movie?.type) {
                     const resolvedType = movie.type === "series" || movie.type === "tv" ? "tv" : "movie";
                     next.set("type", resolvedType);

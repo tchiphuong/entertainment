@@ -10,13 +10,60 @@
 // 1. VOD SOURCES & SYSTEM CONFIG
 // ==========================================
 export const SOURCES = {
-    SOURCE_1: "source_1",
-    SOURCE_2: "source_2",
-    SOURCE_3: "source_3",
-    SOURCE_K: "source_k",
-    SOURCE_O: "source_o",
-    SOURCE_R: "source_r",
-    SOURCE_TMDB: "source_tmdb",
+    SOURCE_1: "1",
+    SOURCE_2: "2",
+    SOURCE_3: "3",
+    SOURCE_TMDB: "tmdb",
+    // Aliases tương thích ngược
+    SOURCE_K: "1",
+    SOURCE_O: "2",
+    SOURCE_R: "3",
+};
+
+export const PUBLIC_SOURCES = {
+    SOURCE_1: "1",
+    SOURCE_2: "2",
+    SOURCE_3: "3",
+    TMDB: "tmdb",
+};
+
+export const DEFAULT_SOURCE = SOURCES.SOURCE_1;
+
+// Bản đồ chuẩn hóa mapping các biến thể nguồn
+export const SOURCE_MAP = {
+    "1": SOURCES.SOURCE_1,
+    "2": SOURCES.SOURCE_2,
+    "3": SOURCES.SOURCE_3,
+    "source_1": SOURCES.SOURCE_1,
+    "source_2": SOURCES.SOURCE_2,
+    "source_3": SOURCES.SOURCE_3,
+    "source_k": SOURCES.SOURCE_1,
+    "source_o": SOURCES.SOURCE_2,
+    "source_r": SOURCES.SOURCE_3,
+    "tmdb": SOURCES.SOURCE_TMDB,
+    "source_tmdb": SOURCES.SOURCE_TMDB,
+};
+
+/**
+ * Chuyển đổi định danh nguồn sang tham số URL công khai an toàn (1, 2, 3...)
+ * @param {string|number} source
+ * @returns {string}
+ */
+export const toPublicSourceParam = (source) => {
+    if (!source) return DEFAULT_SOURCE;
+    const s = String(source).trim().toLowerCase();
+    return SOURCE_MAP[s] || s;
+};
+
+/**
+ * Phục hồi định danh nguồn chuẩn từ tham số URL
+ * @param {string|number} param
+ * @returns {string}
+ */
+export const fromPublicSourceParam = (param) => {
+    if (!param) return DEFAULT_SOURCE;
+    const p = String(param).trim().toLowerCase();
+    return SOURCE_MAP[p] || DEFAULT_SOURCE;
 };
 
 export const DEFAULT_REGION = "VN";
@@ -119,7 +166,7 @@ export const CATEGORIES = [
         title: "Phim Mới Cập Nhật",
         titleKey: "vods.newMovies",
         type: "danh-sach/phim-moi-cap-nhat",
-        source: SOURCES.SOURCE_K,
+        source: SOURCES.SOURCE_1,
         isView: true,
         useV1: false,
     },
@@ -164,7 +211,7 @@ export const CATEGORIES = [
         title: "Phim Lẻ",
         titleKey: "vods.movies",
         type: "danh-sach/phim-le",
-        source: SOURCES.SOURCE_K,
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -172,7 +219,7 @@ export const CATEGORIES = [
         title: "Phim Bộ",
         titleKey: "vods.series",
         type: "danh-sach/phim-bo",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -180,7 +227,7 @@ export const CATEGORIES = [
         title: "Phim Chiếu Rạp",
         titleKey: "vods.cinemaMovies",
         type: "danh-sach/phim-chieu-rap",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -188,7 +235,7 @@ export const CATEGORIES = [
         title: "Phim Viễn Tưởng",
         titleKey: "vods.sciFi",
         type: "the-loai/vien-tuong",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -196,7 +243,7 @@ export const CATEGORIES = [
         title: "Phim Hoạt Hình",
         titleKey: "vods.animation",
         type: "danh-sach/hoat-hinh",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -204,7 +251,7 @@ export const CATEGORIES = [
         title: "Phim Trung Quốc",
         titleKey: "vods.china",
         type: "quoc-gia/trung-quoc",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -212,7 +259,7 @@ export const CATEGORIES = [
         title: "Phim Hàn Quốc",
         titleKey: "vods.korea",
         type: "quoc-gia/han-quoc",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -220,7 +267,7 @@ export const CATEGORIES = [
         title: "Phim Việt Nam",
         titleKey: "vods.vietnam",
         type: "quoc-gia/viet-nam",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -228,7 +275,7 @@ export const CATEGORIES = [
         title: "Phim Hành Động",
         titleKey: "vods.action",
         type: "the-loai/hanh-dong",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -236,7 +283,7 @@ export const CATEGORIES = [
         title: "Phim Kinh Dị",
         titleKey: "vods.horror",
         type: "the-loai/kinh-di",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -244,7 +291,7 @@ export const CATEGORIES = [
         title: "Phim Tình Cảm",
         titleKey: "vods.romance",
         type: "the-loai/tinh-cam",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -252,7 +299,7 @@ export const CATEGORIES = [
         title: "Phim Thuyết Minh",
         titleKey: "vods.voiceoverMovies",
         type: "danh-sach/phim-thuyet-minh",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
     {
@@ -260,7 +307,7 @@ export const CATEGORIES = [
         title: "Phim Lồng Tiếng",
         titleKey: "vods.dubbedMovies",
         type: "danh-sach/phim-long-tieng",
-        source: "source_k",
+        source: SOURCES.SOURCE_1,
         useV1: true,
     },
 ];

@@ -18,7 +18,7 @@ export const useImageFallback = () => {
 
         if (!imagePath) return FALLBACK_IMAGE;
 
-        const source = item.source || SOURCES.SOURCE_K;
+        const source = item.source || SOURCES.SOURCE_1;
 
         // Logic from Vods.jsx getMovieImage
         if (
@@ -30,9 +30,9 @@ export const useImageFallback = () => {
         }
 
         // Relative paths handle
-        if (source === SOURCES.SOURCE_2 || source === SOURCES.SOURCE_O) {
+        if (source === SOURCES.SOURCE_2) {
             return `${CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE}/${imagePath}`;
-        } else if (source === SOURCES.SOURCE_1 || source === SOURCES.SOURCE_K) {
+        } else if (source === SOURCES.SOURCE_1) {
             return `${CONFIG.APP_DOMAIN_SOURCE_K_CDN_IMAGE}/${imagePath}`;
         }
 

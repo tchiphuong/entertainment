@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { SOURCES } from "../constants";
 
 /**
  * Hook để lấy query parameters từ URL
@@ -178,7 +179,7 @@ export function getMovieImage(imagePath, source, CONFIG = {}) {
         return imagePath;
     }
 
-    if (source === "source_2" || source === "source_o") {
+    if (source === SOURCES.SOURCE_2) {
         const cdnO = CONFIG.APP_DOMAIN_SOURCE_O_CDN_IMAGE || import.meta.env.VITE_SOURCE_2_CDN_IMAGE || import.meta.env.VITE_SOURCE_O_CDN_IMAGE;
         return `${cdnO}/${imagePath}`;
     }
