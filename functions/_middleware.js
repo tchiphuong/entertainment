@@ -2,6 +2,7 @@
  * Cloudflare Pages Middleware
  * Tự động tạo thẻ Open Graph / Twitter Card động cho crawler mạng xã hội (Facebook, Zalo, Telegram, Twitter...)
  * Giúp hiển thị thumbnail, tiêu đề và mô tả chính xác của từng phim khi người dùng paste link.
+ * Đồng thời đảm bảo định tuyến SPA chuẩn xác 100% với HTTP status 200 (không bị 404).
  */
 
 const BOT_USER_AGENTS = [
@@ -34,9 +35,10 @@ const stripHtml = (html) => {
         .slice(0, 200);
 };
 
-const resolvePosterUrl = (movie, fallbackUrl) => {
+const resolveMovieSocialImage = (movie, fallbackUrl) => {
     if (!movie) return fallbackUrl;
-    const raw = movie.poster_url || movie.thumb_url || "";
+    // Ưu tiên thumb_url (ảnh ngang 16:9) để hiển thị thumbnail mạng xã hội đẹp nhất
+    const raw = movie.thumb_url || movie.poster_url || "";
     if (!raw) return fallbackUrl;
     if (raw.startsWith("http://") || raw.startsWith("https://")) {
         return raw;
@@ -56,7 +58,12 @@ export async function onRequest(context) {
 
     // Nếu không phải crawler của mạng xã hội -> phục vụ SPA bình thường
     if (!BOT_REGEX.test(userAgent)) {
-        return next();
+        const response = await next();
+        // Nếu Cloudflare Pages trả về 404 cho SPA subroute, fallback về index.html với HTTP status 200
+        if (response.status === 404 && context.env?.ASSETS) {
+            return context.env.ASSETS.fetch(new URL("/", request.url));
+        }
+        return response;
     }
 
     const defaultImage = `${url.origin}/og-image.jpg`;
@@ -83,7 +90,7 @@ export async function onRequest(context) {
                     const origin = movie.origin_name ? ` (${movie.origin_name})` : "";
                     ogTitle = `${movie.name}${origin} - Xem Phim Online | VOD Prime`;
                     ogDesc = stripHtml(movie.content) || `Xem phim ${movie.name} Full HD Vietsub Thuyết Minh tốc độ cao tại VOD Prime.`;
-                    ogImage = resolvePosterUrl(movie, defaultImage);
+                    ogImage = resolveMovieSocialImage(movie, defaultImage);
                 }
             }
         } catch {
@@ -95,10 +102,17 @@ export async function onRequest(context) {
     }
 
     // Lấy phản hồi HTML tĩnh của trang
-    const response = await next();
+    let response = await next();
+    if (response.status === 404 && context.env?.ASSETS) {
+        response = await context.env.ASSETS.fetch(new URL("/", request.url));
+    }
+
+    const imageType = ogImage.endsWith(".webp")
+        ? "image/webp"
+        : (ogImage.endsWith(".png") ? "image/png" : "image/jpeg");
 
     // Dùng HTMLRewriter để thay đổi thẻ meta động trả về cho bot mạng xã hội
-    return new HTMLRewriter()
+    const transformed = new HTMLRewriter()
         .on("title", {
             element(e) {
                 e.setInnerContent(ogTitle);
@@ -129,6 +143,11 @@ export async function onRequest(context) {
                 e.setAttribute("content", ogImage);
             },
         })
+        .on('meta[property="og:image:type"]', {
+            element(e) {
+                e.setAttribute("content", imageType);
+            },
+        })
         .on('meta[property="og:url"]', {
             element(e) {
                 e.setAttribute("content", ogUrl);
@@ -150,4 +169,10 @@ export async function onRequest(context) {
             },
         })
         .transform(response);
+
+    // Luôn đảm bảo status là 200 OK cho bot mạng xã hội
+    return new Response(transformed.body, {
+        status: 200,
+        headers: transformed.headers,
+    });
 }

@@ -5,11 +5,13 @@ import { fetchTMDBRelated, fetchTMDBJson } from "./tmdbService";
 const CONFIG = {
     APP_DOMAIN_SOURCE_K: import.meta.env.VITE_SOURCE_1_API || import.meta.env.VITE_SOURCE_K_API,
     APP_DOMAIN_SOURCE_O: import.meta.env.VITE_SOURCE_2_API || import.meta.env.VITE_SOURCE_O_API,
+    APP_DOMAIN_SOURCE_R: import.meta.env.VITE_SOURCE_R_API,
     API_ENDPOINT: import.meta.env.VITE_API_ENDPOINT,
 };
 
 const isSource1 = (source) => source === SOURCES.SOURCE_1 || source === SOURCES.SOURCE_K;
 const isSource2 = (source) => source === SOURCES.SOURCE_2 || source === SOURCES.SOURCE_O;
+const isSource3 = (source) => source === SOURCES.SOURCE_R;
 
 // Logic cache đã được chuyển sang src/utils/vodCache.js
 const { get: getFromCache, set: saveToCache, clear: clearVodCache } = vodCache;
@@ -49,20 +51,32 @@ const normalizeMovieForSource = (item, source) => {
     return m;
 };
 
+const getTmdbSourceUrl = (source, tmdbId, mediaType) => {
+    const domain = isSource2(source) ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
+    if (!domain) return null;
+    const typeEndpoint = mediaType === "tv" ? "tv" : "movie";
+    return `${domain}/tmdb/${typeEndpoint}/${tmdbId}`;
+};
+
+const getDirectSourceUrl = (slug, source) => {
+    if (isSource2(source)) {
+        return CONFIG.APP_DOMAIN_SOURCE_O ? `${CONFIG.APP_DOMAIN_SOURCE_O}/v1/api/phim/${slug}` : null;
+    }
+    if (isSource1(source)) {
+        return CONFIG.APP_DOMAIN_SOURCE_K ? `${CONFIG.APP_DOMAIN_SOURCE_K}/phim/${slug}` : null;
+    }
+    if (isSource3(source)) {
+        return CONFIG.APP_DOMAIN_SOURCE_R ? `${CONFIG.APP_DOMAIN_SOURCE_R}/api/film/${slug}` : null;
+    }
+    return CONFIG.API_ENDPOINT ? `${CONFIG.API_ENDPOINT}/${slug}` : null;
+};
+
 // Tạo URL gọi API theo nguồn & TMDB ID
 const getSourceApiUrl = (slug, source, tmdbId, mediaType = "movie") => {
     if (tmdbId && (isSource1(source) || isSource2(source))) {
-        const domain = isSource2(source) ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
-        const typeEndpoint = mediaType === "tv" ? "tv" : "movie";
-        return `${domain}/tmdb/${typeEndpoint}/${tmdbId}`;
+        return getTmdbSourceUrl(source, tmdbId, mediaType);
     }
-    if (isSource2(source)) {
-        return `${CONFIG.APP_DOMAIN_SOURCE_O}/v1/api/phim/${slug}`;
-    }
-    if (isSource1(source)) {
-        return `${CONFIG.APP_DOMAIN_SOURCE_K}/phim/${slug}`;
-    }
-    return `${CONFIG.API_ENDPOINT}/${slug}`;
+    return getDirectSourceUrl(slug, source);
 };
 
 // Gọi fetch và fallback thông minh giữa movie và tv nếu bị 404
@@ -71,13 +85,17 @@ const fetchSourceResponse = async (slug, source, tmdbId, mediaType = null) => {
     const alternateType = preferredType === "tv" ? "movie" : "tv";
 
     const url = getSourceApiUrl(slug, source, tmdbId, preferredType);
+    if (!url) return null;
+
     let res = await fetch(url);
 
     if (!res.ok && tmdbId && (isSource1(source) || isSource2(source))) {
         const domain = isSource2(source) ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
-        const altRes = await fetch(`${domain}/tmdb/${alternateType}/${tmdbId}`);
-        if (altRes.ok) {
-            res = altRes;
+        if (domain) {
+            const altRes = await fetch(`${domain}/tmdb/${alternateType}/${tmdbId}`);
+            if (altRes.ok) {
+                res = altRes;
+            }
         }
     }
     return res;
@@ -133,7 +151,7 @@ export const fetchSourceData = async (
 
     try {
         const res = await fetchSourceResponse(slug, source, tmdbId, mediaType);
-        if (!res.ok) {
+        if (!res || !res.ok) {
             return { movie: null, episodes: [] };
         }
 

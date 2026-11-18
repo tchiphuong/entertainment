@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="utf-8">
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Redirecting...</title>
+    <script>
+        // Chỉ áp dụng SPA redirect hack cho GitHub Pages (khi pathname chứa /entertainment/)
+        var l = window.location;
+        if (l.pathname.indexOf('/entertainment') === 0) {
+            var pathSegmentsToKeep = 1; // /entertainment/
+            var pathArray = l.pathname.split('/').slice(1);
+            var path = pathArray.slice(pathSegmentsToKeep).join('/');
+            var query = l.search.slice(1);
+
+            l.replace(
+                l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+                l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') +
+                '/?/' + path +
+                (query ? '&' + query : '') +
+                l.hash
+            );
+        } else {
+            // Trên root domain độc lập, chuyển hướng SPA qua query '/?/' để index.html phục hồi route chính xác
+            var path = l.pathname.slice(1);
+            var query = l.search.slice(1);
+            l.replace(
+                l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+                '/?/' + path +
+                (query ? '&' + query : '') +
+                l.hash
+            );
+        }
+    </script>
+</head>
+<body></body>
+</html>
