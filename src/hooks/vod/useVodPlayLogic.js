@@ -331,11 +331,14 @@ export const useVodPlayerManagement = ({
             clearInterval(embedTimerRef.current);
             embedTimerRef.current = null;
         }
-        await destroyAllPlayersHelper(activeVideoElementRef, shakaUiOverlayRef, shakaPlayerRef, currentUrlRef);
+        await destroyAllPlayersHelper(activeVideoElementRef, shakaUiOverlayRef, shakaPlayerRef, currentUrlRef, playerRef);
     };
 
     useEffect(() => {
         destroyAllPlayers();
+        return () => {
+            destroyAllPlayers();
+        };
     }, [slug]);
 
     useEffect(() => {
@@ -344,6 +347,7 @@ export const useVodPlayerManagement = ({
                 clearInterval(embedTimerRef.current);
                 embedTimerRef.current = null;
             }
+            destroyAllPlayers();
         };
     }, []);
 
@@ -763,6 +767,13 @@ export const useMediaSession = (movie, currentEpisodeId, memoizedBackgrounds) =>
             album: movie.origin_name || movie.name,
             artwork: [{ src: posterUrl, sizes: "512x512", type: "image/jpeg" }],
         });
+
+        return () => {
+            if ("mediaSession" in navigator) {
+                navigator.mediaSession.metadata = null;
+                navigator.mediaSession.playbackState = "none";
+            }
+        };
     }, [movie, currentEpisodeId, memoizedBackgrounds]);
 };
 
