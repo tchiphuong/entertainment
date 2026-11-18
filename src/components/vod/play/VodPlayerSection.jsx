@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
 import { HeartIcon as HeartSolidIcon } from "@heroicons/react/24/solid";
 import {
     TvIcon,
@@ -9,11 +8,6 @@ import {
     ChevronRightIcon,
     HeartIcon as HeartOutlineIcon,
     ShareIcon,
-    UsersIcon,
-    FilmIcon,
-    BackwardIcon,
-    ForwardIcon,
-    ArrowPathIcon,
 } from "@heroicons/react/24/outline";
 import { Button, Switch, InputGroup } from "../../ui";
 import {
@@ -23,7 +17,6 @@ import {
     getPrevEpisodeData,
 } from "../../../utils/vodPlayHelpers";
 import { VodSharedPlayer } from "./VodSharedPlayer";
-import { ROUTES } from "../../../constants";
 
 export const CountdownOverlay = ({
     showNextCountdown,
@@ -175,92 +168,11 @@ const PlayerMovieTitleInfo = ({ movie, displayEpisodeName, fallbackStatus, serve
     </div>
 );
 
-const WatchPartyControls = ({
-    canControl,
-    isHost,
-    onOpenEpisodeModal,
-    onSeekStep,
-    onSyncPlayback,
-    isSyncing,
-    t,
-}) => (
-    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-        {onSyncPlayback && (
-            <Button
-                onPress={onSyncPlayback}
-                variant="secondary"
-                size="sm"
-                className={`h-8 gap-1 px-2 text-xs transition-colors sm:px-2.5 ${
-                    isSyncing ? "border-emerald-500 text-emerald-400" : "text-zinc-300 hover:text-white"
-                }`}
-                title={isHost ? "Ép đồng bộ thời gian video cho toàn phòng" : "Chủ động đồng bộ thời gian theo Trưởng phòng"}
-            >
-                <ArrowPathIcon className={`h-3.5 w-3.5 stroke-2 ${isSyncing ? "animate-spin text-emerald-400" : ""}`} />
-                <span className="hidden sm:inline">{isSyncing ? "Đang đồng bộ..." : isHost ? "Đồng bộ phòng" : "Đồng bộ"}</span>
-            </Button>
-        )}
-        {canControl && onOpenEpisodeModal && (
-            <Button
-                onPress={onOpenEpisodeModal}
-                variant="secondary"
-                size="sm"
-                className="h-8 gap-1 px-2 text-xs text-red-400 hover:text-red-300 sm:px-2.5"
-                title={t("vodPlay.changeEpisode", { defaultValue: "Đổi tập" })}
-            >
-                <FilmIcon className="h-3.5 w-3.5 stroke-2" />
-                <span className="hidden sm:inline">{t("vodPlay.changeEpisode", { defaultValue: "Đổi tập" })}</span>
-            </Button>
-        )}
-        {canControl && onSeekStep && (
-            <div className="flex items-center gap-1">
-                <Button
-                    onPress={() => onSeekStep(-10)}
-                    variant="secondary"
-                    size="sm"
-                    className="h-8 w-8 p-0"
-                    title="Tua lùi 10 giây"
-                >
-                    <BackwardIcon className="h-3.5 w-3.5 stroke-2" />
-                </Button>
-                <Button
-                    onPress={() => onSeekStep(10)}
-                    variant="secondary"
-                    size="sm"
-                    className="h-8 w-8 p-0"
-                    title="Tua tới 10 giây"
-                >
-                    <ForwardIcon className="h-3.5 w-3.5 stroke-2" />
-                </Button>
-            </div>
-        )}
-    </div>
-);
-
 const PlayerStandardControls = ({
-    movie,
-    activeEpisode,
     handleCastTV,
     togglePiP,
-    t,
-    navigate,
 }) => (
     <>
-        <Button
-            onPress={() =>
-                navigate(ROUTES.VOD.WATCH_PARTY, {
-                    state: {
-                        movie,
-                        activeEpisode,
-                    },
-                })
-            }
-            variant="secondary"
-            size="sm"
-            title={t("watchParty.watchWithFriends")}
-        >
-            <UsersIcon className="h-4 w-4 text-emerald-400 stroke-2" />
-            <span className="hidden sm:inline">{t("watchParty.navTitle")}</span>
-        </Button>
         {handleCastTV && (
             <Button
                 onPress={handleCastTV}
@@ -339,17 +251,9 @@ export const PlayerControlBar = ({
     isFavorited,
     toggleFavorite,
     onShare,
-    isWatchParty = false,
-    canControl = false,
-    isHost = false,
-    onOpenEpisodeModal,
-    onSeekStep,
-    onSyncPlayback,
-    isSyncing,
     serverName,
 }) => {
     const { t } = useTranslation();
-    const navigate = useNavigate();
     const maxDigits = useMemo(() => computeMaxDigits(episodes), [episodes]);
     const displayEpisodeName = resolveDisplayEpisodeName(
         currentEpisodeId,
@@ -379,59 +283,17 @@ export const PlayerControlBar = ({
 
                 <div className="flex flex-wrap items-center gap-3 md:justify-end">
                     <div className="flex items-center gap-2">
-                        {!isWatchParty && (
-                            <FavoriteShareButtons
-                                movie={movie}
-                                isFavorited={isFavorited}
-                                toggleFavorite={toggleFavorite}
-                                onShare={onShare}
-                            />
-                        )}
+                        <FavoriteShareButtons
+                            movie={movie}
+                            isFavorited={isFavorited}
+                            toggleFavorite={toggleFavorite}
+                            onShare={onShare}
+                        />
 
-                        {isWatchParty ? (
-                            <>
-                                {handleCastTV && (
-                                    <Button
-                                        onPress={handleCastTV}
-                                        variant="secondary"
-                                        size="sm"
-                                        title={t("vodPlay.castTv") || "Truyền lên TV"}
-                                    >
-                                        <TvIcon className="h-4 w-4 stroke-2" />
-                                        <span className="hidden sm:inline">Cast TV</span>
-                                    </Button>
-                                )}
-                                {togglePiP && (
-                                    <Button
-                                        onPress={togglePiP}
-                                        variant="secondary"
-                                        size="sm"
-                                        title="Picture-in-Picture"
-                                    >
-                                        <RectangleStackIcon className="h-4 w-4 stroke-2" />
-                                        <span className="hidden sm:inline">PiP</span>
-                                    </Button>
-                                )}
-                                <WatchPartyControls
-                                    canControl={canControl}
-                                    isHost={isHost}
-                                    onOpenEpisodeModal={onOpenEpisodeModal}
-                                    onSeekStep={onSeekStep}
-                                    onSyncPlayback={onSyncPlayback}
-                                    isSyncing={isSyncing}
-                                    t={t}
-                                />
-                            </>
-                        ) : (
-                            <PlayerStandardControls
-                                movie={movie}
-                                activeEpisode={activeEpisode}
-                                handleCastTV={handleCastTV}
-                                togglePiP={togglePiP}
-                                t={t}
-                                navigate={navigate}
-                            />
-                        )}
+                        <PlayerStandardControls
+                            handleCastTV={handleCastTV}
+                            togglePiP={togglePiP}
+                        />
                     </div>
 
                     <PlayerNavigationButtons
@@ -599,8 +461,8 @@ const PlayerCountdownSlot = ({ show, seconds, duration, onCancel, onSkip }) => {
     );
 };
 
-const PlayerSettingsSlot = ({ isWatchParty, setAutoplayEnabled, settingsProps }) => {
-    if (isWatchParty || !setAutoplayEnabled) return null;
+const PlayerSettingsSlot = ({ setAutoplayEnabled, settingsProps }) => {
+    if (!setAutoplayEnabled) return null;
     return <VodPlaySettingsBar {...settingsProps} setAutoplayEnabled={setAutoplayEnabled} />;
 };
 
@@ -637,16 +499,6 @@ export const VodPlayerContainer = ({
     isFavorited,
     toggleFavorite,
     onShare,
-    isWatchParty = false,
-    canControl = false,
-    isHost = false,
-    hasInteracted = true,
-    onStartPlayback,
-    syncNotice,
-    onOpenEpisodeModal,
-    onSeekStep,
-    onSyncPlayback,
-    isSyncing,
     className = "",
 }) => {
     const activeEpisodeId = resolveActiveEpisodeId(currentEpisodeId, episode);
@@ -662,10 +514,6 @@ export const VodPlayerContainer = ({
                 memoizedBackgrounds={memoizedBackgrounds}
                 getMovieImage={getMovieImage}
                 movie={movie}
-                hasInteracted={hasInteracted}
-                isHost={isHost}
-                onStartPlayback={onStartPlayback}
-                syncNotice={syncNotice}
                 className="md:max-h-[80vh]"
                 overlays={
                     <PlayerCountdownSlot
@@ -690,18 +538,10 @@ export const VodPlayerContainer = ({
                 isFavorited={isFavorited}
                 toggleFavorite={toggleFavorite}
                 onShare={onShare}
-                isWatchParty={isWatchParty}
-                canControl={canControl}
-                isHost={isHost}
-                onOpenEpisodeModal={onOpenEpisodeModal}
-                onSeekStep={onSeekStep}
-                onSyncPlayback={onSyncPlayback}
-                isSyncing={isSyncing}
                 serverName={serverName}
             />
 
             <PlayerSettingsSlot
-                isWatchParty={isWatchParty}
                 setAutoplayEnabled={setAutoplayEnabled}
                 settingsProps={{
                     autoplayEnabled,
@@ -718,3 +558,4 @@ export const VodPlayerContainer = ({
         </div>
     );
 };
+

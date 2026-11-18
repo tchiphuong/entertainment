@@ -14,10 +14,6 @@ const Play = lazy(() => import("./pages/vod/Play"));
 const Listing = lazy(() => import("./pages/vod/Listing"));
 const VodsRedirect = lazy(() => import("./components/vod/VodsRedirect"));
 
-// Lazy loading Watch Party
-const WatchPartyLobby = lazy(() => import("./pages/vod/WatchPartyLobby"));
-const WatchPartyRoom = lazy(() => import("./pages/vod/WatchPartyRoom"));
-
 // Component hiển thị trạng thái chờ tải trang
 const RouteFallback = () => (
     <div className="flex min-h-screen items-center justify-center bg-zinc-950">
@@ -58,10 +54,6 @@ export default function App() {
                     <Route path={ROUTES.VOD.CATEGORY} element={<Listing />} />
                     <Route path={ROUTES.VOD.ACTOR} element={<Listing />} />
 
-                    {/* Watch Party Routes */}
-                    <Route path={ROUTES.VOD.WATCH_PARTY} element={<WatchPartyLobby />} />
-                    <Route path={ROUTES.VOD.WATCH_PARTY_ROOM} element={<WatchPartyRoom />} />
-
                     <Route path={ROUTES.TV} element={<TvPage />} />
                     <Route path={ROUTES.SCHEDULE} element={<Schedule />} />
 
@@ -72,3 +64,5 @@ export default function App() {
         </VodProvider>
     );
 }
+
+
