@@ -8,18 +8,23 @@
 const BOT_USER_AGENTS = [
     "facebookexternalhit",
     "Facebot",
+    "facebookcatalog",
     "Twitterbot",
     "TelegramBot",
     "WhatsApp",
     "LinkedInBot",
     "ZaloBot",
     "zalo",
+    "ZaloPC",
+    "Zalo-LinkPreview",
     "Slackbot",
     "Discordbot",
     "Pinterest",
     "Googlebot",
     "bingbot",
     "Applebot",
+    "SkypeUriPreview",
+    "Viber",
 ];
 
 const BOT_REGEX = new RegExp(BOT_USER_AGENTS.join("|"), "i");
@@ -35,6 +40,29 @@ const stripHtml = (html) => {
         .slice(0, 200);
 };
 
+// Ưu tiên lấy ảnh TMDB (chuẩn JPEG 1280x720) để hiển thị thumbnail mạng xã hội đẹp nhất, không bị lỗi WebP
+const fetchTmdbSocialImage = async (tmdbId, tmdbType, apiKey) => {
+    if (!tmdbId || !apiKey) return null;
+    const resolvedType = tmdbType === "series" || tmdbType === "tv" ? "tv" : "movie";
+    try {
+        const res = await fetch(
+            `https://api.themoviedb.org/3/${resolvedType}/${encodeURIComponent(tmdbId)}?api_key=${apiKey}&language=vi-VN`,
+            { signal: AbortSignal.timeout(1800) }
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+        if (data?.backdrop_path) {
+            return `https://image.tmdb.org/t/p/w1280${data.backdrop_path}`;
+        }
+        if (data?.poster_path) {
+            return `https://image.tmdb.org/t/p/w780${data.poster_path}`;
+        }
+    } catch {
+        // Bỏ qua nếu TMDB timeout
+    }
+    return null;
+};
+
 const resolveMovieSocialImage = (movie, fallbackUrl) => {
     if (!movie) return fallbackUrl;
     // Ưu tiên thumb_url (ảnh ngang 16:9) để hiển thị thumbnail mạng xã hội đẹp nhất
@@ -43,7 +71,50 @@ const resolveMovieSocialImage = (movie, fallbackUrl) => {
     if (raw.startsWith("http://") || raw.startsWith("https://")) {
         return raw;
     }
-    return `https://img.phimapi.com/uploads/movies/${raw}`;
+    return `https://phimimg.com/uploads/movies/${raw}`;
+};
+
+// Lấy thông tin phim từ Nguồn phù hợp
+const fetchMovieMetadata = async (slug, source, env) => {
+    const isSource2 = source === "2" || source === "source_2" || source === "source_o";
+    const source1Api = env?.VITE_SOURCE_1_API || "https://phimapi.com";
+    const source2Api = env?.VITE_SOURCE_2_API || "https://ophim1.com";
+
+    // 1. Thử nguồn được chỉ định hoặc nguồn 1
+    const primaryUrl = isSource2
+        ? `${source2Api}/v1/api/phim/${encodeURIComponent(slug)}`
+        : `${source1Api}/phim/${encodeURIComponent(slug)}`;
+
+    try {
+        const res = await fetch(primaryUrl, {
+            headers: { "User-Agent": "VODPrime-Edge/1.0" },
+            signal: AbortSignal.timeout(2200),
+        });
+        if (res.ok) {
+            const data = await res.json();
+            const movie = isSource2 ? data?.data?.item : data?.movie;
+            if (movie?.name) return movie;
+        }
+    } catch {}
+
+    // 2. Fallback sang nguồn còn lại nếu nguồn chính không tìm thấy
+    const fallbackUrl = isSource2
+        ? `${source1Api}/phim/${encodeURIComponent(slug)}`
+        : `${source2Api}/v1/api/phim/${encodeURIComponent(slug)}`;
+
+    try {
+        const res = await fetch(fallbackUrl, {
+            headers: { "User-Agent": "VODPrime-Edge/1.0" },
+            signal: AbortSignal.timeout(2000),
+        });
+        if (res.ok) {
+            const data = await res.json();
+            const movie = isSource2 ? data?.movie : data?.data?.item;
+            if (movie?.name) return movie;
+        }
+    } catch {}
+
+    return null;
 };
 
 export async function onRequest(context) {
@@ -72,29 +143,29 @@ export async function onRequest(context) {
     let ogImage = defaultImage;
     const ogUrl = request.url;
 
-    // Nhận diện link xem phim: /vod/play/:slug hoặc /vods/play/:slug hoặc /play/:slug
-    const movieMatch = url.pathname.match(/\/(?:vod|vods)?\/?play\/([a-z0-9_-]+)/i);
+    // Nhận diện link xem phim hoặc chi tiết phim
+    const movieMatch = url.pathname.match(/\/(?:vod|vods)?\/?(?:play|detail|phim)\/([a-z0-9_-]+)/i);
     if (movieMatch?.[1]) {
         const slug = movieMatch[1].toLowerCase();
-        try {
-            // Gọi API lấy metadata phim với timeout 2.5s
-            const apiRes = await fetch(`https://phimapi.com/phim/${encodeURIComponent(slug)}`, {
-                headers: { "User-Agent": "VODPrime-Edge/1.0" },
-                signal: AbortSignal.timeout(2500),
-            });
+        const sourceParam = url.searchParams.get("source") || "";
+        const movie = await fetchMovieMetadata(slug, sourceParam, context.env);
 
-            if (apiRes.ok) {
-                const data = await apiRes.json();
-                const movie = data?.movie;
-                if (movie?.name) {
-                    const origin = movie.origin_name ? ` (${movie.origin_name})` : "";
-                    ogTitle = `${movie.name}${origin} - Xem Phim Online | VOD Prime`;
-                    ogDesc = stripHtml(movie.content) || `Xem phim ${movie.name} Full HD Vietsub Thuyết Minh tốc độ cao tại VOD Prime.`;
-                    ogImage = resolveMovieSocialImage(movie, defaultImage);
-                }
+        if (movie?.name) {
+            const origin = movie.origin_name ? ` (${movie.origin_name})` : "";
+            ogTitle = `${movie.name}${origin} - Xem Phim Online | VOD Prime`;
+            ogDesc = stripHtml(movie.content) || `Xem phim ${movie.name} Full HD Vietsub Thuyết Minh tốc độ cao tại VOD Prime.`;
+
+            // Thử lấy ảnh JPEG chất lượng cao từ TMDB trước để mạng xã hội parse mượt mà 100%
+            const tmdbId = movie.tmdb?.id || movie.tmdb_id;
+            const tmdbType = movie.tmdb?.type || movie.type;
+            const tmdbApiKey = context.env?.VITE_TMDB_API_KEY || "3356865d41894a2fa9bfa84b2b5f59bb";
+
+            const tmdbImage = await fetchTmdbSocialImage(tmdbId, tmdbType, tmdbApiKey);
+            if (tmdbImage) {
+                ogImage = tmdbImage;
+            } else {
+                ogImage = resolveMovieSocialImage(movie, defaultImage);
             }
-        } catch {
-            // Giữ metadata mặc định nếu API bên thứ 3 lỗi/timeout
         }
     } else if (url.pathname === "/tv" || url.pathname.startsWith("/tv/")) {
         ogTitle = "Truyền Hình Trực Tuyến HD - VOD Prime";
@@ -116,6 +187,12 @@ export async function onRequest(context) {
         .on("title", {
             element(e) {
                 e.setInnerContent(ogTitle);
+            },
+        })
+        .on('meta[name="robots"]', {
+            element(e) {
+                // Đảm bảo bot mạng xã hội được phép đọc và hiển thị hình ảnh cỡ lớn
+                e.setAttribute("content", "index, follow, max-image-preview:large");
             },
         })
         .on('meta[name="description"]', {
@@ -151,6 +228,11 @@ export async function onRequest(context) {
         .on('meta[property="og:url"]', {
             element(e) {
                 e.setAttribute("content", ogUrl);
+            },
+        })
+        .on('meta[name="twitter:card"]', {
+            element(e) {
+                e.setAttribute("content", "summary_large_image");
             },
         })
         .on('meta[name="twitter:title"]', {
