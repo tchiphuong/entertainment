@@ -1,6 +1,5 @@
 import { useTranslation } from "react-i18next";
 import { PlayIcon } from "@heroicons/react/24/outline";
-import { Button } from "../../ui";
 import "shaka-player/dist/controls.css";
 import "../../../assets/styles/shaka-player.css";
 
@@ -15,24 +14,6 @@ const VideoIframeEmbed = ({ linkEmbed, title }) => (
         sandbox="allow-scripts allow-same-origin allow-forms allow-fullscreen allow-popups"
     />
 );
-
-const WatchPartyUnlockOverlay = ({ hasInteracted, isHost, onStartPlayback, syncNotice, t }) => {
-    if (hasInteracted || isHost || !onStartPlayback) return null;
-
-    return (
-        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/85 p-4 text-center backdrop-blur-sm">
-            <Button onPress={onStartPlayback} variant="primary" size="lg">
-                <PlayIcon className="h-5 w-5 stroke-2" />
-                <span>{t("vodPlay.playNow", { defaultValue: "Xem ngay" })}</span>
-            </Button>
-            {syncNotice && (
-                <p className="mt-2 text-xs text-zinc-400">
-                    {syncNotice}
-                </p>
-            )}
-        </div>
-    );
-};
 
 const VideoEmptyPlaceholder = ({ t }) => (
     <div className="flex h-full w-full flex-col items-center justify-center text-zinc-500">
@@ -53,7 +34,7 @@ const BackgroundPoster = ({ posterUrl }) => {
     );
 };
 
-const DirectShakaVideo = ({ videoRef, hasInteracted, isHost, onStartPlayback, syncNotice, t }) => (
+const DirectShakaVideo = ({ videoRef }) => (
     <div className="relative z-10 h-full w-full">
         <video
             id="shaka-video"
@@ -61,13 +42,6 @@ const DirectShakaVideo = ({ videoRef, hasInteracted, isHost, onStartPlayback, sy
             controls
             playsInline
             className="h-full w-full object-contain"
-        />
-        <WatchPartyUnlockOverlay
-            hasInteracted={hasInteracted}
-            isHost={isHost}
-            onStartPlayback={onStartPlayback}
-            syncNotice={syncNotice}
-            t={t}
         />
     </div>
 );
@@ -77,10 +51,6 @@ const PlayerCoreMedia = ({
     episode,
     movieTitle,
     videoRef,
-    hasInteracted,
-    isHost,
-    onStartPlayback,
-    syncNotice,
     currentUrl,
     t,
 }) => {
@@ -91,14 +61,7 @@ const PlayerCoreMedia = ({
     const playM3u8 = episode?.link_m3u8;
     if (playM3u8) {
         return (
-            <DirectShakaVideo
-                videoRef={videoRef}
-                hasInteracted={hasInteracted}
-                isHost={isHost}
-                onStartPlayback={onStartPlayback}
-                syncNotice={syncNotice}
-                t={t}
-            />
+            <DirectShakaVideo videoRef={videoRef} />
         );
     }
 
@@ -127,7 +90,7 @@ const resolvePosterUrl = (movie, backgrounds, getImage) => {
 };
 
 /**
- * Component trình phát video dùng chung cho cả trang xem phim (Play) và phòng xem chung (Watch Party)
+ * Component trình phát video trung tâm cho trang xem phim (Play)
  */
 export const VodSharedPlayer = ({
     episode,
@@ -135,10 +98,6 @@ export const VodSharedPlayer = ({
     videoRef,
     playerRef,
     currentUrl,
-    hasInteracted = true,
-    isHost = false,
-    onStartPlayback,
-    syncNotice,
     memoizedBackgrounds,
     getMovieImage,
     overlays,
@@ -158,10 +117,6 @@ export const VodSharedPlayer = ({
                 episode={episode}
                 movieTitle={movie?.name || "Video"}
                 videoRef={videoRef}
-                hasInteracted={hasInteracted}
-                isHost={isHost}
-                onStartPlayback={onStartPlayback}
-                syncNotice={syncNotice}
                 currentUrl={currentUrl}
                 t={t}
             />

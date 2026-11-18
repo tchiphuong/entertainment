@@ -93,9 +93,6 @@ export function Footer() {
                         <Link to="/tv" className="transition-colors hover:text-white">
                             {t("footer.liveTv")}
                         </Link>
-                        <Link to="/vod/watch-party" className="transition-colors hover:text-white">
-                            Watch Party
-                        </Link>
                     </div>
 
                     <div className="text-center text-xs text-zinc-500 sm:text-right">
@@ -115,3 +112,4 @@ export function Footer() {
 }
 
 export default memo(Footer);
+

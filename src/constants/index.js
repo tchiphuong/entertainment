@@ -452,15 +452,12 @@ export const ROUTES = {
         COUNTRY: "/vod/country/:country",
         CATEGORY: "/vod/category/:category",
         ACTOR: "/vod/actor/:actor",
-        WATCH_PARTY: "/vod/watch-party",
-        WATCH_PARTY_ROOM: "/vod/watch-party/:roomId",
     },
 };
 
 /**
  * Helper sinh đường dẫn động, tránh hardcode chuỗi URL
  */
-export const getWatchPartyRoomPath = (roomId) => `/vod/watch-party/${roomId || ""}`;
 export const getVodPlayPath = (slug) => `/vod/play/${slug || ""}`;
 export const getVodCategoryPath = (category) => `/vod/category/${category || ""}`;
 export const getVodCountryPath = (country) => `/vod/country/${country || ""}`;
@@ -475,3 +472,4 @@ export const MEDIA_CONFIG = {
     DEFAULT_GIPHY_API_BASE_URL: "https://api.giphy.com/v1",
     DEFAULT_GIPHY_API_KEY: "sXpGFDGZs0Dv1mmNFvYaGUvYwKX0PWIh",
 };
+
