@@ -1144,8 +1144,39 @@ const revokeBlobUrl = (currentUrlRef) => {
     currentUrlRef.current = null;
 };
 
-export const destroyAllPlayersHelper = async (activeVideoElementRef, shakaUiOverlayRef, shakaPlayerRef, currentUrlRef) => {
+// Dọn dẹp DOM container của player (video, audio, iframe)
+const cleanupPlayerContainer = (playerRef) => {
+    const playerDiv = playerRef?.current;
+    if (!playerDiv) return;
+
+    try {
+        const mediaElements = playerDiv.querySelectorAll("video, audio");
+        mediaElements.forEach((el) => {
+            try {
+                el.muted = true;
+                el.pause();
+                el.removeAttribute("src");
+                el.load();
+            } catch { /* ignore */ }
+        });
+
+        const iframes = playerDiv.querySelectorAll("iframe");
+        iframes.forEach((iframe) => {
+            try {
+                iframe.src = "about:blank";
+                iframe.remove();
+            } catch { /* ignore */ }
+        });
+
+        playerDiv.innerHTML = "";
+    } catch (e) {
+        console.warn("Lỗi dọn dẹp container player:", e);
+    }
+};
+
+export const destroyAllPlayersHelper = async (activeVideoElementRef, shakaUiOverlayRef, shakaPlayerRef, currentUrlRef, playerRef = null) => {
     destroyActiveVideo(activeVideoElementRef);
+    cleanupPlayerContainer(playerRef);
     await destroyShakaInstances(shakaUiOverlayRef, shakaPlayerRef);
     revokeBlobUrl(currentUrlRef);
 };
