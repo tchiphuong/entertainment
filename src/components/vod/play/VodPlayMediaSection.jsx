@@ -670,13 +670,16 @@ export const VodPlayMediaSection = ({
     setShowImageModal,
     getMovieImage,
 }) => {
+    const sourceBackdropFallback = getMovieImage(movie?.thumb_url || movie?.poster_url, movie?.source);
+    const sourcePosterFallback = getMovieImage(movie?.poster_url || movie?.thumb_url, movie?.source);
+
     const backdropSrc = tmdbData?.backdrop_path
         ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.BACKDROP}${tmdbData.backdrop_path}`
-        : getMovieImage(movie.thumb_url || movie.poster_url, movie.source);
+        : sourceBackdropFallback;
 
     const posterSrc = tmdbData?.poster_path
         ? `${TMDB_IMAGE_BASE_URL}/${TMDB_IMAGE_SIZES.POSTER}${tmdbData.poster_path}`
-        : getMovieImage(movie.poster_url || movie.thumb_url, movie.source);
+        : sourcePosterFallback;
 
     return (
         <div className="mt-8 space-y-16">
@@ -687,26 +690,34 @@ export const VodPlayMediaSection = ({
                             loading="lazy"
                             src={backdropSrc}
                             alt={movie.name}
+                            referrerPolicy="no-referrer"
                             className="h-full w-full object-cover transition-transform duration-700 hover:scale-105"
                             onError={(e) => {
-                                e.target.onerror = null;
-                                e.target.src = FALLBACK_IMAGE;
+                                if (sourceBackdropFallback && e.target.src !== sourceBackdropFallback) {
+                                    e.target.src = sourceBackdropFallback;
+                                } else {
+                                    e.target.onerror = null;
+                                    e.target.src = FALLBACK_IMAGE;
+                                }
                             }}
                         />
-                        <div className="absolute inset-0 bg-zinc-950/60" />
                     </div>
                     <div className="aspect-2/3 relative hidden overflow-hidden rounded-2xl shadow-2xl ring-1 ring-white/10 lg:block lg:w-72 xl:w-80">
                         <img
                             loading="lazy"
                             src={posterSrc}
                             alt={movie.name}
+                            referrerPolicy="no-referrer"
                             className="h-full w-full object-cover transition-transform duration-700 hover:scale-105"
                             onError={(e) => {
-                                e.target.onerror = null;
-                                e.target.src = FALLBACK_IMAGE;
+                                if (sourcePosterFallback && e.target.src !== sourcePosterFallback) {
+                                    e.target.src = sourcePosterFallback;
+                                } else {
+                                    e.target.onerror = null;
+                                    e.target.src = FALLBACK_IMAGE;
+                                }
                             }}
                         />
-                        <div className="absolute inset-0 bg-zinc-950/60" />
                     </div>
                 </div>
                 <div className="flex-1 space-y-6 w-full">

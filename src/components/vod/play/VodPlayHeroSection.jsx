@@ -27,6 +27,9 @@ const resolveHeroBgUrl = (rawImage, movieSource, getMovieImage) => {
 export const VodPlayBackgroundHero = ({ movie, memoizedBackgrounds, getMovieImage, tmdbData }) => {
     const rawImage = resolveRawHeroImage(tmdbData, memoizedBackgrounds, movie);
     const bgUrl = resolveHeroBgUrl(rawImage, movie?.source, getMovieImage);
+    const sourceFallback = typeof getMovieImage === "function"
+        ? getMovieImage(movie?.thumb_url || movie?.poster_url, movie?.source)
+        : (movie?.thumb_url || movie?.poster_url || null);
 
     if (!bgUrl) return null;
 
@@ -35,10 +38,15 @@ export const VodPlayBackgroundHero = ({ movie, memoizedBackgrounds, getMovieImag
             <img
                 src={bgUrl}
                 alt=""
+                referrerPolicy="no-referrer"
                 className="h-full w-full object-cover object-center scale-105 blur-2xl opacity-40 transition-opacity duration-700"
                 onError={(e) => {
-                    e.target.onerror = null;
-                    e.target.src = FALLBACK_IMAGE;
+                    if (sourceFallback && e.target.src !== sourceFallback) {
+                        e.target.src = sourceFallback;
+                    } else {
+                        e.target.onerror = null;
+                        e.target.src = FALLBACK_IMAGE;
+                    }
                 }}
             />
             <div className="absolute inset-0 bg-zinc-950/60" />

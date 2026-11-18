@@ -22,8 +22,15 @@
                 l.hash
             );
         } else {
-            // Trên môi trường root domain độc lập, chuyển hướng an toàn về root
-            l.replace(l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') + '/');
+            // Trên root domain độc lập, chuyển hướng SPA qua query '/?/' để index.html phục hồi route chính xác
+            var path = l.pathname.slice(1);
+            var query = l.search.slice(1);
+            l.replace(
+                l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+                '/?/' + path +
+                (query ? '&' + query : '') +
+                l.hash
+            );
         }
     </script>
 </head>

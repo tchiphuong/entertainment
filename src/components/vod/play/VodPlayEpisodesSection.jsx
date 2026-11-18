@@ -154,6 +154,7 @@ const EpisodeThumbnail = ({ episodeThumb, episodeLabel, k, isActive, imdbEp }) =
                 loading="lazy"
                 src={episodeThumb || FALLBACK_IMAGE}
                 alt={altText}
+                referrerPolicy="no-referrer"
                 className={`h-full w-full object-cover transition-transform duration-500 group-hover:scale-110 ${
                     isActive ? "" : "opacity-60 group-hover:opacity-100"
                 }`}
