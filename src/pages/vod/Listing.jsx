@@ -342,12 +342,9 @@ export const normalizeLibraryItems = (rawItems, t) => {
             let itemSource = item.source;
             if (!itemSource) {
                 const server = String(item.server || "").toLowerCase();
-                itemSource = SOURCES.SOURCE_K;
-                if (
-                    server.includes(SOURCES.SOURCE_O) ||
-                    server.includes("source_o")
-                )
-                    itemSource = SOURCES.SOURCE_O;
+                itemSource = SOURCES.SOURCE_1;
+                if (server.includes(SOURCES.SOURCE_2))
+                    itemSource = SOURCES.SOURCE_2;
             }
 
             return {
@@ -832,11 +829,11 @@ export const getRawSearchCategories = ({
     if (currentActor || isLibraryCategory) return [];
     if (isMergedView) {
         return [
-            buildSourceConfig(SOURCES.SOURCE_K, paramsContext, { title: "Source K" }),
+            buildSourceConfig(SOURCES.SOURCE_1, paramsContext, { title: "Nguồn 1" }),
         ];
     }
     return [
-        buildSourceConfig(activeSource || SOURCES.SOURCE_K, paramsContext, {
+        buildSourceConfig(activeSource || SOURCES.SOURCE_1, paramsContext, {
             id: "listing",
             title: finalTitle,
         }),

@@ -92,18 +92,15 @@ const normalizeSourceK = (m, item) => {
 const applySourceSpecificFields = (m, item, source) => {
     switch (source) {
         case SOURCES.SOURCE_2:
-        case SOURCES.SOURCE_O:
             normalizeSourceO(m, item);
             break;
         case SOURCES.SOURCE_3:
-        case SOURCES.SOURCE_R:
             normalizeSourceR(m, item);
             break;
         case SOURCES.SOURCE_TMDB:
             normalizeSourceTmdb(m, item);
             break;
         case SOURCES.SOURCE_1:
-        case SOURCES.SOURCE_K:
             normalizeSourceK(m, item);
             break;
         default:
@@ -193,7 +190,7 @@ const getVodCacheKey = (cat, lang = "vi-VN") => {
 const buildSourceSearchParams = (cat, page, limit) => {
     const params = new URLSearchParams();
     params.set("page", page);
-    if (cat.useV1 || cat.source === SOURCES.SOURCE_3 || cat.source === SOURCES.SOURCE_R) {
+    if (cat.useV1 || cat.source === SOURCES.SOURCE_3) {
         params.set("limit", limit);
     }
     if (cat.params) {
@@ -289,10 +286,10 @@ const buildCategoryUrl = (cat, tmdbLang, page, limit) => {
     let endpoint = cat.type || "";
     if (endpoint && !endpoint.startsWith("/")) endpoint = `/${endpoint}`;
 
-    if (cat.source === SOURCES.SOURCE_3 || cat.source === SOURCES.SOURCE_R) {
+    if (cat.source === SOURCES.SOURCE_3) {
         return buildUrlWithParams(CONFIG.APP_DOMAIN_SOURCE_R, `/${cat.type}`, params);
     }
-    const isSource2 = cat.source === SOURCES.SOURCE_2 || cat.source === SOURCES.SOURCE_O;
+    const isSource2 = cat.source === SOURCES.SOURCE_2;
     const domain = isSource2 ? CONFIG.APP_DOMAIN_SOURCE_O : CONFIG.APP_DOMAIN_SOURCE_K;
     const prefix = cat.useV1 ? "/v1/api" : "";
     return buildUrlWithParams(domain, `${prefix}${endpoint}`, params);
@@ -480,7 +477,7 @@ const fetchTmdbCategory = async (cat, tmdbLang, page, limit, cacheKey) => {
 };
 
 const extractCustomApiItems = (cat, json, limit) => {
-    if ((cat.source === SOURCES.SOURCE_3 || cat.source === SOURCES.SOURCE_R) && cat.type.includes("homepageLists")) {
+    if (cat.source === SOURCES.SOURCE_3 && cat.type.includes("homepageLists")) {
         const collections = json.result?.collections || [];
         const collection = collections.find(
             (c) => c.slug === cat.id || c.name.includes(cat.title),
